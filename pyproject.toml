@@ -1,0 +1,39 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "pybind11>=2.10.0",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+# [tool.cibuildwheel]
+# test-command = "python {project}/tests/test.py"
+# test-skip = "*universal2:arm64"
+
+# [tool.ruff]
+# extend-select = [
+#   "B",   # flake8-bugbear
+#   "I",   # isort
+#   "PGH", # pygrep-hooks
+#   "RUF", # Ruff-specific
+#   "UP",  # pyupgrade
+# ]
+# extend-ignore = [
+#   "E501",   # Line too long
+# ]
+# target-version = "py37"
+
+[project]
+name = "gym-longshot"
+version = "0.1.0"
+authors = [
+  { name="bluebread", email="hotbead70127@gmail.com" },
+]
+description = "A C++/Python library for boolean function"
+readme = "README.md"
+requires-python = ">=3.10"
+# classifiers = [
+#     "Programming Language :: Python :: 3",
+#     "License :: OSI Approved :: MIT License",
+#     "Operating System :: OS Independent",
+# ]

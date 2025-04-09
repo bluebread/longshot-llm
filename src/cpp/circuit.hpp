@@ -22,6 +22,28 @@ namespace longshot
         int num_vars() const { return num_vars_; }
         int size() const { return size_; }
         int depth() const { return depth_; }
+        
+        typedef std::bitset<num_vars_> bits_t;
+
+        virtual bool eval(bits_t x) const = 0;
+        virtual double avgQ() const = 0;
+
+        virtual bool is_constant() const
+        {
+            if (size_ == 0) {
+                return true;
+            }
+
+            int num_inputs = pow2(num_vars_);
+
+            for (int i = 0; i < num_inputs / 2; i++) {
+                bits_t x = bits_t(i);
+                if (eval(x) != eval(~x)) {
+                    return false;
+                }
+            }
+            return true;
+        }
     };
 
     template<int num_vars_>
@@ -40,8 +62,6 @@ namespace longshot
             bits_t negated_variables;
         };
         
-        typedef std::bitset<num_vars_> bits_t;
-
     protected:
         const Type type_ = Type::Disjunctive;
 
@@ -92,10 +112,12 @@ namespace longshot
     public:
         double avgQ() const {
             unsigned long long exp3_n = pow(3, num_vars_);
-            unsigned long long * exp3_tbl = new unsigned long long[num_vars_];
+            unsigned long long * exp3_tb = new unsigned long long[num_vars_];
 
-            for (unsigned int i = 0; i < num_vars_; i++) {
-                exp3_tbl[i] = pow(3, i);
+            exp3_tb[0] = 1;
+
+            for (unsigned int i = 1; i < num_vars_; i++) {
+                exp3_tb[i] = 3 * exp3_tb[i - 1];
             }
 
             _dp_item_t * lookup = new _dp_item_t[exp3_n];
@@ -113,8 +135,8 @@ namespace longshot
                 _dpt_item_t choice;
 
                 for (const int & b : unfixed) {
-                    uint64_t sf0 = (i - 2 * exp3_tbl[b]);
-                    uint64_t sf1 = (i - 1 * exp3_tbl[b]);
+                    uint64_t sf0 = (i - 2 * exp3_tb[b]);
+                    uint64_t sf1 = (i - 1 * exp3_tb[b]);
                     const auto & [v0, d0] = lookup[sf0];
                     const auto & [v1, d1] = lookup[sf1];
                     
@@ -135,7 +157,7 @@ namespace longshot
             const auto & [value, depth] = lookup[exp3_n - 1];
 
             delete[] lookup;
-            delete[] exp3_tbl;
+            delete[] exp3_tb;
 
             return depth;
         }

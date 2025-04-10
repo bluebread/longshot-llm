@@ -34,6 +34,10 @@ public:
 #define GREEN_PASS   "\033[1;32m"   "PASS"    "\033[0m"
 #define RED_FAILED   "\033[1;31m"   "FAILED"  "\033[0m"
 
+#ifndef TESTER
+#error "TESTER not defined. Please define TESTER before including tests."
+#endif
+
 #define PRINT_PASS      std::cout << GREEN_PASS " - "  << TESTER << std::endl
 #define PRINT_FAILED    std::cout << RED_FAILED " - "  << TESTER << std::endl
 

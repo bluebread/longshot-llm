@@ -10,7 +10,7 @@ SRCS := $(shell find $(SRC_DIRS) -name '*.cpp')
 # Add a prefix to INC_DIRS. So moduleA would become -ImoduleA. GCC understands this -I flag
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
-CPPFLAGS := $(INC_FLAGS) # -MMD -MP
+CPPFLAGS := $(INC_FLAGS) -std=c++11 -Wall # -MMD -MP
 
 TESTERS := $(SRCS:.cpp=.out)
 

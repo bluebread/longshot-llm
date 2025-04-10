@@ -16,20 +16,23 @@ namespace longshot
     template<int num_vars_, int depth_>
     class AC0_Circuit
     {
+        static_assert(num_vars_ > 0, "AC0_Circuit: Number of variables must be greater than 0");
+        static_assert(num_vars_ <= 24, "AC0_Circuit: Number of variables must be less than or equal to 24");
+        static_assert(depth_ > 0, "AC0_Circuit: Depth must be greater than 0");
     protected:
         int size_ = 0;
 
     public:
-        AC0_Circuit();
-        ~AC0_Circuit();
+        typedef uint32_t input_t;
+
+        AC0_Circuit() {}
+        ~AC0_Circuit() {}
         
         int num_vars() const { return num_vars_; }
         int size() const { return size_; }
         int depth() const { return depth_; }
         
-        typedef std::bitset<num_vars_> bits_t;
-
-        virtual bool eval(bits_t x) const = 0;
+        virtual bool eval(input_t x) const = 0;
         virtual double avgQ() const = 0;
 
         virtual bool is_constant() const
@@ -38,10 +41,9 @@ namespace longshot
                 return true;
             }
 
-            int num_inputs = pow2(num_vars_);
+            uint64_t num_inputs = pow2(num_vars_);
 
-            for (int i = 0; i < num_inputs / 2; i++) {
-                bits_t x = bits_t(i);
+            for (uint64_t x = 0; x < num_inputs / 2; x++) {
                 if (eval(x) != eval(~x)) {
                     return false;
                 }
@@ -53,10 +55,8 @@ namespace longshot
     template<int num_vars_>
     class NormalFormFormula : public AC0_Circuit<num_vars_, 2>
     {
-        static_assert(num_vars_ > 0, "Number of variables must be greater than 0");
-        static_assert(num_vars_ <= 24, "Number of variables must be less than or equal to 24");
+        using input_t = typename AC0_Circuit<num_vars_, 2>::input_t;
     public:
-        typedef uint32_t input_t;
 
         enum class Type
         {
@@ -86,7 +86,8 @@ namespace longshot
                 truth_table_.set();
             }
         }
-        ~NormalFormFormula();
+
+        ~NormalFormFormula() {}
         
         int width() const { return width_; }
 
@@ -96,15 +97,15 @@ namespace longshot
             }
 
             clauses_.push_back(cl);
-            size_ += 1;
-            int cl_width = __builtin__popcount(cl.variables | cl.negated_variables);
+            this->size_ += 1;
+            int cl_width = __builtin_popcount(cl.variables | cl.negated_variables);
             width = std::max(width, cl_width);
 
             input_t mask = cl.variables | cl.negated_variables;
             input_t x = 0;
 
             for (int i = 0; i < pow2(num_vars_ - cl_width); i++) {
-                if (type == Type::Disjunctive) {
+                if (type_ == Type::Disjunctive) {
                     input_t y = (x | cl.variables) & ~cl.negated_variables;
                     truth_table_.set(y);
                 }
@@ -123,7 +124,7 @@ namespace longshot
             return truth_table_[x];
         }
     private:
-        union _dpt_item_t
+        union _dp_item_t
         {
             struct
             {
@@ -133,8 +134,8 @@ namespace longshot
 
             uint32_t raw;
 
-            _dpt_item_t() : raw(0) {}
-            _dpt_item_t(bool v, uint32_t dn) : raw(0)
+            _dp_item_t() : raw(0) {}
+            _dp_item_t(bool v, uint32_t dn) : raw(0)
             {
                 this->val = v;
                 this->depth = dn;
@@ -172,6 +173,7 @@ namespace longshot
                         unfixed_.set(count);
                         break;
                     default:
+                        throw std::logic_error("_rstr_t: Invalid representation.");
                     }
 
                     num_repr /= 3;
@@ -240,7 +242,7 @@ namespace longshot
             }
 
             _dp_item_t * lookup = new _dp_item_t[exp3_n];
-            _rstr_t<num_vars_> rt;
+            _rstr_t rt;
 
             for (uint64_t i = 0; i < exp3_n; i++) {
                 if (rt.all_fixed()) {
@@ -249,8 +251,9 @@ namespace longshot
                 }
                 
                 uint32_t min_d = std::numeric_limits<uint32_t>::max();
-                _dpt_item_t choice;
+                _dp_item_t choice;
                 uint32_t x = rt.unfixed().to_ulong();
+                unsigned int num_unfixed = __builtin_popcount(x);
 
                 while (x != 0) {
                     unsigned int mask = x & -x;

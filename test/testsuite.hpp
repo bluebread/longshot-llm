@@ -1,0 +1,50 @@
+#ifndef __TEST_EXCEPTION_HPP__
+#define __TEST_EXCEPTION_HPP__
+
+#include <exception>
+#include <string>
+#include <sstream>
+#include <iostream>
+#include <new>
+#include <cassert>
+
+class TestException : public std::exception {
+
+private:
+    std::string message;
+
+public:
+    TestException(
+            const char * filename, 
+            const int lineno, 
+            const char* testcase) {
+
+        std::stringstream ss;
+
+        ss << filename << ":" << lineno << ": " 
+           << "Testcase `" << testcase <<  "` failed.";
+        message = ss.str();
+    }
+
+    virtual const char* what() const throw() {
+        return message.c_str();
+    }
+};
+
+#define GREEN_PASS   "\033[1;32m"   "PASS"    "\033[0m"
+#define RED_FAILED   "\033[1;31m"   "FAILED"  "\033[0m"
+
+#define PRINT_PASS      std::cout << GREEN_PASS " - "  << TESTER << std::endl
+#define PRINT_FAILED    std::cout << RED_FAILED " - "  << TESTER << std::endl
+
+#define TESTCASE(ANS, INPUT) \
+    _testcase((ANS) == (INPUT), __FILE__, __LINE__, "(" #ANS ") == (" #INPUT ")")
+
+void _testcase(bool condition, const char * filename, int lineno, const char * testcase_str)
+{
+    if (! condition) {
+        throw TestException(filename, lineno, testcase_str);
+    }
+}
+
+#endif

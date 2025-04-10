@@ -6,7 +6,7 @@ namespace longshot
 {
     constexpr unsigned long long int pow2(unsigned int n)
     {
-        return (1ull << n);
+        return (n == 0) ? 1 : (1ull << n);
     }
 
     constexpr unsigned long long int pow(unsigned int base, unsigned int exp)

@@ -8,8 +8,8 @@
 #include <new>
 #include <cassert>
 
-class TestException : public std::exception {
-
+class TestException : public std::exception 
+{
 private:
     std::string message;
 

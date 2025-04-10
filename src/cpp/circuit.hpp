@@ -41,11 +41,11 @@ namespace longshot
                 return true;
             }
 
+            bool v0 = eval(0);
             uint64_t num_inputs = pow2(num_vars_);
 
-            for (uint64_t x = 0; x < num_inputs / 2; x++) {
-                uint64_t neg_x = (~x) & ((1 << num_vars_) - 1);
-                if (eval(x) != eval(neg_x)) {
+            for (uint64_t i = 1; i < num_inputs; i++) {
+                if (eval(i) != v0) {
                     return false;
                 }
             }
@@ -149,90 +149,80 @@ namespace longshot
         struct _rstr_t 
         {
         protected:
-            std::bitset<num_vars_> vals_;
-            std::bitset<num_vars_> unfixed_;
+            input_t vals_;
+            input_t unfixed_;
         public:
             _rstr_t() : vals_(0), unfixed_(0) {}
-            _rstr_t(uint64_t num_repr) : vals_(0), unfixed_(0) 
-            {
-                if (num_repr >= pow(3, num_vars_)) {
-                    throw std::out_of_range("_rstr_t: `num_repr` exceeds the maximum value for the given number of variables.");
-                }
+            _rstr_t(const _rstr_t & r) : vals_(r.vals_), unfixed_(r.unfixed_) {}
 
-                int count = 0;
-                while (num_repr > 0)
-                {
-                    switch (num_repr % 3)
-                    {
-                    case 0:
-                        vals_.reset(count);
-                        unfixed_.reset(count);
-                        break;
-                    case 1:
-                        vals_.set(count);
-                        unfixed_.reset(count);
-                        break;
-                    case 2:
-                        vals_.reset(count);
-                        unfixed_.set(count);
-                        break;
-                    default:
-                        throw std::logic_error("_rstr_t: Invalid representation.");
-                    }
-
-                    num_repr /= 3;
-                    count++;
-                }
-            }
-
-            const std::bitset<num_vars_> & vals() const { return vals_; }
-            const std::bitset<num_vars_> & unfixed() const { return unfixed_; }
+            const input_t & vals() const { return vals_; }
+            const input_t & unfixed() const { return unfixed_; }
 
             bool all_fixed() const
             {
-                return unfixed_.none();
+                return unfixed_ == 0;
             }
             
             _rstr_t fix(int idx, bool b) const
             {
-                if (idx < 0 || idx >= num_vars_) {
-                    throw std::out_of_range("_rstr_t: Index out of range.");
-                }
-
                 _rstr_t cpy(*this);
-                cpy.vals_[idx] = b;
-                cpy.unfixed_.reset(idx);
+                cpy.vals_ = (cpy.vals_ & ~(1u << idx)) | ((b & 1u) << idx);
+                cpy.unfixed_ &= ~(1u << idx);
 
                 return cpy;
             }
 
             void next()
             {
+                unfixed_ += 1;
+                input_t x = unfixed_ & -unfixed_; // get the rightmost 1 bit
+                unfixed_ ^= (x ^ (x & vals_));
+                vals_ ^= x;
+            }
+
+            std::string to_string() {
+                std::string s = "";
                 for (int i = 0; i < num_vars_; i++)
                 {
-                    if (unfixed_.test(i))
-                    {
-                        vals_.reset(i);
-                        unfixed_.reset(i);
-                    }
-                    else 
-                    {
-                        if (vals_[i] == 0)
-                        {
-                            vals_.set(i);
-                            // unfixed_.reset(i);
-                        }
-                        else
-                        {
-                            vals_.reset(i);
-                            unfixed_.set(i);
-                        }
-                        break;
-
+                    if (unfixed_ & (1u << i)) {
+                        s += "?";
+                    } else {
+                        s += (vals_ & (1u << i)) ? "1" : "0";
                     }
                 }
+
+                std::reverse(s.begin(), s.end());
+
+                return s;
             }
         };
+
+        std::string _tris_str(uint64_t num_repr) const
+        {
+            std::string s = "";
+            for (int i = 0; i < num_vars_; i++)
+            {
+                switch (num_repr % 3)
+                {
+                case 0:
+                    s += "0";
+                    break;
+                case 1:
+                    s += "1";
+                    break;
+                case 2:
+                    s += "?";
+                    break;
+                default:
+                    throw std::logic_error("_rstr_t: Invalid representation.");
+                }
+
+                num_repr /= 3;
+            }
+            std::reverse(s.begin(), s.end());
+
+            return s;
+        }
 
     public:
         double avgQ() const {
@@ -249,14 +239,17 @@ namespace longshot
             _rstr_t rt;
 
             for (uint64_t i = 0; i < exp3_n; i++) {
+
                 if (rt.all_fixed()) {
-                    lookup[i] = _dp_item_t(eval(rt.vals().to_ulong()), 0);
+                    bool v = eval(rt.vals());
+                    lookup[i] = _dp_item_t(v, 0);
+                    rt.next();
                     continue;
                 }
                 
                 uint32_t min_d = std::numeric_limits<uint32_t>::max();
                 _dp_item_t choice;
-                uint32_t x = rt.unfixed().to_ulong();
+                uint32_t x = rt.unfixed();
                 unsigned int num_unfixed = __builtin_popcount(x);
 
                 while (x != 0) {

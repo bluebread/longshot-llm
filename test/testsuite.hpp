@@ -22,7 +22,8 @@ public:
         std::stringstream ss;
 
         ss << filename << ":" << lineno << ": " 
-           << "Testcase `" << testcase <<  "` failed.";
+           <<  "\033[1;31m"   "error: "  "\033[0m"
+           << "Testcase `" "\033[1;35m" << testcase << "\033[0m"  "` failed.";
         message = ss.str();
     }
 

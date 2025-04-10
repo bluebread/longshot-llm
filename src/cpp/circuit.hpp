@@ -44,7 +44,8 @@ namespace longshot
             uint64_t num_inputs = pow2(num_vars_);
 
             for (uint64_t x = 0; x < num_inputs / 2; x++) {
-                if (eval(x) != eval(~x)) {
+                uint64_t neg_x = (~x) & ((1 << num_vars_) - 1);
+                if (eval(x) != eval(neg_x)) {
                     return false;
                 }
             }
@@ -92,19 +93,22 @@ namespace longshot
         int width() const { return width_; }
 
         void add_clause(Clause cl) {
-            if (cl.variables.count() == 0 && cl.negated_variables.count() == 0) {
+            int num_pv = __builtin_popcount(cl.variables);
+            int num_nv = __builtin_popcount(cl.negated_variables);
+
+            if (num_pv == 0 && num_nv == 0) {
                 return;
             }
 
             clauses_.push_back(cl);
             this->size_ += 1;
             int cl_width = __builtin_popcount(cl.variables | cl.negated_variables);
-            width = std::max(width, cl_width);
+            width_ = std::max(width_, cl_width);
 
             input_t mask = cl.variables | cl.negated_variables;
             input_t x = 0;
 
-            for (int i = 0; i < pow2(num_vars_ - cl_width); i++) {
+            for (uint64_t i = 0; i < pow2(num_vars_ - cl_width); i++) {
                 if (type_ == Type::Disjunctive) {
                     input_t y = (x | cl.variables) & ~cl.negated_variables;
                     truth_table_.set(y);
@@ -259,8 +263,8 @@ namespace longshot
                     unsigned int mask = x & -x;
                     unsigned int b = __builtin_ctz(mask);
 
-                    _dp_item_t sf0 = lookup[(i - 2 * exp3_tb[b])];
-                    _dp_item_t sf1 = lookup[(i - 1 * exp3_tb[b])];
+                    _dp_item_t sf0 = lookup[i - 2 * exp3_tb[b]];
+                    _dp_item_t sf1 = lookup[i - 1 * exp3_tb[b]];
                     
                     bool c = (sf0.depth == 0) && (sf1.depth == 0) && (sf0.val == sf1.val);
                     uint32_t d = (c ? 0 : (longshot::pow2(num_unfixed) + sf0.depth + sf1.depth));

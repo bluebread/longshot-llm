@@ -4,6 +4,9 @@ SRC_DIRS := .
 BUILD_DIR := .
 INC_DIRS := ../src/cpp
 
+PIP_BUILD_DIR := ../build
+PIP_EGGINFO_DIR := ../gym_longshot.egg-info
+
 # Find all the C and C++ files we want to compile
 # Note the single quotes around the * expressions. The shell will incorrectly expand these otherwise, but we want to send the * directly to the find command.
 SRCS := $(shell find $(SRC_DIRS) -name '*.cpp')
@@ -19,7 +22,7 @@ $(BUILD_DIR)/%.out: %.cpp
 
 .PHONY: clean test
 clean:
-	@rm -r $(BUILD_DIR)/*.out
-
+	@rm -r $(BUILD_DIR)/*.out $(PIP_BUILD_DIR) $(PIP_EGGINFO_DIR) ../*.so 
+	
 test: $(TESTERS)
 	@$(foreach file, $^, $(BUILD_DIR)/$(file);)

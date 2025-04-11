@@ -10,8 +10,12 @@
 #include <vector>
 #include <algorithm>
 #include <bitset>
+#include <iostream>
 
-#include <utils.hpp>
+#include <pybind11/pybind11.h>
+namespace py = pybind11;
+
+#include "utils.hpp"
 
 namespace longshot
 {
@@ -71,6 +75,21 @@ namespace longshot
         {
             input_t variables;
             input_t negated_variables;
+
+            Clause(input_t vars, input_t neg_vars) : variables(vars), negated_variables(neg_vars) {}
+            
+            Clause(const py::dict & cl) : variables(0), negated_variables(0) {
+                for (const auto & [key, val] : cl) {
+                    int ki = key.cast<py::int_>().cast<int>();
+                    bool vi = val.cast<py::bool_>().cast<bool>();
+
+                    if (vi) {
+                        variables |= (1u << ki);
+                    } else {
+                        negated_variables |= (1u << ki);
+                    }
+                }
+            }
         };
 
     private:
@@ -83,6 +102,7 @@ namespace longshot
         public:
             _trtb_t(size_t bytes) : chunks_(nullptr), capacity_(bytes)
             {
+                // TODO: debug, incorrect capacity calculation
                 chunks_ = (uint64_t *)malloc(bytes);
                 if (chunks_ == nullptr)
                 {
@@ -143,6 +163,7 @@ namespace longshot
         ~NormalFormFormula() {}
 
         int width() const { return width_; }
+        std::vector<Clause> clauses() const { return clauses_; }
 
         void add_clause(Clause cl)
         {

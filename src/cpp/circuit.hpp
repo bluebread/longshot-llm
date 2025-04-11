@@ -12,8 +12,9 @@
 #include <bitset>
 #include <iostream>
 
-#include <pybind11/pybind11.h>
+#ifdef PYBIND11_NAMESPACE
 namespace py = pybind11;
+#endif
 
 #include "utils.hpp"
 
@@ -73,23 +74,25 @@ namespace longshot
 
         struct Clause
         {
-            input_t variables;
-            input_t negated_variables;
+            input_t pos_vars;
+            input_t neg_vars;
 
-            Clause(input_t vars, input_t neg_vars) : variables(vars), negated_variables(neg_vars) {}
-            
-            Clause(const py::dict & cl) : variables(0), negated_variables(0) {
+            Clause(input_t vars, input_t neg_vars) : pos_vars(vars), neg_vars(neg_vars) {}
+        
+        #ifdef PYBIND11_NAMESPACE
+            Clause(const py::dict & cl) : pos_vars(0), neg_vars(0) {
                 for (const auto & [key, val] : cl) {
                     int ki = key.cast<py::int_>().cast<int>();
                     bool vi = val.cast<py::bool_>().cast<bool>();
 
                     if (vi) {
-                        variables |= (1u << ki);
+                        pos_vars |= (1u << ki);
                     } else {
-                        negated_variables |= (1u << ki);
+                        neg_vars |= (1u << ki);
                     }
                 }
             }
+        #endif
         };
 
     private:
@@ -100,15 +103,15 @@ namespace longshot
             size_t capacity_;
 
         public:
-            _trtb_t(size_t bytes) : chunks_(nullptr), capacity_(bytes)
+            _trtb_t(int n) : chunks_(nullptr)
             {
-                // TODO: debug, incorrect capacity calculation
-                chunks_ = (uint64_t *)malloc(bytes);
+                capacity_ = (longshot::pow2(n) + 63) / 64 * sizeof(uint64_t);
+                chunks_ = (uint64_t *)malloc(capacity_);
                 if (chunks_ == nullptr)
                 {
                     throw std::bad_alloc();
                 }
-                memset(chunks_, 0, bytes);
+                memset(chunks_, 0, capacity_);
             }
 
             ~_trtb_t()
@@ -148,7 +151,7 @@ namespace longshot
 
     public:
         NormalFormFormula(int n, Type type = Type::Disjunctive) : 
-            AC0_Circuit(n, 2), type_(type), truth_table_(longshot::pow2(n))
+            AC0_Circuit(n, 2), type_(type), truth_table_(n)
         {
             if (type_ == Type::Disjunctive)
             {
@@ -167,8 +170,8 @@ namespace longshot
 
         void add_clause(Clause cl)
         {
-            int num_pv = __builtin_popcount(cl.variables);
-            int num_nv = __builtin_popcount(cl.negated_variables);
+            int num_pv = __builtin_popcount(cl.pos_vars);
+            int num_nv = __builtin_popcount(cl.neg_vars);
 
             if (num_pv == 0 && num_nv == 0)
             {
@@ -177,28 +180,29 @@ namespace longshot
 
             clauses_.push_back(cl);
             this->size_ += 1;
-            int cl_width = __builtin_popcount(cl.variables | cl.negated_variables);
+            int cl_width = __builtin_popcount(cl.pos_vars | cl.neg_vars);
             width_ = std::max(width_, cl_width);
 
-            input_t mask = cl.variables | cl.negated_variables;
+            input_t mask = cl.pos_vars | cl.neg_vars;
             input_t x = 0;
 
             for (uint64_t i = 0; i < longshot::pow2(num_vars_ - cl_width); i++)
             {
                 if (type_ == Type::Disjunctive)
                 {
-                    input_t y = (x | cl.variables) & ~cl.negated_variables;
+                    input_t y = (x | cl.pos_vars) & ~cl.neg_vars;
                     truth_table_.set(y);
                 }
                 else
                 {
-                    input_t y = (x | cl.negated_variables) & ~cl.variables;
+                    input_t y = (x | cl.neg_vars) & ~cl.pos_vars;
                     truth_table_.reset(y);
                 }
 
                 // magic bit manipulation: enumerate all inputs that satisfies the clause
-                input_t m = __builtin_ctz((mask | x) + 1);
-                x = ((0xffffffff << m) & x) | (1 << m);
+                input_t z = (mask | x) + 1;
+                z = z & -z;
+                x = (~(z - 1) & x) | z;
             }
         }
 

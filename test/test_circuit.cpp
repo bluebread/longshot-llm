@@ -9,7 +9,7 @@ using namespace longshot;
 
 void test_circuit() {
     {
-        NormalFormFormula<3> dnf(NormalFormFormula<3>::Type::Disjunctive);
+        NormalFormFormula dnf(3, NormalFormFormula::Type::Disjunctive);
 
         dnf.add_clause({0b001, 0b010}); // x0 and not x1
         TESTCASE(1, dnf.size());
@@ -67,7 +67,7 @@ void test_circuit() {
     }
 
     {
-        NormalFormFormula<3> cnf(NormalFormFormula<3>::Type::Conjunctive);
+        NormalFormFormula cnf(3, NormalFormFormula::Type::Conjunctive);
 
         cnf.add_clause({0b001, 0b010}); // x0 or not x1
         TESTCASE(1, cnf.size());
@@ -125,7 +125,7 @@ void test_circuit() {
         TESTCASE(0.0f, cnf.avgQ());
     }
     {
-        NormalFormFormula<3> xor3(NormalFormFormula<3>::Type::Disjunctive);
+        NormalFormFormula xor3(3, NormalFormFormula::Type::Disjunctive);
         
         xor3.add_clause({0b001, 0b110});
         xor3.add_clause({0b010, 0b101});
@@ -144,7 +144,7 @@ void test_circuit() {
         TESTCASE(false, xor3.is_constant());
         TESTCASE(3.0f, xor3.avgQ());
         
-        NormalFormFormula<4> xor4(NormalFormFormula<4>::Type::Disjunctive);
+        NormalFormFormula xor4(4, NormalFormFormula::Type::Disjunctive);
         
         xor4.add_clause({0b0001, 0b1110});
         xor4.add_clause({0b0010, 0b1101});
@@ -175,7 +175,7 @@ void test_circuit() {
         TESTCASE(4.0f, xor4.avgQ());
         TESTCASE(false, xor4.is_constant());
         
-        NormalFormFormula<5> xor5(NormalFormFormula<5>::Type::Disjunctive);
+        NormalFormFormula xor5(5, NormalFormFormula::Type::Disjunctive);
         
         xor5.add_clause({0b00001, 0b11110});
         xor5.add_clause({0b00010, 0b11101});

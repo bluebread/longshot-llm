@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from .._core.circuit import _AC0_Circuit, _Clause, _NormalFormFormulaType, _NormalFormFormula
 from ..error import LongshotError
 
-MAX_NUM_VARS = 32
+MAX_NUM_VARS = 24
 
 class AC0_Circuit(_AC0_Circuit):
     pass
@@ -147,6 +147,12 @@ class NormalFormFormula(_NormalFormFormula):
             raise LongshotError(f"the argument `x` should be between 0 and {1 << self.num_vars - 1}.")
         
         return super().eval(x)
+    
+    def avgQ() -> float:
+        """
+        Returns the average-case deterministic query complexity of the formula.
+        """
+        return super().avgQ()
         
         
         

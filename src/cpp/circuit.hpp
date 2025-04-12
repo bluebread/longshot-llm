@@ -298,7 +298,6 @@ namespace longshot
     public:
         double avgQ() const
         {
-            uint64_t exp3_n = pow(3, num_vars_);
             uint64_t *exp3_tb = (uint64_t *)alloca(num_vars_ * sizeof(uint64_t));
 
             exp3_tb[0] = 1;
@@ -308,6 +307,7 @@ namespace longshot
                 exp3_tb[i] = 3 * exp3_tb[i - 1];
             }
 
+            uint64_t exp3_n = 3 * exp3_tb[num_vars_ - 1];
             _dp_item_t *lookup = new _dp_item_t[exp3_n];
             _rstr_t rt;
 

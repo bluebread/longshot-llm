@@ -5,6 +5,29 @@ from .._core.circuit import (
     _NormalFormFormula,
 )
 
+class AC0_Circuit(_AC0_Circuit):
+    pass
+        
+class NormalFormFormulaType(_NormalFormFormulaType):
+    pass
+        
+class Clause(_Clause):
+    """
+    A class representing a clause.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        
+class NormalFormFormula(_NormalFormFormula):
+    """
+    A class representing a normal form formula.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        
+
 # def say_hello():
 #     if _Clause is not None:
 #         print("Hello from the Circuit module!")

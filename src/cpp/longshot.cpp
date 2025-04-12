@@ -56,7 +56,7 @@ PYBIND11_MODULE(_core, m) {
 
     py::class_<NormalFormFormula::Clause>(cm, "_Clause")
         .def(py::init<longshot::AC0_Circuit::input_t, longshot::AC0_Circuit::input_t>())
-        .def(py::init<const py::dict &>())
+        // .def(py::init<const py::dict &>())
         .def_readwrite("pos_vars", &NormalFormFormula::Clause::pos_vars)
         .def_readwrite("neg_vars", &NormalFormFormula::Clause::neg_vars)
         ;

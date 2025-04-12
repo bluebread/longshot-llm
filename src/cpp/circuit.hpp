@@ -79,12 +79,13 @@ namespace longshot
 
             Clause(input_t vars, input_t neg_vars) : pos_vars(vars), neg_vars(neg_vars) {}
         
+        /*
         #ifdef PYBIND11_NAMESPACE
-            Clause(const py::dict & cl) : pos_vars(0), neg_vars(0) {
+        Clause(const py::dict & cl) : pos_vars(0), neg_vars(0) {
                 for (const auto & [key, val] : cl) {
                     int ki = key.cast<py::int_>().cast<int>();
                     bool vi = val.cast<py::bool_>().cast<bool>();
-
+                    
                     if (vi) {
                         pos_vars |= (1u << ki);
                     } else {
@@ -93,6 +94,7 @@ namespace longshot
                 }
             }
         #endif
+        */
         };
 
     private:

@@ -1,1 +1,1 @@
-from .._core.circuit import *
+from .wrapper import *

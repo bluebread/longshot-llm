@@ -44,7 +44,7 @@ PYBIND11_MODULE(_core, m) {
     m.doc() = "pybind11 example plugin"; // optional module docstring
     py::module_ cm = m.def_submodule("circuit");
         
-    py::class_<AC0_Circuit, PyAC0_Circuit /* <--- trampoline */>(cm, "AC0_Circuit")
+    py::class_<AC0_Circuit, PyAC0_Circuit /* <--- trampoline */>(cm, "_AC0_Circuit")
         .def(py::init<int, int>())
         .def("eval", &AC0_Circuit::eval)
         .def("avgQ", &AC0_Circuit::avgQ)
@@ -54,20 +54,20 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("depth", &AC0_Circuit::depth)
         ;
 
-    py::class_<NormalFormFormula::Clause>(cm, "Clause")
+    py::class_<NormalFormFormula::Clause>(cm, "_Clause")
         .def(py::init<longshot::AC0_Circuit::input_t, longshot::AC0_Circuit::input_t>())
         .def(py::init<const py::dict &>())
         .def_readwrite("pos_vars", &NormalFormFormula::Clause::pos_vars)
         .def_readwrite("neg_vars", &NormalFormFormula::Clause::neg_vars)
         ;
     
-    py::enum_<NormalFormFormula::Type>(cm, "NormalFormFormulaType")
+    py::enum_<NormalFormFormula::Type>(cm, "_NormalFormFormulaType")
         .value("Conjunctive", NormalFormFormula::Type::Conjunctive)
         .value("Disjunctive", NormalFormFormula::Type::Disjunctive)
         .export_values()
         ;
 
-    py::class_<NormalFormFormula, AC0_Circuit>(cm, "NormalFormFormula")
+    py::class_<NormalFormFormula, AC0_Circuit>(cm, "_NormalFormFormula")
         .def(py::init<int, NormalFormFormula::Type>(), 
              "x"_a, py::pos_only(), "type"_a = NormalFormFormula::Type::Disjunctive)
         .def("add_clause", &NormalFormFormula::add_clause)

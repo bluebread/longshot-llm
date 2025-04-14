@@ -72,10 +72,10 @@ PYBIND11_MODULE(_core, m) {
         .def(py::init<int, NormalFormFormula::Type>(), 
              "x"_a, py::pos_only(), "type"_a = NormalFormFormula::Type::Disjunctive)
         .def(py::init<const NormalFormFormula &>())
-        .def(py::init<NormalFormFormula &&>())
         .def("add_clause", &NormalFormFormula::add_clause)
         .def("eval", &NormalFormFormula::eval)
         .def("avgQ", &NormalFormFormula::avgQ)
+        .def_property_readonly("ftype", &NormalFormFormula::ftype)
         .def_property_readonly("width", &NormalFormFormula::width)
         .def_property_readonly("clauses", &NormalFormFormula::clauses)
         ;

@@ -1,6 +1,6 @@
 # Script arguments
 
-SRC_DIRS := .
+SRC_DIR := .
 BUILD_DIR := .
 INC_DIRS := ../src/longshot/core
 
@@ -8,7 +8,7 @@ PIP_CACHE_FILES := $(shell find .. -name '*.so' -o -wholename '*/__pycache__' -o
 
 # Find all the C and C++ files we want to compile
 # Note the single quotes around the * expressions. The shell will incorrectly expand these otherwise, but we want to send the * directly to the find command.
-SRCS := $(shell find $(SRC_DIRS) -name '*.cpp')
+SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
 # Add a prefix to INC_DIRS. So moduleA would become -ImoduleA. GCC understands this -I flag
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
@@ -25,3 +25,4 @@ clean:
 	
 test: $(TESTERS)
 	@$(foreach file, $^, $(BUILD_DIR)/$(file);)
+	pytest $(SRC_DIR)

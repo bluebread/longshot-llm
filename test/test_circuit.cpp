@@ -1,6 +1,6 @@
 #include <iostream>
 
-#define TESTER  "circuit"
+#define TESTER  __FILE__
 
 #include "testsuite.hpp"
 #include "circuit.hpp"

@@ -1,25 +1,26 @@
-from typing import Optional
+import enum
 from collections.abc import Iterable
 
-from .._core.circuit import _AC0_Circuit, _Clause, _NormalFormFormulaType, _NormalFormFormula
+from .._core.circuit import (
+    _AC0_Circuit, 
+    _Clause, 
+    _NormalFormFormula,
+    )
+from .._core.circuit import _NormalFormFormulaType as FormulaType
+from .._core.circuit import _AC0_Circuit as AC0_Circuit
 from ..error import LongshotError
 
 MAX_NUM_VARS = 24
 
-class AC0_Circuit(_AC0_Circuit):
-    pass
-        
-class FormulaType(_NormalFormFormulaType):
-    pass
         
 class Clause(_Clause):
     """
     A class representing a clause.
     """
     def __init__(self, 
-                 pos_vars: int | None = None,
-                 neg_vars: int | None = None,
-                 d_clause: dict[str, tuple[int, ...]] | None = None, 
+                 pos_vars: int | Iterable[int] | None = None,
+                 neg_vars: int | Iterable[int] | None = None,
+                 d_clause: dict[int, bool] | None = None, 
                  ftype: FormulaType | None = None):
         """
         Initializes a Clause object.
@@ -37,47 +38,41 @@ class Clause(_Clause):
             self.ftype = None
             
         if pos_vars is not None or neg_vars is not None:
-            pos_vars = pos_vars if pos_vars is not None else 0
-            neg_vars = neg_vars if neg_vars is not None else 0
+            pos_vars = 0 if pos_vars is None else pos_vars
+            neg_vars = 0 if neg_vars is None else neg_vars
+            
+            if isinstance(pos_vars, Iterable):
+                if not all(isinstance(i, int) and i >= 0 and i < MAX_NUM_VARS for i in pos_vars):
+                    raise LongshotError("the argument `pos_vars` is not a list of valid integers.")
+                pos_vars = sum((1 << i) for i in pos_vars)
+            if isinstance(neg_vars, Iterable):
+                if not all(isinstance(i, int) and i >= 0 and i < MAX_NUM_VARS for i in neg_vars):
+                    raise LongshotError("the argument `neg_vars` is not a list of valid integers.")
+                neg_vars = sum((1 << i) for i in neg_vars)
             
             if isinstance(pos_vars, int) and isinstance(neg_vars, int):
                 super().__init__(pos_vars, neg_vars)
             else:
                 raise LongshotError("the arguments `pos_vars` and `neg_vars` should be integers.")
         else:
-            super().__init__(0, 0)
+            if not isinstance(d_clause, dict):
+                raise LongshotError("the argument `d_clause` is not a dictionary.")
+            
+            pos_vars = neg_vars = 0
+            
+            for k, v in d_clause.items():
+                if not isinstance(k, int) or k < 0 or k >= MAX_NUM_VARS:
+                    raise LongshotError("the key of the dictionary `d_clause` is not a valid integer.")
+                if not isinstance(v, bool):
+                    raise LongshotError("the value of the dictionary `d_clause` is not a boolean.")
+                
+                if v:
+                    pos_vars |= (1 << k)
+                else:
+                    neg_vars |= (1 << k)
+                
+            super().__init__(pos_vars, neg_vars)
         
-        if not isinstance(d_clause, dict):
-            raise LongshotError("the argument `d_clause` is not a dictionary.")
-        
-        pos_vars = d_clause.get("pos_vars") if d_clause else None
-        neg_vars = d_clause.get("neg_vars") if d_clause else None
-        
-        if not isinstance(pos_vars, Iterable) and pos_vars is not None:
-            raise LongshotError("`d_clause['pos_vars']` should be iterable.")
-        if not isinstance(neg_vars, Iterable) and neg_vars is not None:
-            raise LongshotError("`d_clause['neg_vars']` should be iterable.")
-        
-        if pos_vars is not None:
-            for i in pos_vars:
-                if not isinstance(i, int) or i < 0 or i >= MAX_NUM_VARS:
-                    raise LongshotError(f"`d_clause['pos_vars']` should be a list of integers between 0 and {MAX_NUM_VARS - 1}.")
-                self.pos_vars |= (1 << i)
-        if neg_vars is not None:
-            for i in neg_vars:
-                if not isinstance(i, int) or i < 0 or i >= MAX_NUM_VARS:
-                    raise LongshotError(f"`d_clause['neg_vars']` should be a list of integers between 0 and {MAX_NUM_VARS - 1}.")
-                self.neg_vars |= (1 << i)
-        
-    def __dict__(self) -> dict:
-        """
-        Returns the dictionary representation of the Clause object.self.
-        """
-        return {
-            "pos_vars": (i for i in range(MAX_NUM_VARS) if (self.pos_vars & (1 << i)) > 0),
-            "neg_vars": (i for i in range(MAX_NUM_VARS) if (self.neg_vars & (1 << i)) > 0),
-        }
-    
     def __str__(self) -> str:
         """
         Returns the string representation of the Clause object.
@@ -92,13 +87,13 @@ class Clause(_Clause):
         
         if self.ftype is not None:
             if self.ftype == FormulaType.Conjunctive:
-                op = "AND"
+                op = "∨"
             elif self.ftype == FormulaType.Disjunctive:
-                op = "OR"
+                op = "∧"
             else:
                 raise LongshotError("Invalid formula type.")
         else:
-            op = "?"
+            op = "."
         
         return op.join(literals)
         
@@ -107,7 +102,7 @@ class NormalFormFormula(_NormalFormFormula):
     """
     A class representing a normal form formula.
     """
-    def __init__(self, num_vars: int, ftype: Optional[FormulaType] = FormulaType.Conjunctive):
+    def __init__(self, num_vars: int, ftype: FormulaType | None = FormulaType.Conjunctive):
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
         if num_vars < 0 or num_vars > MAX_NUM_VARS:
@@ -148,7 +143,7 @@ class NormalFormFormula(_NormalFormFormula):
         
         return super().eval(x)
     
-    def avgQ() -> float:
+    def avgQ(self) -> float:
         """
         Returns the average-case deterministic query complexity of the formula.
         """
@@ -159,7 +154,7 @@ class NormalFormFormula(_NormalFormFormula):
         Returns the string representation of the formula.
         """
         clauses_str = [f"({str(Clause(cl.pos_vars, cl.neg_vars, ftype=self.ftype))})" for cl in self.clauses]
-        op = " AND " if self.ftype == FormulaType.Conjunctive else " OR "
+        op = "∧" if self.ftype == FormulaType.Conjunctive else "∨"
         
         return op.join(clauses_str)
         

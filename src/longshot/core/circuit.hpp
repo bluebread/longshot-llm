@@ -175,6 +175,7 @@ namespace longshot
 
         ~NormalFormFormula() {}
 
+        Type ftype() const { return type_; }
         int width() const { return width_; }
         const std::vector<Clause> & clauses() const { return clauses_; }
 

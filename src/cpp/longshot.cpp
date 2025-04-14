@@ -56,7 +56,8 @@ PYBIND11_MODULE(_core, m) {
 
     py::class_<NormalFormFormula::Clause>(cm, "_Clause")
         .def(py::init<longshot::AC0_Circuit::input_t, longshot::AC0_Circuit::input_t>())
-        // .def(py::init<const py::dict &>())
+        .def(py::init<const NormalFormFormula::Clause &>())
+        .def(py::init<>())
         .def_readwrite("pos_vars", &NormalFormFormula::Clause::pos_vars)
         .def_readwrite("neg_vars", &NormalFormFormula::Clause::neg_vars)
         ;
@@ -70,6 +71,8 @@ PYBIND11_MODULE(_core, m) {
     py::class_<NormalFormFormula, AC0_Circuit>(cm, "_NormalFormFormula")
         .def(py::init<int, NormalFormFormula::Type>(), 
              "x"_a, py::pos_only(), "type"_a = NormalFormFormula::Type::Disjunctive)
+        .def(py::init<const NormalFormFormula &>())
+        .def(py::init<NormalFormFormula &&>())
         .def("add_clause", &NormalFormFormula::add_clause)
         .def("eval", &NormalFormFormula::eval)
         .def("avgQ", &NormalFormFormula::avgQ)

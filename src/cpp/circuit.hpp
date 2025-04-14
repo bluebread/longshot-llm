@@ -12,10 +12,6 @@
 #include <bitset>
 #include <iostream>
 
-#ifdef PYBIND11_NAMESPACE
-namespace py = pybind11;
-#endif
-
 #include "utils.hpp"
 
 namespace longshot
@@ -78,23 +74,8 @@ namespace longshot
             input_t neg_vars;
 
             Clause(input_t vars, input_t neg_vars) : pos_vars(vars), neg_vars(neg_vars) {}
-        
-        /*
-        #ifdef PYBIND11_NAMESPACE
-        Clause(const py::dict & cl) : pos_vars(0), neg_vars(0) {
-                for (const auto & [key, val] : cl) {
-                    int ki = key.cast<py::int_>().cast<int>();
-                    bool vi = val.cast<py::bool_>().cast<bool>();
-                    
-                    if (vi) {
-                        pos_vars |= (1u << ki);
-                    } else {
-                        neg_vars |= (1u << ki);
-                    }
-                }
-            }
-        #endif
-        */
+            Clause(const Clause &other) : pos_vars(other.pos_vars), neg_vars(other.neg_vars) {}
+            Clause() : pos_vars(0), neg_vars(0) {}
         };
 
     private:
@@ -114,6 +95,23 @@ namespace longshot
                     throw std::bad_alloc();
                 }
                 memset(chunks_, 0, capacity_);
+            }
+            _trtb_t(const _trtb_t &other) : chunks_(nullptr)
+            {
+                capacity_ = other.capacity_;
+                chunks_ = (uint64_t *)malloc(capacity_);
+                if (chunks_ == nullptr)
+                {
+                    throw std::bad_alloc();
+                }
+                memcpy(chunks_, other.chunks_, capacity_);
+            }
+            _trtb_t(_trtb_t &&other) : chunks_(nullptr)
+            {
+                capacity_ = other.capacity_;
+                chunks_ = other.chunks_;
+                other.chunks_ = nullptr;
+                other.capacity_ = 0;
             }
 
             ~_trtb_t()
@@ -164,11 +162,21 @@ namespace longshot
                 truth_table_.set();
             }
         }
+        NormalFormFormula(const NormalFormFormula &other) : 
+            AC0_Circuit(other.num_vars_, other.depth_), type_(other.type_), width_(other.width_), truth_table_(other.truth_table_)
+        {
+            clauses_ = other.clauses_;
+        }
+        NormalFormFormula(NormalFormFormula &&other) : 
+            AC0_Circuit(other.num_vars_, other.depth_), type_(other.type_), width_(other.width_), truth_table_(other.truth_table_)
+        {
+            clauses_ = std::move(other.clauses_);
+        }
 
         ~NormalFormFormula() {}
 
         int width() const { return width_; }
-        std::vector<Clause> clauses() const { return clauses_; }
+        const std::vector<Clause> & clauses() const { return clauses_; }
 
         void add_clause(Clause cl)
         {

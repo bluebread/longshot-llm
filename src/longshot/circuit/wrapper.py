@@ -153,25 +153,13 @@ class NormalFormFormula(_NormalFormFormula):
         Returns the average-case deterministic query complexity of the formula.
         """
         return super().avgQ()
+    
+    def __str__(self) -> str:
+        """
+        Returns the string representation of the formula.
+        """
+        clauses_str = [f"({str(Clause(cl.pos_vars, cl.neg_vars, ftype=self.ftype))})" for cl in self.clauses]
+        op = " AND " if self.ftype == FormulaType.Conjunctive else " OR "
         
+        return op.join(clauses_str)
         
-        
-
-# def say_hello():
-#     if _Clause is not None:
-#         print("Hello from the Circuit module!")
-#     else:
-#         print("Hello from the Circuit module, but _Clause is not defined!")
-        
-# import inspect
-# import sys
-
-# # 1. grab the current module object
-# this_mod = sys.modules[__name__]
-
-# # 2. inspect its globals for functions
-# user_funcs = [
-#     name for name, obj in vars(this_mod).items()
-# ]
-
-# print(user_funcs)

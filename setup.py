@@ -15,13 +15,13 @@ __version__ = "0.1.0"
 
 ext_modules = [
     Pybind11Extension("longshot._core",
-        ["src/cpp/longshot.cpp"],
+        ["src/cpp/core.cpp"],
         # Example: passing in the version to the compiled code
         define_macros = [
             ('VERSION_INFO', __version__)
         ],
         cxx_std = 17,
-        include_dirs = ["src/cpp"],
+        include_dirs = ["src/longshot/core"],
         extra_compile_args = [
             "-Ofast", "-fopenmp"
         ]

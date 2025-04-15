@@ -125,14 +125,21 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             else:
                 raise LongshotError(f"Unknown character type: {action.char_type}")
         elif self.granularity == "clause":
-            if not isinstance(action, [Clause, np.ndarray]):
+            if not isinstance(action, (Clause, np.ndarray)):
                 raise LongshotError(f"Expected action to be Clause, got {type(action).__name__}")
             if isinstance(action, np.ndarray):
                 if action.shape != (self.num_vars,):
                     raise LongshotError(f"Expected action to be of shape ({self.num_vars},), got {action.shape}")
-                pvs = (i for i in range(self.num_vars) if action[i] == 0)
-                nvs = (i for i in range(self.num_vars) if action[i] == 1)
-                new_clause = Clause(pos_vars=pvs, neg_vars=nvs)
+                pvs = [i for i in range(self.num_vars) if action[i] == 0]
+                nvs = [i for i in range(self.num_vars) if action[i] == 1]
+
+                if len(pvs) + len(nvs) == 0:
+                    self._terminated = True
+                    print("<EOS>")
+                    return self._cur_avgQ, 0.0, self._terminated, True, info
+                else:
+                    new_clause = Clause(pos_vars=pvs, neg_vars=nvs)
+                    print(str(new_clause))
             else:
                 new_clause = action
 
@@ -152,6 +159,9 @@ class AvgQ_D2_FormulaEnv(gym.Env):
                 
                 if self._cur_avgQ <= 0.0:
                     self._terminated = truncated = True
+
+                    for x in range(2**self.num_vars):
+                        print(f"{x:04b}: {self._formula.eval(x)}")
             
         if self.max_size is not None and self._formula.size >= self.max_size:
             self._terminated = True

@@ -15,29 +15,25 @@ def test_gym_registration():
     
     assert env is not None
 
-@pytest.mark.parametrize("granularity", ["character"])
-def test_random_loop(granularity):
+@pytest.mark.repeat(3)
+@pytest.mark.parametrize("n", [2,3,4,5])
+@pytest.mark.parametrize("granularity", ["character", "clause"])
+def test_random_loop(n, granularity):
     # Check if the environment can be reset and stepped through
     env = gym.make("longshot/avgQ-d2-formula-v0", 
-        n=4, 
+        n=n, 
         granularity=granularity,
         ftype=FormulaType.Conjunctive
         )
-    observation, info = env.reset(seed=1452)
+        
+    observation, info = env.reset()
 
     episode_over = False
 
     while not episode_over:
         action = env.action_space.sample()  # agent policy that uses the observation and info
-        print(Character(CharacterType(action[0].item()), action[1]))
         observation, reward, terminated, truncated, info = env.step(action)
-        print(observation, reward, terminated, truncated, info)
 
         episode_over = terminated or truncated
 
     env.close()
-
-if __name__ == "__main__":
-    test_gym_registration()
-    test_random_loop("character")
-    # test_random_loop("clause")

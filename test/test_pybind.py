@@ -38,6 +38,7 @@ def test_dnf():
     
     assert dnf.avgQ() == 2.1875 # this number has been checked manually
     
+    
 if __name__ == "__main__":
     test_clause()
     test_cnf()

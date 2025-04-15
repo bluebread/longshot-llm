@@ -39,6 +39,11 @@ void test_circuit() {
         TESTCASE(0, dnf.eval(0b111));
         TESTCASE(2.25f, dnf.avgQ());
         
+        dnf.add_clause({0b100, 0b100}); // (not x0) and x1 and x2
+        TESTCASE(3, dnf.width());
+        TESTCASE(2, dnf.size());
+        TESTCASE(2.25f, dnf.avgQ());
+
         dnf.add_clause({0b000, 0b100}); // not x2
         TESTCASE(3, dnf.size());
         TESTCASE(1, dnf.eval(0b000));
@@ -83,6 +88,11 @@ void test_circuit() {
         TESTCASE(0, cnf.eval(0b110));
         TESTCASE(1, cnf.eval(0b111));
         TESTCASE(false, cnf.is_constant());
+        TESTCASE(1.5f, cnf.avgQ());
+
+        cnf.add_clause({0b100, 0b100}); // x0 or not x1
+        TESTCASE(1, cnf.size());
+        TESTCASE(2, cnf.width());
         TESTCASE(1.5f, cnf.avgQ());
         
         cnf.add_clause({0b110, 0b001}); // (not x0) or x1 or x2

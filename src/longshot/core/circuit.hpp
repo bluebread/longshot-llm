@@ -188,6 +188,12 @@ namespace longshot
             {
                 return;
             }
+            if ((cl.pos_vars & cl.neg_vars) > 0)
+            {
+                // Disjunctive: clause with "x and not x" is always false
+                // Conjunctive: clause with "x or not x" is always true
+                return;
+            }
 
             clauses_.push_back(cl);
             this->size_ += 1;

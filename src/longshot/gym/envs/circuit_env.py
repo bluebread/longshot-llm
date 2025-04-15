@@ -21,6 +21,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         granularity: str = "character",
         stride: int = 1,
         init_state: NormalFormFormula | None = None,
+        ftype: FormulaType | None = None,
         render_mode: str | None = None ,    
     ):
         """
@@ -43,6 +44,8 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             raise LongshotError(f"Expected `init_state` to be NormalFormFormula or None, got {type(init_state).__name__}")
         if render_mode is not None and not isinstance(render_mode, str):
             raise LongshotError(f"Expected `render_mode` to be str or None, got {type(render_mode).__name__}")
+        if init_state is None and ftype is None:
+            raise LongshotError("Either `init_state` or `ftype` should be provided.")
         
         super().__init__()
         
@@ -56,6 +59,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         self.stride = stride
         self.render_mode = render_mode
         self.init_state = init_state
+        self.ftype = ftype if self.init_state is None else self.init_state.ftype
         
         self.observation_space = spaces.Box(low=0, high=n, shape=(1,), dtype=np.float32)
         
@@ -69,17 +73,19 @@ class AvgQ_D2_FormulaEnv(gym.Env):
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
         if self.init_state is not None:
             self._formula = self.init_state
-            self._cur_avgQ = self._formula.avgQ()
-            self._prev_avgQ = 0
+            self._cur_avgQ = np.array([self._formula.avgQ()])
+            self._prev_avgQ = np.zeros_like(self._cur_avgQ)
         else:
-            self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=FormulaType.Disjunctive)
-            self._cur_avgQ = self._prev_avgQ = 0.0
+            self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=self.ftype)
+            self._cur_avgQ = self._prev_avgQ = np.zeros(shape=(1,), dtype=np.float32)
             
         self._step_count = 0
         self._char_buffer = []
         self._terminated = False
+        self._has_new_clause = False
         
         super().reset(seed=seed, options=options)
+        self.action_space.seed(seed=seed)
         
         return self._cur_avgQ, {}
     
@@ -90,50 +96,72 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         truncated = False
         info = {}
         self._prev_avgQ = self._cur_avgQ
-        self.step_count += 1
+        self._step_count += 1
         
         if self._terminated:
             raise LongshotError("Environment has already terminated.")
         
         if self.granularity == "character":
-            if not isinstance(action, [Character, NDArray[np.integer[Any]]]):
+            if not isinstance(action, (Character, np.ndarray)):
                 raise LongshotError(f"Expected action to be Character, got {type(action).__name__}")
-            if isinstance(action, NDArray[np.integer[Any]]):
+            if isinstance(action, np.ndarray):
                 if action.shape != (2,):
                     raise LongshotError(f"Expected action to be of shape (2,), got {action.shape}")
-                action = Character(CharacterType(action[0]), action[1])
+                action = Character(CharacterType(action[0].item()), action[1])
             if action.char_type in [CharacterType.EOS, CharacterType.EOC]:
                 self._terminated = (action.char_type == CharacterType.EOS)
-                new_clause = self._merge_char_buffer()
-                self._formula.add_clause(new_clause)
+                
+                if len(self._char_buffer) > 0:
+                    new_clause = self._merge_char_buffer(info)
+                    if not new_clause.is_constant():
+                        self._formula.add_clause(new_clause)
+                        self._has_new_clause = True
+                    else:
+                        info['redundant'] = info.get('redundant', 0) + new_clause.width() + 1
+                else:
+                    info['redundant'] = info.get('redundant', 0) + 1
             elif action.char_type in [CharacterType.NEG, CharacterType.VAR, CharacterType.NVAR]:
                 self._char_buffer.append(action)
             else:
                 raise LongshotError(f"Unknown character type: {action.char_type}")
         elif self.granularity == "clause":
-            if not isinstance(action, [Clause, NDArray[np.integer[Any]]]):
+            if not isinstance(action, [Clause, np.ndarray]):
                 raise LongshotError(f"Expected action to be Clause, got {type(action).__name__}")
-            if isinstance(action, NDArray[np.integer[Any]]):
+            if isinstance(action, np.ndarray):
                 if action.shape != (self.num_vars,):
                     raise LongshotError(f"Expected action to be of shape ({self.num_vars},), got {action.shape}")
-                pos_vars = [i for i in range(self.num_vars) if action[i] == 0]
-                neg_vars = [i for i in range(self.num_vars) if action[i] == 1]
-                action = Clause(d_clause={"pos_vars": pos_vars, "neg_vars": neg_vars})
+                pvs = (i for i in range(self.num_vars) if action[i] == 0)
+                nvs = (i for i in range(self.num_vars) if action[i] == 1)
+                new_clause = Clause(pos_vars=pvs, neg_vars=nvs)
+            else:
+                new_clause = action
 
-            self._formula.add_clause(action)
+            if not new_clause.is_constant():
+                self._formula.add_clause(new_clause)
+                self._has_new_clause = True
+            else:
+                info['redundant'] = info.get('redundant', 0) + 1
         else:
             raise LongshotError(f"Unknown granularity: {self.granularity}")
         
         if self._step_count >= self.stride or self._terminated:
-            self._cur_avgQ = self._formula.avgQ()
-            self._step_count = 0
+            if self._has_new_clause or self._terminated:
+                self._cur_avgQ = np.array([self._formula.avgQ()], dtype=np.float32)
+                self._step_count = 0
+                self._has_new_clause = False
+                
+                if self._cur_avgQ <= 0.0:
+                    self._terminated = truncated = True
             
         if self.max_size is not None and self._formula.size >= self.max_size:
             self._terminated = True
         if self.max_width is not None and self._formula.width > self.max_width:
             self._terminated = truncated = True
         
-        return self._cur_avgQ, self._cur_avgQ - self._prev_avgQ, self._terminated, truncated, info
+        obs = self._cur_avgQ
+        reward = (self._cur_avgQ - self._prev_avgQ).item()
+
+        return obs, reward, self._terminated, truncated, info
 
     def render(self) -> None:
         pass
@@ -141,12 +169,12 @@ class AvgQ_D2_FormulaEnv(gym.Env):
     def close(self) -> None:
         pass
     
-    def _merge_char_buffer(self) -> Clause:
+    def _merge_char_buffer(self, info: dict) -> Clause:
         if len(self._char_buffer) == 0:
             return Clause()
         
-        pos_vars = []
-        neg_vars = []
+        pvs = []
+        nvs = []
         
         for idx, char in enumerate(self._char_buffer):
             if char is None:
@@ -154,25 +182,33 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             if char.char_type == CharacterType.NEG:
                 nxt_char = self._char_buffer[idx + 1] if idx + 1 < len(self._char_buffer) else None
                 
-                if nxt_char is None:
-                    raise LongshotError("Negation character at the end of clause or sequence.")
-                if nxt_char.char_type == CharacterType.VAR:
-                    self._char_buffer[idx + 1] = Character(CharacterType.NVAR, nxt_char.value)
+                if nxt_char is None or nxt_char.char_type in [CharacterType.EOC, CharacterType.EOS]:
+                    info['redundant'] = info.get('redundant', 0) + 1
+                elif nxt_char.char_type == CharacterType.VAR:
+                    self._char_buffer[idx + 1] = Character(CharacterType.NVAR, nxt_char.var_id)
                 elif nxt_char.char_type == CharacterType.NVAR:
-                    self._char_buffer[idx + 1] = Character(CharacterType.VAR, nxt_char.value)
+                    self._char_buffer[idx + 1] = Character(CharacterType.VAR, nxt_char.var_id)
+                    info['redundant'] = info.get('redundant', 0) + 1
                 elif nxt_char.char_type == CharacterType.NEG:
                     self._char_buffer[idx + 1] = None
+                    info['redundant'] = info.get('redundant', 0) + 2
                 else:
                     raise LongshotError(f"Invalid character after negation: {nxt_char.char_type}")
                 
                 self._char_buffer[idx] = None
             elif char.char_type == CharacterType.VAR:
-                pos_vars.append(char.value) 
+                if char.var_id in pvs:
+                    info['redundant'] = info.get('redundant', 0) + 1
+                else:
+                    pvs.append(char.var_id) 
             elif char.char_type == CharacterType.NVAR:
-                neg_vars.append(char.value)
+                if char.var_id in nvs:
+                    info['redundant'] = info.get('redundant', 0) + 1
+                else:
+                    nvs.append(char.var_id)
             else:
                 raise LongshotError(f"Some character of invalid type in character buffer: {char.char_type}")
         
         self._char_buffer.clear()
         
-        return Clause(d_clause={"pos_vars": pos_vars, "neg_vars": neg_vars})
+        return Clause(pos_vars=pvs, neg_vars=nvs)

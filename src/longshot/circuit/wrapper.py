@@ -1,5 +1,7 @@
 import enum
 from collections.abc import Iterable
+import numpy as np
+import warnings
 
 from .._core.circuit import (
     _AC0_Circuit, 
@@ -12,7 +14,8 @@ from ..error import LongshotError
 
 MAX_NUM_VARS = 24
 
-        
+# TODO: change the name to `Literals` and create two classes 
+# `Clause` and `Term` inheriting from `Literals`
 class Clause(_Clause):
     """
     A class representing a clause.
@@ -30,38 +33,36 @@ class Clause(_Clause):
         :param ftype: Formula type.
         """
         
-        if ftype is not None:
-            if not isinstance(ftype, FormulaType):
-                raise LongshotError("the argument `ftype` is not a FormulaType.")
-            self.ftype = ftype
-        else:
-            self.ftype = None
+        if ftype is not None and not isinstance(ftype, FormulaType):
+            raise LongshotError("the argument `ftype` is not a FormulaType.")
+        
+        self.ftype = ftype
             
         if pos_vars is not None or neg_vars is not None:
             pos_vars = 0 if pos_vars is None else pos_vars
             neg_vars = 0 if neg_vars is None else neg_vars
             
             if isinstance(pos_vars, Iterable):
-                if not all(isinstance(i, int) and i >= 0 and i < MAX_NUM_VARS for i in pos_vars):
+                if not all(isinstance(i, (int, np.integer)) and i >= 0 and i < MAX_NUM_VARS for i in pos_vars):
                     raise LongshotError("the argument `pos_vars` is not a list of valid integers.")
                 pos_vars = sum((1 << i) for i in pos_vars)
             if isinstance(neg_vars, Iterable):
-                if not all(isinstance(i, int) and i >= 0 and i < MAX_NUM_VARS for i in neg_vars):
+                if not all(isinstance(i, (int, np.integer)) and i >= 0 and i < MAX_NUM_VARS for i in neg_vars):
                     raise LongshotError("the argument `neg_vars` is not a list of valid integers.")
                 neg_vars = sum((1 << i) for i in neg_vars)
             
-            if isinstance(pos_vars, int) and isinstance(neg_vars, int):
+            if isinstance(pos_vars, (int, np.integer)) and isinstance(neg_vars, (int, np.integer)):
                 super().__init__(pos_vars, neg_vars)
             else:
                 raise LongshotError("the arguments `pos_vars` and `neg_vars` should be integers.")
-        else:
+        elif d_clause is not None:
             if not isinstance(d_clause, dict):
                 raise LongshotError("the argument `d_clause` is not a dictionary.")
             
-            pos_vars = neg_vars = 0
+            pos_vars = neg_vars = 0 
             
             for k, v in d_clause.items():
-                if not isinstance(k, int) or k < 0 or k >= MAX_NUM_VARS:
+                if not isinstance(k, (int, np.integer)) or k < 0 or k >= MAX_NUM_VARS:
                     raise LongshotError("the key of the dictionary `d_clause` is not a valid integer.")
                 if not isinstance(v, bool):
                     raise LongshotError("the value of the dictionary `d_clause` is not a boolean.")
@@ -72,6 +73,8 @@ class Clause(_Clause):
                     neg_vars |= (1 << k)
                 
             super().__init__(pos_vars, neg_vars)
+        else:
+            super().__init__(0, 0)
         
     def __str__(self) -> str:
         """
@@ -96,7 +99,21 @@ class Clause(_Clause):
             op = "."
         
         return op.join(literals)
-        
+    
+    def is_constant(self) -> bool:
+        """
+        Checks if the clause is a constant.
+        """
+        return (
+            (self.pos_vars | self.neg_vars) == 0
+            or (self.pos_vars & self.neg_vars) > 0
+        )
+    
+    def width(self) -> int:
+        """
+        Returns the width of the clause.
+        """
+        return self.pos_vars.bit_count() + self.neg_vars.bit_count()
         
 class NormalFormFormula(_NormalFormFormula):
     """

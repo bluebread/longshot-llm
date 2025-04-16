@@ -69,17 +69,13 @@ namespace longshot
             Disjunctive, // Disjunctive Normal Form
         };
 
-    private:
         class Literals
         {
         private:
             uint32_t pos_;
             uint32_t neg_;
         public:
-            Literals(uint32_t p, uint32_t n) : pos_(p), neg_(n) {
-                if ((pos_ & neg_) > 0)
-                    pos_ = neg_ = std::numeric_limits<uint32_t>::max();
-            }
+            Literals(uint32_t p, uint32_t n) : pos_(p), neg_(n) {}
 
             Literals(const Literals &other) : pos_(other.pos_), neg_(other.neg_) {}
             Literals() : pos_(0), neg_(0) {}
@@ -98,6 +94,13 @@ namespace longshot
             bool is_constant() const 
             {
                 return is_empty() || is_contradictory();
+            }
+
+            int width() const
+            {
+                if (is_constant())
+                    return 0;
+                return __builtin_popcount(pos_) + __builtin_popcount(neg_);
             }
         };
 
@@ -138,7 +141,7 @@ namespace longshot
         int width() const { return width_; }
         const std::vector<Literals> & literals() const { return literals_; }
 
-        void add_clause(Literals ls)
+        void add(Literals ls)
         {
             uint32_t lsp = ls.pos();
             uint32_t lsn = ls.neg();

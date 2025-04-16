@@ -8,7 +8,7 @@ from typing import Any
 
 from .char_type import CharacterType, Character
 from ...error import LongshotError
-from ...circuit import Clause, FormulaType, NormalFormFormula
+from ...circuit import Literals, FormulaType, NormalFormFormula
 
 class AvgQ_D2_FormulaEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -36,8 +36,8 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             raise LongshotError(f"Expected `max_width` to be int or None, got {type(max_width).__name__}")
         if not isinstance(granularity, str):
             raise LongshotError(f"Expected `granularity` to be str, got {type(granularity).__name__}")
-        if granularity not in ["character", "clause"]:
-            raise LongshotError(f"Expected `granularity` to be 'character' or 'clause', got {granularity}")
+        if granularity not in ["character", "clause/term"]:
+            raise LongshotError(f"Expected `granularity` to be 'character' or 'clause/term', got {granularity}")
         if not isinstance(stride, int):
             raise LongshotError(f"Expected `stride` to be int, got {type(stride).__name__}")
         if init_state is not None and not isinstance(init_state, NormalFormFormula):
@@ -65,7 +65,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         
         if self.granularity == "character":
             self.action_space = spaces.MultiDiscrete(np.array([len(CharacterType), n]), dtype=np.int32)
-        elif self.granularity == "clause":
+        elif self.granularity == "clause/term":
             self.action_space = spaces.MultiDiscrete(np.full((n,), 3), dtype=np.int32)
         
         self._terminated = True
@@ -82,7 +82,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         self._step_count = 0
         self._char_buffer = []
         self._terminated = False
-        self._has_new_clause = False
+        self._has_new_literals = False
         
         super().reset(seed=seed, options=options)
         self.action_space.seed(seed=seed)
@@ -91,7 +91,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
     
     def step(
         self, 
-        action: Character | Clause | NDArray[np.integer[Any]]
+        action: Character | Literals | NDArray[np.integer[Any]]
     ) -> tuple[float, float, bool, bool, dict[str, Any]]:
         truncated = False
         info = {}
@@ -112,20 +112,20 @@ class AvgQ_D2_FormulaEnv(gym.Env):
                 self._terminated = (action.char_type == CharacterType.EOS)
                 
                 if len(self._char_buffer) > 0:
-                    new_clause = self._merge_char_buffer(info)
-                    if not new_clause.is_constant():
-                        self._formula.add_clause(new_clause)
-                        self._has_new_clause = True
+                    new_literals = self._merge_char_buffer(info)
+                    if not new_literals.is_constant():
+                        self._formula.add(new_literals)
+                        self._has_new_literals = True
                     else:
-                        info['redundant'] = info.get('redundant', 0) + new_clause.width() + 1
+                        info['redundant'] = info.get('redundant', 0) + new_literals.width() + 1
                 else:
                     info['redundant'] = info.get('redundant', 0) + 1
             elif action.char_type in [CharacterType.NEG, CharacterType.VAR, CharacterType.NVAR]:
                 self._char_buffer.append(action)
             else:
                 raise LongshotError(f"Unknown character type: {action.char_type}")
-        elif self.granularity == "clause":
-            if not isinstance(action, (Clause, np.ndarray)):
+        elif self.granularity == "clause/term":
+            if not isinstance(action, (Literals, np.ndarray)):
                 raise LongshotError(f"Expected action to be Clause, got {type(action).__name__}")
             if isinstance(action, np.ndarray):
                 if action.shape != (self.num_vars,):
@@ -138,30 +138,27 @@ class AvgQ_D2_FormulaEnv(gym.Env):
                     print("<EOS>")
                     return self._cur_avgQ, 0.0, self._terminated, True, info
                 else:
-                    new_clause = Clause(pos_vars=pvs, neg_vars=nvs)
-                    print(str(new_clause))
+                    new_literals = Literals(pos=pvs, neg=nvs)
+                    print(str(new_literals))
             else:
-                new_clause = action
+                new_literals = action
 
-            if not new_clause.is_constant():
-                self._formula.add_clause(new_clause)
-                self._has_new_clause = True
+            if not new_literals.is_constant():
+                self._formula.add(new_literals)
+                self._has_new_literals = True
             else:
                 info['redundant'] = info.get('redundant', 0) + 1
         else:
             raise LongshotError(f"Unknown granularity: {self.granularity}")
         
         if self._step_count >= self.stride or self._terminated:
-            if self._has_new_clause or self._terminated:
+            if self._has_new_literals or self._terminated:
                 self._cur_avgQ = np.array([self._formula.avgQ()], dtype=np.float32)
                 self._step_count = 0
-                self._has_new_clause = False
+                self._has_new_literals = False
                 
                 if self._cur_avgQ <= 0.0:
                     self._terminated = truncated = True
-
-                    for x in range(2**self.num_vars):
-                        print(f"{x:04b}: {self._formula.eval(x)}")
             
         if self.max_size is not None and self._formula.size >= self.max_size:
             self._terminated = True
@@ -177,11 +174,11 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         pass
 
     def close(self) -> None:
-        pass
+        self._terminated = True
     
-    def _merge_char_buffer(self, info: dict) -> Clause:
+    def _merge_char_buffer(self, info: dict) -> Literals:
         if len(self._char_buffer) == 0:
-            return Clause()
+            return Literals()
         
         pvs = []
         nvs = []
@@ -195,8 +192,10 @@ class AvgQ_D2_FormulaEnv(gym.Env):
                 if nxt_char is None or nxt_char.char_type in [CharacterType.EOC, CharacterType.EOS]:
                     info['redundant'] = info.get('redundant', 0) + 1
                 elif nxt_char.char_type == CharacterType.VAR:
+                    # TODO: check if the variable is already in the list
                     self._char_buffer[idx + 1] = Character(CharacterType.NVAR, nxt_char.var_id)
                 elif nxt_char.char_type == CharacterType.NVAR:
+                    # TODO: check if the variable is already in the list
                     self._char_buffer[idx + 1] = Character(CharacterType.VAR, nxt_char.var_id)
                     info['redundant'] = info.get('redundant', 0) + 1
                 elif nxt_char.char_type == CharacterType.NEG:
@@ -221,4 +220,4 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         
         self._char_buffer.clear()
         
-        return Clause(pos_vars=pvs, neg_vars=nvs)
+        return Literals(pos=pvs, neg=nvs)

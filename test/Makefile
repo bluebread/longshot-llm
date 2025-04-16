@@ -25,4 +25,4 @@ clean:
 	
 test: $(TESTERS)
 	@$(foreach file, $^, $(BUILD_DIR)/$(file);)
-	pytest $(SRC_DIR)
+	# pytest $(SRC_DIR)

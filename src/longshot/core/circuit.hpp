@@ -13,6 +13,7 @@
 #include <iostream>
 
 #include "utils.hpp"
+#include "truthtable.hpp"
 
 namespace longshot
 {
@@ -68,86 +69,44 @@ namespace longshot
             Disjunctive, // Disjunctive Normal Form
         };
 
-        struct Clause
-        {
-            input_t pos_vars;
-            input_t neg_vars;
-
-            Clause(input_t vars, input_t neg_vars) : pos_vars(vars), neg_vars(neg_vars) {}
-            Clause(const Clause &other) : pos_vars(other.pos_vars), neg_vars(other.neg_vars) {}
-            Clause() : pos_vars(0), neg_vars(0) {}
-        };
-
     private:
-        struct _trtb_t
+        class Literals
         {
         private:
-            uint64_t *chunks_;
-            size_t capacity_;
-
+            uint32_t pos_;
+            uint32_t neg_;
         public:
-            _trtb_t(int n) : chunks_(nullptr)
-            {
-                capacity_ = (longshot::pow2(n) + 63) / 64 * sizeof(uint64_t);
-                chunks_ = (uint64_t *)malloc(capacity_);
-                if (chunks_ == nullptr)
-                {
-                    throw std::bad_alloc();
-                }
-                memset(chunks_, 0, capacity_);
-            }
-            _trtb_t(const _trtb_t &other) : chunks_(nullptr)
-            {
-                capacity_ = other.capacity_;
-                chunks_ = (uint64_t *)malloc(capacity_);
-                if (chunks_ == nullptr)
-                {
-                    throw std::bad_alloc();
-                }
-                memcpy(chunks_, other.chunks_, capacity_);
-            }
-            _trtb_t(_trtb_t &&other) : chunks_(nullptr)
-            {
-                capacity_ = other.capacity_;
-                chunks_ = other.chunks_;
-                other.chunks_ = nullptr;
-                other.capacity_ = 0;
+            Literals(uint32_t p, uint32_t n) : pos_(p), neg_(n) {
+                if ((pos_ & neg_) > 0)
+                    pos_ = neg_ = std::numeric_limits<uint32_t>::max();
             }
 
-            ~_trtb_t()
-            {
-                free(chunks_);
-            }
+            Literals(const Literals &other) : pos_(other.pos_), neg_(other.neg_) {}
+            Literals() : pos_(0), neg_(0) {}
 
-            void set()
-            {
-                memset(chunks_, 0xFF, capacity_);
-            }
-            void set(long long int x)
-            {
-                chunks_[x / 64] |= (1ull << (x % 64));
-            }
-            void reset()
-            {
-                memset(chunks_, 0, capacity_);
-            }
-            void reset(long long int x)
-            {
-                chunks_[x / 64] &= ~(1ull << (x % 64));
-            }
-            bool operator[](long long int x) const
-            {
-                return (chunks_[x / 64] >> (x % 64)) & 1;
-            }
+            uint32_t pos() const { return pos_; }
+            uint32_t neg() const { return neg_; }
 
+            bool is_empty() const
+            {
+                return (pos_ | neg_) == 0;
+            }
+            bool is_contradictory() const
+            {
+                return (pos_ & neg_) > 0;
+            }
+            bool is_constant() const 
+            {
+                return is_empty() || is_contradictory();
+            }
         };
 
     protected:
         const Type type_ = Type::Disjunctive;
 
         int width_ = 0;
-        std::vector<Clause> clauses_;
-        _trtb_t truth_table_;
+        std::vector<Literals> literals_;
+        TruthTable truth_table_;
 
     public:
         NormalFormFormula(int n, Type type = Type::Disjunctive) : 
@@ -165,58 +124,61 @@ namespace longshot
         NormalFormFormula(const NormalFormFormula &other) : 
             AC0_Circuit(other.num_vars_, other.depth_), type_(other.type_), width_(other.width_), truth_table_(other.truth_table_)
         {
-            clauses_ = other.clauses_;
+            literals_ = other.literals_;
         }
         NormalFormFormula(NormalFormFormula &&other) : 
             AC0_Circuit(other.num_vars_, other.depth_), type_(other.type_), width_(other.width_), truth_table_(other.truth_table_)
         {
-            clauses_ = std::move(other.clauses_);
+            literals_ = std::move(other.literals_);
         }
 
         ~NormalFormFormula() {}
 
         Type ftype() const { return type_; }
         int width() const { return width_; }
-        const std::vector<Clause> & clauses() const { return clauses_; }
+        const std::vector<Literals> & literals() const { return literals_; }
 
-        void add_clause(Clause cl)
+        void add_clause(Literals ls)
         {
-            int num_pv = __builtin_popcount(cl.pos_vars);
-            int num_nv = __builtin_popcount(cl.neg_vars);
+            uint32_t lsp = ls.pos();
+            uint32_t lsn = ls.neg();
+            int num_pv = __builtin_popcount(lsp);
+            int num_nv = __builtin_popcount(lsn);
 
             if (num_pv == 0 && num_nv == 0)
             {
                 return;
             }
-            if ((cl.pos_vars & cl.neg_vars) > 0)
+            if ((lsp & lsn) > 0)
             {
-                // Disjunctive: clause with "x and not x" is always false
-                // Conjunctive: clause with "x or not x" is always true
+                // Disjunctive: Literals with "x and not x" is always false
+                // Conjunctive: Literals with "x or not x" is always true
                 return;
             }
 
-            clauses_.push_back(cl);
+            literals_.push_back(ls);
             this->size_ += 1;
-            int cl_width = __builtin_popcount(cl.pos_vars | cl.neg_vars);
+            int cl_width = __builtin_popcount(lsp | lsn);
             width_ = std::max(width_, cl_width);
 
-            input_t mask = cl.pos_vars | cl.neg_vars;
+            input_t mask = lsp | lsn;
             input_t x = 0;
 
+            // TODO: read/write to truth table in 64-bits chunks 
             for (uint64_t i = 0; i < longshot::pow2(num_vars_ - cl_width); i++)
             {
                 if (type_ == Type::Disjunctive)
                 {
-                    input_t y = (x | cl.pos_vars) & ~cl.neg_vars;
+                    input_t y = (x | lsp) & ~lsn;
                     truth_table_.set(y);
                 }
                 else
                 {
-                    input_t y = (x | cl.neg_vars) & ~cl.pos_vars;
+                    input_t y = (x | lsn) & ~lsp;
                     truth_table_.reset(y);
                 }
 
-                // magic bit manipulation: enumerate all inputs that satisfies the clause
+                // magic bit manipulation: enumerate all inputs that satisfies the Literals
                 input_t z = (mask | x) + 1;
                 z = z & -z;
                 x = (~(z - 1) & x) | z;

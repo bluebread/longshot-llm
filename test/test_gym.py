@@ -4,13 +4,11 @@ import numpy as np
 
 import longshot.gym
 from longshot.circuit import FormulaType, Literals
-from longshot.gym.envs import Character, CharacterType
 
 def test_gym_registration():
     # Check if the environment is registered
     env = gym.make("longshot/avgQ-d2-formula-v0", 
         n=3, 
-        granularity="clause/term", 
         ftype=FormulaType.Conjunctive,
         )
     
@@ -18,12 +16,10 @@ def test_gym_registration():
 
 @pytest.mark.repeat(3)
 @pytest.mark.parametrize("n", [2,3,4,5])
-@pytest.mark.parametrize("granularity", ["character", "clause/term"])
-def test_random_loop(n, granularity):
+def test_random_loop(n):
     # Check if the environment can be reset and stepped through
     env = gym.make("longshot/avgQ-d2-formula-v0", 
         n=n, 
-        granularity=granularity,
         ftype=FormulaType.Conjunctive
         )
         
@@ -35,100 +31,180 @@ def test_random_loop(n, granularity):
         action = env.action_space.sample()  # agent policy that uses the observation and info
         # print(str(Character(CharacterType(action[0].item()), action[1].item())))
         observation, reward, terminated, truncated, info = env.step(action)
-        print(observation, reward, terminated, truncated, info)
+        # print(observation, reward, terminated, truncated, info)
 
         episode_over = terminated or truncated
 
     env.close()
 
-def test_character_mode_1():
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
-        n=3, 
-        granularity="character",
-        ftype=FormulaType.Conjunctive,
-        )
-        
-    env.reset()
-    
-    a = Character(CharacterType.VAR, 1) # x1
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.NVAR, 0) # ¬x0
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.EOS, 0) # EOS
-    assert env.step(a) == (np.array([1.5], dtype=np.float32), 1.5, True, False, {})
-
-    env.close()
-
-def test_character_mode_2():
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
-        n=3, 
-        granularity="character",
-        ftype=FormulaType.Conjunctive,
-        )
-        
-    env.reset()
-    
-    a = Character(CharacterType.EOC, 0) # x1
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {'redundant': 1})
-    a = Character(CharacterType.NEG, 0) # ¬
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.NEG, 0) # ¬
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.NVAR, 1) # ¬x1
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.NEG, 0) # ¬
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.VAR, 0) # x0
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.NEG, 0) # ¬
-    assert env.step(a) == (np.array([0.], dtype=np.float32), 0.0, False, False, {})
-    a = Character(CharacterType.EOS, 0) # EOS
-    # the 2-nd, 3-rd, and 7-th characters are redundant
-    assert env.step(a) == (np.array([1.5], dtype=np.float32), 1.5, True, False, {'redundant': 3})
-
-    env.close()
     
 def test_clauseterm_mode_1():
     env = gym.make("longshot/avgQ-d2-formula-v0", 
         n=3, 
-        granularity="clause/term",
         ftype=FormulaType.Disjunctive,
         )
         
     env.reset()
     
     a = Literals([0,1], [0]) # x0.¬x0.x1
-    assert env.step(a) == (np.array([0.0], dtype=np.float32), 0.0, False, False, {"redundant": 1})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': True, 'avgQ': 0.0}
+    ]
+    
     a = Literals([0,1], []) # x0.x1
-    assert env.step(a) == (np.array([1.5], dtype=np.float32), 1.5, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        1.5, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.5}
+    ]
+    
     a = Literals([2], [0]) # ¬x0.x2
-    assert env.step(a) == (np.array([2.], dtype=np.float32), 0.5, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.5, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.0}
+    ]
+    
     a = Literals([2], [0]) # ¬x0.x2
-    assert env.step(a) == (np.array([2.], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.0}
+    ]
+    
     a = Literals([0,1], [2]) # x0.x1.¬x2
-    assert env.step(a) == (np.array([2.], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.0}
+    ]
+    
     a = Literals([], [1,2]) # ¬x1.¬x2
-    assert env.step(a) == (np.array([2.5], dtype=np.float32), 0.5, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.5, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.5}
+    ]
+    
     a = Literals([], [1,2]) # ¬x1.¬x2
-    assert env.step(a) == (np.array([2.5], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.5}
+    ]
+    
     a = Literals([], [0,1,2]) # ¬x0.¬x1.¬x2
-    assert env.step(a) == (np.array([2.5], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.5}
+    ]
+    
     a = Literals([0], [1,2]) # x0.¬x1.¬x2
-    assert env.step(a) == (np.array([2.5], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.5}
+    ]
+    
     a = Literals([], [0,2]) # ¬x0.¬x2
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), -0.75, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8))
+    assert others == [
+        -0.75, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([], [0]) # ¬x0
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([1], [0]) # ¬x0.x1
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([0,1,2], []) # x0.x1.x2
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([0,1], []) # x0.x1
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([0], [1,2]) # x0.¬x1.¬x2
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), 0.0, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1], dtype=np.int8))
+    assert others == [
+        0.0, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([2], []) # x2
-    assert env.step(a) == (np.array([0.], dtype=np.float32), -1.75, True, True, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1], dtype=np.int8))
+    assert others == [
+        -1.75, 
+        True, 
+        True, 
+        {'redundant': False, 'avgQ': 0.0}
+    ]
     
     env.close()
 
@@ -136,21 +212,50 @@ def test_clauseterm_mode_1():
 def test_clauseterm_mode_2():
     env = gym.make("longshot/avgQ-d2-formula-v0", 
         n=3, 
-        granularity="clause/term",
         ftype=FormulaType.Disjunctive,
         )
         
     env.reset()
     
     a = Literals([0], [1,2]) # x0.¬x1.¬x2
-    assert env.step(a) == (np.array([1.75], dtype=np.float32), 1.75, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8) )
+    assert others == [
+        1.75, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.75}
+    ]
+    
     a = Literals([1], [0,2]) # ¬x0.x1.¬x2
-    assert env.step(a) == (np.array([2.], dtype=np.float32), 0.25, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8) )
+    assert others == [
+        0.25, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.0}
+    ]
+    
     a = Literals([2], [0,1]) # ¬x0.¬x1.x2
-    # print(env.step(a))
-    assert env.step(a) == (np.array([2.75], dtype=np.float32), 0.75, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8) )
+    assert others == [
+        0.75, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.75}
+    ]
+    
     a = Literals([0,1,2], []) # x0.x1.x2
-    assert env.step(a) == (np.array([3.], dtype=np.float32), 0.25, False, False, {})
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(obs, np.array([1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8) )
+    assert others == [
+        0.25, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 3.0}
+    ]
     
     env.close()
 
@@ -158,32 +263,145 @@ def test_clauseterm_mode_2():
 def test_clauseterm_mode_3():
     env = gym.make("longshot/avgQ-d2-formula-v0", 
         n=4, 
-        granularity="clause/term",
         ftype=FormulaType.Disjunctive,
         )
         
     env.reset()
     
-    a = Literals([0], [1,2,3]) # x0.¬x1.¬x2
-    assert env.step(a) == (np.array([1.875], dtype=np.float32), 1.875, False, False, {})
-    a = Literals([1], [0,2,3]) # ¬x0.x1.¬x2
-    assert env.step(a) == (np.array([2.], dtype=np.float32), 0.125, False, False, {})
-    a = Literals([2], [0,1,3]) # ¬x0.¬x1.x2
-    assert env.step(a) == (np.array([2.375], dtype=np.float32), 0.375, False, False, {})
-    a = Literals([0,1,2], [3]) # x0.x1.x2
-    assert env.step(a) == (np.array([2.5], dtype=np.float32), 0.125, False, False, {})
-    a = Literals([3], [0,1,2]) # x0.¬x1.¬x2
-    assert env.step(a) == (np.array([3.375], dtype=np.float32), 0.875, False, False, {})
-    a = Literals([0,1,3], [2]) # ¬x0.x1.¬x2
-    assert env.step(a) == (np.array([3.5], dtype=np.float32), 0.125, False, False, {})
-    a = Literals([0,2,3], [1]) # ¬x0.¬x1.x2
-    assert env.step(a) == (np.array([3.875], dtype=np.float32), 0.375, False, False, {})
-    a = Literals([1,2,3], [0]) # x0.x1.x2
-    assert env.step(a) == (np.array([4.], dtype=np.float32), 0.125, False, False, {})
+    a = Literals([0], [1,2,3])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        1.875, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 1.875}
+    ]
+    
+    a = Literals([1], [0,2,3])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.125, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.0}
+    ]
+    
+    a = Literals([2], [0,1,3])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.375, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.375}
+    ]
+    
+    a = Literals([0,1,2], [3])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.125, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 2.5}
+    ]
+    
+    a = Literals([3], [0,1,2])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.875, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 3.375}
+    ]
+    
+    a = Literals([0,1,3], [2])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.125, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 3.5}
+    ]
+    
+    a = Literals([0,2,3], [1])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.375, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 3.875}
+    ]
+    
+    a = Literals([1,2,3], [0])
+    obs, *others = env.step(a)
+    np.testing.assert_array_equal(
+        obs, 
+        np.array([0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int8)
+    )
+    assert others == [
+        0.125, 
+        False, 
+        False, 
+        {'redundant': False, 'avgQ': 4.0}
+    ]
     
     env.close()
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    # test_random_loop(3, "clause/term")
-    test_clauseterm_mode_3()
+    pytest.main([__file__])
+    # test_gym_registration()
+    # test_clauseterm_mode_1()
+    # test_clauseterm_mode_2()
+    # test_clauseterm_mode_3()
+    

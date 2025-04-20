@@ -4,5 +4,5 @@ from .wrapper import (
     Literals,
     Clause,
     Term,
-    NormalFormFormula
+    NormalFormFormula,
     )

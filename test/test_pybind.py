@@ -1,3 +1,6 @@
+import pytest
+import sys
+
 from longshot.circuit import (
     Literals,
     Clause,
@@ -5,6 +8,7 @@ from longshot.circuit import (
     NormalFormFormula, 
     FormulaType
     )
+from longshot.circuit import CNF, DNF
 
 def test_literals():
     c1 = Literals(pos=0b0101, neg=0b1010)
@@ -17,10 +21,11 @@ def test_literals():
 
 def test_cnf():
     # Test with a conjunctive normal form (CNF)
-    cnf = NormalFormFormula(4, ftype=FormulaType.Conjunctive)
-    cnf.add(Literals(pos=0b0101, neg=0b1010))
-    cnf.add(Literals(pos=[3], neg=[0, 1]))
+    cnf = CNF(4)
+    cnf.add(Clause(pos=0b0101, neg=0b1010))
+    cnf.add(Clause(pos=[3], neg=[0, 1]))
     
+    print(cnf)
     assert str(cnf) == "(x0∨¬x1∨x2∨¬x3)∧(¬x0∨¬x1∨x3)"
     
     assert cnf.eval(0b0000) == True
@@ -31,9 +36,9 @@ def test_cnf():
     
 def test_dnf():
     # Test with a disjunctive normal form (DNF)
-    dnf = NormalFormFormula(5, ftype=FormulaType.Disjunctive)
-    dnf.add(Literals(pos=0b10101, neg=0b1010))
-    dnf.add(Literals(pos=[3], neg=[0, 1]))
+    dnf = DNF(5)
+    dnf.add(Term(pos=0b10101, neg=0b1010))
+    dnf.add(Term(pos=[3], neg=[0, 1]))
     
     assert str(dnf) == "(x0∧¬x1∧x2∧¬x3∧x4)∨(¬x0∧¬x1∧x3)"
     
@@ -45,6 +50,7 @@ def test_dnf():
     
     
 if __name__ == "__main__":
-    test_literals()
-    test_cnf()
-    test_dnf()
+    pytest.main([__file__])
+    # test_literals()
+    # test_cnf()
+    # test_dnf()

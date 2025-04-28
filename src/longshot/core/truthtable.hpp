@@ -12,7 +12,7 @@
 
 namespace longshot 
 {
-    class TruthTable
+    class SimpleTruthTable
     {
     private:
         int num_vars_;
@@ -20,11 +20,11 @@ namespace longshot
         uint64_t *chunks_;
 
     public:
-        TruthTable(int n) : num_vars_(n), chunks_(nullptr)
+        SimpleTruthTable(int n) : num_vars_(n), chunks_(nullptr)
         {
             if (n < 0 || n >= 64)
             {
-                throw std::invalid_argument("TruthTable: n must be in [0, 63]");
+                throw std::invalid_argument("SimpleTruthTable: n must be in [0, 63]");
             }
             capacity_ = (longshot::pow2(n) + 63) / 64 * sizeof(uint64_t);
             chunks_ = (uint64_t *)malloc(capacity_);
@@ -34,8 +34,9 @@ namespace longshot
             }
             memset(chunks_, 0, capacity_);
         }
-        TruthTable(const TruthTable &other) : chunks_(nullptr)
+        SimpleTruthTable(const SimpleTruthTable &other) : chunks_(nullptr)
         {
+            num_vars_ = other.num_vars_;
             capacity_ = other.capacity_;
             chunks_ = (uint64_t *)malloc(capacity_);
             if (chunks_ == nullptr)
@@ -44,7 +45,7 @@ namespace longshot
             }
             memcpy(chunks_, other.chunks_, capacity_);
         }
-        TruthTable(TruthTable &&other) : chunks_(nullptr)
+        SimpleTruthTable(SimpleTruthTable &&other) : chunks_(nullptr)
         {
             capacity_ = other.capacity_;
             chunks_ = other.chunks_;
@@ -52,7 +53,7 @@ namespace longshot
             other.capacity_ = 0;
         }
 
-        ~TruthTable()
+        ~SimpleTruthTable()
         {
             free(chunks_);
         }
@@ -61,7 +62,7 @@ namespace longshot
         {
             memset(chunks_, 0xFF, capacity_);
         }
-        void set(long long int x)
+        void set(uint32_t x)
         {
             chunks_[x / 64] |= (1ull << (x % 64));
         }
@@ -69,14 +70,61 @@ namespace longshot
         {
             memset(chunks_, 0, capacity_);
         }
-        void reset(long long int x)
+        void reset(uint32_t x)
         {
             chunks_[x / 64] &= ~(1ull << (x % 64));
         }
-        bool operator[](long long int x) const
+        bool operator[](uint32_t x) const
         {
             return (chunks_[x / 64] >> (x % 64)) & 1;
         }
+    };
+
+    class CountingTruthTable
+    {
+    private:
+        int num_vars_;
+        uint32_t *chunks_;
+    public:
+        CountingTruthTable(int n) : num_vars_(n), chunks_(nullptr)
+        {
+            if (n < 0 || n >= 32)
+            {
+                throw std::invalid_argument("CountingTruthTable: n must be in [0, 31]");
+            }
+            chunks_ = (uint32_t *)malloc(sizeof(uint32_t) * longshot::pow2(n));
+            if (chunks_ == nullptr)
+            {
+                throw std::bad_alloc();
+            }
+            memset(chunks_, 0, sizeof(uint32_t) * longshot::pow2(n));
+        }
+        ~CountingTruthTable()
+        {
+            free(chunks_);
+        }
+
+        void reset()
+        {
+            memset(chunks_, 0, sizeof(uint32_t) * longshot::pow2(num_vars_));
+        }
+        void inc(uint32_t x)
+        {
+            chunks_[x] += 1;
+        }
+        void dec(uint32_t x)
+        {
+            chunks_[x] -= 1;
+        }
+        bool operator[](uint32_t x) const
+        {
+            return chunks_[x] > 0;
+        }
+        uint32_t count(uint32_t x) const
+        {
+            return chunks_[x];
+        }
+
     };
 }
 

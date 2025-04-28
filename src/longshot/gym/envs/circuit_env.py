@@ -15,8 +15,6 @@ class AvgQ_D2_FormulaEnv(gym.Env):
     def __init__(
         self,
         n: int,
-        max_size: int | None = None,
-        max_width: int | None = None,
         stride: int = 1,
         init_state: NormalFormFormula | None = None,
         ftype: FormulaType | None = None,
@@ -29,10 +27,6 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         # Check if types of the arguments are valid
         if not isinstance(n, int):
             raise LongshotError(f"Expected `n` to be int, got {type(n).__name__}")
-        if max_size is not None and not isinstance(max_size, int):
-            raise LongshotError(f"Expected `max_size` to be int or None, got {type(max_size).__name__}")
-        if max_width is not None and not isinstance(max_width, int):
-            raise LongshotError(f"Expected `max_width` to be int or None, got {type(max_width).__name__}")
         if not isinstance(stride, int):
             raise LongshotError(f"Expected `stride` to be int, got {type(stride).__name__}")
         if init_state is not None and not isinstance(init_state, NormalFormFormula):
@@ -48,9 +42,6 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             raise NotImplementedError("Rendering is not implemented yet.")
         
         self.num_vars = n
-        self.max_size = max_size
-        
-        self.max_width = max_width
         self.stride = stride
         self.render_mode = render_mode
         self.init_state = init_state
@@ -136,11 +127,6 @@ class AvgQ_D2_FormulaEnv(gym.Env):
                 if self._cur_avgQ <= 0.0:
                     self._terminated = truncated = True
             
-        if self.max_size is not None and self._formula.size >= self.max_size:
-            self._terminated = True
-        if self.max_width is not None and self._formula.width > self.max_width:
-            self._terminated = truncated = True
-        
         obs = self._clauses_set.copy() if not self.no_obs else None
         reward = self._cur_avgQ - self._prev_avgQ
         info['avgQ'] = self._cur_avgQ

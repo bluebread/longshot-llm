@@ -18,7 +18,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         stride: int = 1,
         init_state: NormalFormFormula | None = None,
         ftype: FormulaType | None = None,
-        no_obs: bool = False,
+        mono: bool = False,
         render_mode: str | None = None ,    
     ):
         """
@@ -46,38 +46,37 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         self.render_mode = render_mode
         self.init_state = init_state
         self.ftype = ftype if self.init_state is None else self.init_state.ftype
-        self.no_obs = no_obs
+        self.mono = mono
         
-        self.observation_space = spaces.MultiBinary(int(3**n - 1))
+        if self.mono != self.init_state.is_mono:
+            raise LongshotError(f"`init_state` is {self.init_state.is_mono} but `mono` is {self.mono}")
+        
         self.action_space = spaces.MultiDiscrete([3] * n, dtype=np.int8)
+        self.observation_space = spaces.Sequence(self.action_space)
         
         self._terminated = True
     
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
-        if self.init_state is not None:
-            self._formula = self.init_state
-            self._cur_avgQ = self._formula.avgQ()
-            self._prev_avgQ = 0.
-        else:
-            self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=self.ftype)
-            self._cur_avgQ = self._prev_avgQ = 0.
-            
         self._step_count = 0
-        self._char_buffer = []
         self._terminated = False
         self._has_new_literals = False
         self._closed = False
-        self._clauses_set = np.zeros(3**self.num_vars - 1, dtype=np.int8) if not self.no_obs else None
         
-        # TODO: initialize `literals_set` if `init_state` is not None 
-        if self.init_state is not None:
-            raise NotImplementedError("Initializing `_clauses_set` with `init_state` is not implemented yet.")
-        
+        if self.init_state is not None and isinstance(self.init_state, NormalFormFormula):
+            self._formula = self.init_state
+            self._cur_avgQ = self._formula.avgQ()
+            self._prev_avgQ = 0.0
+            self._clause_seq = [ls.vectorize(self._formula.num_vars) for ls in self._formula]
+        else:
+            self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=self.ftype, mono=self.mono)
+            self._cur_avgQ = self._prev_avgQ = 0.
+            self._clause_seq = []
+            
         super().reset(seed=seed, options=options)
         self.observation_space.seed(seed=seed)
         self.action_space.seed(seed=seed)
         
-        return self._clauses_set, {}
+        return tuple(self._formula), {}
     
     def step(
         self, 
@@ -110,11 +109,16 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             new_literals = action
 
         if not new_literals.is_constant(): # TODO: and formula's truth table is unchanged
-            self._formula.add(new_literals)
+            if not self.mono and new_literals in self._formula:
+                self._formula.delete(new_literals)
+            else:
+                self._formula.add(new_literals) 
             self._has_new_literals = True
             
             if not self.no_obs:
-                self._clauses_set[self._encode_literals(new_literals)] = 1
+                cl_idx = self._encode_literals(new_literals)
+                cl_v = 1 if self.mono else 1 - self._clauses_set[cl_idx]
+                self._clauses_set[cl_idx] = cl_v
         else:
             info['redundant'] = True
         
@@ -127,7 +131,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
                 if self._cur_avgQ <= 0.0:
                     self._terminated = truncated = True
             
-        obs = self._clauses_set.copy() if not self.no_obs else None
+        obs = tuple(self._formula)
         reward = self._cur_avgQ - self._prev_avgQ
         info['avgQ'] = self._cur_avgQ
 

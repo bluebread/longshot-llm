@@ -1,12 +1,13 @@
 import enum
 from collections.abc import Iterable
 import numpy as np
-import warnings
+from numpy.typing import NDArray
+from typing import Any
+from sortedcontainers import SortedSet
 
 from ..error import LongshotError
 from .._core import (
     _Literals,
-    _BaseBooleanFunction,
     _MonotonicBooleanFunction,
     _CountingBooleanFunction,
 )
@@ -69,7 +70,7 @@ class Literals(_Literals):
         else:
             super().__init__(0, 0)
     
-    def _get_literals_str(self) -> list[str]:
+    def _get_literals_str(self, op='.') -> list[str]:
         """
         Returns the string representation of the literals.
         """
@@ -81,13 +82,54 @@ class Literals(_Literals):
             if (self.neg & (1 << i)) > 0:
                 literals.append(f"¬x{i}")
         
-        return literals
+        return op.join(literals)
     
-    def __str__(self, op='.') -> str:
+    def __str__(self) -> str:
         """
         Returns the string representation of the Clause object.
         """
-        return op.join(self._get_literals_str())
+        return self._get_literals_str(op='.')
+
+    def __hash__(self) -> int:
+        """
+        Returns the hash value of the Literals object.
+        """
+        return hash((self.pos, self.neg))
+
+    def __eq__(self, other: object) -> bool:
+        """
+        Checks if two Literals objects are equal.
+        """
+        if not isinstance(other, Literals):
+            return False
+        return self.pos == other.pos and self.neg == other.neg
+    
+    def __lt__(self, other: object) -> bool:
+        """
+        Checks if this Literals object is less than another.
+        """
+        if not isinstance(other, Literals):
+            raise LongshotError("the argument `other` is not a Literals object.")   
+        return (self.pos, self.neg) < (other.pos, other.neg)
+
+    def vectorize(self, num_vars: int) -> NDArray[np.integer[Any]]:
+        """
+        Returns a vector representation of the Literals object.
+        """
+        if not isinstance(num_vars, int):
+            raise LongshotError("the argument `num_vars` is not an integer.")
+        if num_vars < 0 or num_vars > MAX_NUM_VARS:
+            raise LongshotError(f"the argument `num_vars` should be between 0 and {MAX_NUM_VARS}.")
+        
+        vector = np.array([2] * num_vars, dtype=np.int8)
+        
+        for i in range(num_vars):
+            if (self.pos & (1 << i)) > 0:
+                vector[i] = 0
+            if (self.neg & (1 << i)) > 0:
+                vector[i] = 1
+        
+        return vector
 
 class Clause(Literals):
     """
@@ -97,14 +139,14 @@ class Clause(Literals):
         """
         Returns the string representation of the Clause object.
         """
-        return super().__str__(op='∨')
+        return self._get_literals_str(op='∨')
     
 class Term(Literals):
     def __str__(self) -> str:
         """
         Returns the string representation of the Term object.
         """
-        return super().__str__(op='∧')
+        return self._get_literals_str(op='∧')
 
 class FormulaType(enum.IntEnum):
     """
@@ -133,9 +175,9 @@ class NormalFormFormula:
         self._num_vars = num_vars
         self._ftype = ftype
         self._mono = mono
-        self._literals = []
+        self._literals = SortedSet()
         
-        if mono:
+        if self._mono:
             self._bf = _MonotonicBooleanFunction(num_vars)
         else:
             self._bf = _CountingBooleanFunction(num_vars)
@@ -144,7 +186,43 @@ class NormalFormFormula:
             self._bf.as_cnf()
         if ftype == FormulaType.Disjunctive:
             self._bf.as_dnf()
-            
+    
+    def __contains__(self, ls: Literals | dict) -> bool:
+        """
+        Checks if the formula contains a clause.
+        """
+        if not isinstance(ls, Literals) and not isinstance(ls, dict):
+            raise LongshotError("the argument `clause` is not a Clause or a dictionary.") 
+        
+        if self._ftype == FormulaType.Conjunctive and isinstance(ls, Term):
+            raise LongshotError("the argument `ls` is not a Clause.")
+        if self._ftype == FormulaType.Disjunctive and isinstance(ls, Clause):
+            raise LongshotError("the argument `ls` is not a Term.")
+        
+        if isinstance(ls, dict):
+            if "pos" not in ls or "neg" not in ls:
+                raise LongshotError("the dictionary `clause` should contain 'pos' and 'neg' keys.")
+            ls = Literals(d_literals=ls)
+        
+        return ls in self._literals        
+    
+    def __iter__(self) -> Iterable[Literals]:
+        """
+        Returns an iterator over the literals in the formula.
+        """
+        return iter(self._literals)
+    
+    def __tuple__(self) -> tuple[Literals, ...]:
+        """
+        Returns a tuple representation of the formula.
+        """
+        return tuple(self._literals)
+    
+    def __list__(self) -> list[Literals]:
+        """
+        Returns a list representation of the formula.
+        """
+        return list(self._literals)
     
     def add(self, ls: Literals | dict) -> None:
         """
@@ -168,7 +246,34 @@ class NormalFormFormula:
         if self._ftype == FormulaType.Disjunctive:
             self._bf.add_term(ls)
         
-        self._literals.append(ls)
+        self._literals.add(ls)
+    
+    def delete(self, ls: Literals | dict) -> None:
+        """
+        Deletes a clause from the formula.
+        """
+        if self._mono:
+            raise LongshotError("the formula is monotonic.")
+        
+        if not isinstance(ls, Literals) and not isinstance(ls, dict):
+            raise LongshotError("the argument `clause` is not a Clause or a dictionary.") 
+        
+        if self._ftype == FormulaType.Conjunctive and isinstance(ls, Term):
+            raise LongshotError("the argument `ls` is not a Clause.")
+        if self._ftype == FormulaType.Disjunctive and isinstance(ls, Clause):
+            raise LongshotError("the argument `ls` is not a Term.")
+        
+        if isinstance(ls, dict):
+            if "pos" not in ls or "neg" not in ls:
+                raise LongshotError("the dictionary `clause` should contain 'pos' and 'neg' keys.")
+            ls = Literals(d_literals=ls)
+        
+        if self._ftype == FormulaType.Conjunctive:
+            self._bf.delete_clause(ls)
+        if self._ftype == FormulaType.Disjunctive:
+            self._bf.delete_term(ls)
+        
+        self._literals.discard(ls)
     
     def eval(self, x: int | tuple[int | bool, ...]) -> bool:
         """
@@ -212,6 +317,27 @@ class NormalFormFormula:
         lstr = [f"({lop.join(ls._get_literals_str())})" for ls in ls_list]
         
         return fop.join(lstr)
+        
+    @property
+    def is_mono(self) -> bool:
+        """
+        Returns True if the formula is monotonic, False otherwise.
+        """
+        return self._mono
+        
+    @property
+    def num_vars(self) -> int:
+        """
+        Returns the number of variables in the formula.
+        """
+        return self._num_vars
+        
+    @property
+    def ftype(self) -> FormulaType:
+        """
+        Returns the type of the formula.
+        """
+        return self._ftype
         
 class ConjunctiveNormalFormFormula(NormalFormFormula):
     """

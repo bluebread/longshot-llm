@@ -9,91 +9,94 @@ from typing import Any
 from ...error import LongshotError
 from ...circuit import Literals, FormulaType, NormalFormFormula
 
+
 class AvgQ_D2_FormulaEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
-    
+    metadata = {'render_modes': []}
+
     def __init__(
         self,
         n: int,
-        stride: int = 1,
-        init_state: NormalFormFormula | None = None,
         ftype: FormulaType | None = None,
         mono: bool = False,
+        init_state: NormalFormFormula | None = None,
         render_mode: str | None = None ,    
     ):
         """
         Initialize the environment with the given parameters.
         """
-        # Check if types of the arguments are valid
-        if not isinstance(n, int):
-            raise LongshotError(f"Expected `n` to be int, got {type(n).__name__}")
-        if not isinstance(stride, int):
-            raise LongshotError(f"Expected `stride` to be int, got {type(stride).__name__}")
-        if init_state is not None and not isinstance(init_state, NormalFormFormula):
-            raise LongshotError(f"Expected `init_state` to be NormalFormFormula or None, got {type(init_state).__name__}")
-        if render_mode is not None and not isinstance(render_mode, str):
-            raise LongshotError(f"Expected `render_mode` to be str or None, got {type(render_mode).__name__}")
-        if init_state is None and ftype is None:
-            raise LongshotError("Either `init_state` or `ftype` should be provided.")
-        
         super().__init__()
         
-        if render_mode is not None:
-            raise NotImplementedError("Rendering is not implemented yet.")
-        
-        self.num_vars = n
-        self.stride = stride
-        self.render_mode = render_mode
-        self.init_state = init_state
-        self.ftype = ftype if self.init_state is None else self.init_state.ftype
-        self.mono = mono
-        
-        if self.mono != self.init_state.is_mono:
-            raise LongshotError(f"`init_state` is {self.init_state.is_mono} but `mono` is {self.mono}")
+        # Check if types of the arguments are valid
+        if init_state is None:
+            if not isinstance(n, int):
+                raise LongshotError(f"Expected `n` to be int, got {type(n).__name__}")
+            if render_mode is not None and not isinstance(render_mode, str):
+                raise LongshotError(f"Expected `render_mode` to be str or None, got {type(render_mode).__name__}")
+            if init_state is None and ftype is None:
+                raise LongshotError("Either `init_state` or `ftype` should be provided.")
+            
+            self.num_vars = n
+            self.ftype = ftype
+            self.mono = mono
+            self.init_state = None
+            
+        else:
+            if not isinstance(init_state, NormalFormFormula):
+                raise LongshotError(f"Expected `init_state` to be NormalFormFormula or None, got {type(init_state).__name__}")
+            
+            self.num_vars = init_state.num_vars
+            self.ftype = init_state.ftype
+            self.mono = init_state.is_mono
+            self.init_state = init_state
         
         self.action_space = spaces.MultiDiscrete([3] * n, dtype=np.int8)
         self.observation_space = spaces.Sequence(self.action_space)
+        self.render_mode = render_mode
         
         self._terminated = True
-    
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
-        self._step_count = 0
-        self._terminated = False
-        self._has_new_literals = False
         self._closed = False
+        self._formula = None
+        self._literals_seq = None
+        
+    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
+        """
+        Reset the environment to an initial state.
+        """
+        self._terminated = False
+        self._step_count = 0
         
         if self.init_state is not None and isinstance(self.init_state, NormalFormFormula):
             self._formula = self.init_state
             self._cur_avgQ = self._formula.avgQ()
             self._prev_avgQ = 0.0
-            self._clause_seq = [ls.vectorize(self._formula.num_vars) for ls in self._formula]
+            self._literals_seq = [ls.vectorize(self._formula.num_vars) for ls in self._formula]
         else:
             self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=self.ftype, mono=self.mono)
             self._cur_avgQ = self._prev_avgQ = 0.
-            self._clause_seq = []
+            self._literals_seq = []
             
         super().reset(seed=seed, options=options)
         self.observation_space.seed(seed=seed)
         self.action_space.seed(seed=seed)
         
-        return tuple(self._formula), {}
+        return tuple(self._literals_seq), {}
     
-    def step(
-        self, 
-        action: Literals | NDArray[np.integer[Any]]
-    ) -> tuple[float, float, bool, bool, dict[str, Any]]:
+    def step(self, action: Literals | NDArray[np.integer[Any]]) -> tuple[float, float, bool, bool, dict[str, Any]]:
+        """
+        Take a step in the environment with the given action.
+        """
         if self._terminated:
             raise LongshotError("Environment has already terminated.")
         if self._closed:
             raise LongshotError("Environment has been closed.")
+        if not isinstance(action, (Literals, np.ndarray)):
+            raise LongshotError(f"Expected action to be Literals or np.ndarray, got {type(action).__name__}")
         
-        truncated = False
-        info = {'redundant': False}
+        info = {'adding': False, 'removing': False}
+        ls = None
         self._prev_avgQ = self._cur_avgQ
         self._step_count += 1
         
-        if not isinstance(action, (Literals, np.ndarray)):
-            raise LongshotError(f"Expected action to be Clause, got {type(action).__name__}")
         if isinstance(action, np.ndarray):
             if action.shape != (self.num_vars,):
                 raise LongshotError(f"Expected action to be of shape ({self.num_vars},), got {action.shape}")
@@ -102,61 +105,38 @@ class AvgQ_D2_FormulaEnv(gym.Env):
 
             if len(pvs) + len(nvs) == 0: # <End of Sequence>
                 self._terminated = True
-                return self._cur_avgQ, 0.0, self._terminated, True, info
+                info['avgQ'] = self._cur_avgQ
+                return tuple(self._literals_seq), 0.0, self._terminated, False, info
             else:
-                new_literals = Literals(pos=pvs, neg=nvs)
+                ls = Literals(pos=pvs, neg=nvs)
         else:
-            new_literals = action
-
-        if not new_literals.is_constant(): # TODO: and formula's truth table is unchanged
-            if not self.mono and new_literals in self._formula:
-                self._formula.delete(new_literals)
-            else:
-                self._formula.add(new_literals) 
-            self._has_new_literals = True
+            ls = action
             
-            if not self.no_obs:
-                cl_idx = self._encode_literals(new_literals)
-                cl_v = 1 if self.mono else 1 - self._clauses_set[cl_idx]
-                self._clauses_set[cl_idx] = cl_v
-        else:
-            info['redundant'] = True
-        
-        if self._step_count >= self.stride or self._terminated:
-            if self._has_new_literals or self._terminated:
-                self._cur_avgQ = self._formula.avgQ()
-                self._step_count = 0
-                self._has_new_literals = False
+        if not ls.is_constant: # TODO: and formula's truth table is unchanged
+            if not self.mono and ls in self._formula:
+                info['removing'] = True
+                self._formula.delete(ls)
+            else:
+                info['adding'] = True
+                self._formula.add(ls)
                 
-                if self._cur_avgQ <= 0.0:
-                    self._terminated = truncated = True
+            self._literals_seq = [ls.vectorize(self._formula.num_vars) for ls in self._formula]
+            self._cur_avgQ = self._formula.avgQ()
             
-        obs = tuple(self._formula)
+        obs = tuple(self._literals_seq)
         reward = self._cur_avgQ - self._prev_avgQ
         info['avgQ'] = self._cur_avgQ
-
-        return obs, reward, self._terminated, truncated, info
-
+        
+        return obs, reward, self._terminated, False, info
+    
     def render(self) -> None:
-        pass
-
+        raise NotImplementedError("Rendering is not implemented yet.")
+    
     def close(self) -> None:
         self._closed = True
-    
-    def _encode_literals(self, ls: Literals) -> int:
-        """
-        Encode the literals into a integer.
-        """
-        code = 0
+        self._terminated = True
         
-        for i in range(self.num_vars - 1, -1, -1):
-            code *= 3
-            
-            if (ls.pos & (1 << i)) > 0:
-                code += 0
-            elif (ls.neg & (1 << i)) > 0:
-                code += 1
-            else:
-                code += 2
+        del self._formula
+        del self._literals_seq
         
-        return code
+        

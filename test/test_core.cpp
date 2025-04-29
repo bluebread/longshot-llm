@@ -13,7 +13,7 @@ void test_bool() {
         MonotonicBooleanFunction f(3);
         TESTCASE(3, f.num_vars());
 
-        f.reset();
+        f.as_dnf();
         TESTCASE(0b000, f.eval(0b000));
         TESTCASE(0b000, f.eval(0b001));
         TESTCASE(0b000, f.eval(0b010));
@@ -79,7 +79,7 @@ void test_bool() {
         CountingBooleanFunction f(3);
         TESTCASE(3, f.num_vars());
         
-        f.set();
+        f.as_cnf();
         TESTCASE(1, f.eval(0b000));
         TESTCASE(1, f.eval(0b001));
         TESTCASE(1, f.eval(0b010));

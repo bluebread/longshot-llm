@@ -26,7 +26,7 @@ def test_cnf():
     cnf.add(Clause(pos=[3], neg=[0, 1]))
     
     print(cnf)
-    assert str(cnf) == "(x0∨¬x1∨x2∨¬x3)∧(¬x0∨¬x1∨x3)"
+    assert str(cnf) == "(x0∨¬x1∨x2∨¬x3)∧(¬x0∨¬x1∨x3)" or str(cnf) == "(¬x0∨¬x1∨x3)∧(x0∨¬x1∨x2∨¬x3)"
     
     assert cnf.eval(0b0000) == True
     assert cnf.eval(0b1010) == False
@@ -40,7 +40,7 @@ def test_dnf():
     dnf.add(Term(pos=0b10101, neg=0b1010))
     dnf.add(Term(pos=[3], neg=[0, 1]))
     
-    assert str(dnf) == "(x0∧¬x1∧x2∧¬x3∧x4)∨(¬x0∧¬x1∧x3)"
+    assert str(dnf) == "(x0∧¬x1∧x2∧¬x3∧x4)∨(¬x0∧¬x1∧x3)" or str(dnf) == "(¬x0∧¬x1∧x3)∨(x0∧¬x1∧x2∧¬x3∧x4)"
     
     assert dnf.eval(0b10101) == True
     assert dnf.eval(0b00000) == False

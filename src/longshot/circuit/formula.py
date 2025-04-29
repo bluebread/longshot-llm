@@ -70,7 +70,7 @@ class Literals(_Literals):
         else:
             super().__init__(0, 0)
     
-    def _get_literals_str(self, op='.') -> list[str]:
+    def _get_literals_str(self) -> list[str]:
         """
         Returns the string representation of the literals.
         """
@@ -82,13 +82,13 @@ class Literals(_Literals):
             if (self.neg & (1 << i)) > 0:
                 literals.append(f"¬x{i}")
         
-        return op.join(literals)
+        return literals
     
     def __str__(self) -> str:
         """
         Returns the string representation of the Clause object.
         """
-        return self._get_literals_str(op='.')
+        return '.'.join(self._get_literals_str())
 
     def __hash__(self) -> int:
         """
@@ -139,14 +139,14 @@ class Clause(Literals):
         """
         Returns the string representation of the Clause object.
         """
-        return self._get_literals_str(op='∨')
+        return '∨'.join(self._get_literals_str())
     
 class Term(Literals):
     def __str__(self) -> str:
         """
         Returns the string representation of the Term object.
         """
-        return self._get_literals_str(op='∧')
+        return '∧'.join(self._get_literals_str())
 
 class FormulaType(enum.IntEnum):
     """
@@ -171,6 +171,8 @@ class NormalFormFormula:
             raise LongshotError(f"the argument `num_vars` should be between 0 and {MAX_NUM_VARS}.")
         if not isinstance(ftype, FormulaType):
             raise LongshotError("the argument `ftype` is not a FormulaType.")
+        if not isinstance(mono, bool):
+            raise LongshotError("the argument `mono` is not a boolean.")
         
         self._num_vars = num_vars
         self._ftype = ftype
@@ -186,6 +188,22 @@ class NormalFormFormula:
             self._bf.as_cnf()
         if ftype == FormulaType.Disjunctive:
             self._bf.as_dnf()
+    
+    def copy(self):
+        """
+        Returns a copy of the formula.
+        """
+        # TODO: optimize the performance of the copy method
+        cpy = NormalFormFormula(self._num_vars, self._ftype, self._mono)
+        
+        cpy._literals = self._literals.copy()
+        
+        if self._mono:
+            cpy._bf = _MonotonicBooleanFunction(self._bf)
+        else:
+            cpy._bf = _CountingBooleanFunction(self._bf)
+        
+        return cpy
     
     def __contains__(self, ls: Literals | dict) -> bool:
         """
@@ -269,9 +287,9 @@ class NormalFormFormula:
             ls = Literals(d_literals=ls)
         
         if self._ftype == FormulaType.Conjunctive:
-            self._bf.delete_clause(ls)
+            self._bf.del_clause(ls)
         if self._ftype == FormulaType.Disjunctive:
-            self._bf.delete_term(ls)
+            self._bf.del_term(ls)
         
         self._literals.discard(ls)
     
@@ -343,12 +361,12 @@ class ConjunctiveNormalFormFormula(NormalFormFormula):
     """
     A class representing a conjunctive normal form formula.
     """
-    def __init__(self, num_vars: int):
-        super().__init__(num_vars, FormulaType.Conjunctive)
+    def __init__(self, num_vars: int, mono: bool = False):
+        super().__init__(num_vars, ftype=FormulaType.Conjunctive, mono=mono)
 
 class DisjunctiveNormalFormFormula(NormalFormFormula):
     """
     A class representing a disjunctive normal form formula.
     """
-    def __init__(self, num_vars: int):
-        super().__init__(num_vars, FormulaType.Disjunctive)
+    def __init__(self, num_vars: int, mono: bool = False):
+        super().__init__(num_vars, ftype=FormulaType.Disjunctive, mono=mono)

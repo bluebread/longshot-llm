@@ -244,3 +244,4 @@ dkms.conf
 
 # Custom
 rl/*
+*.txt

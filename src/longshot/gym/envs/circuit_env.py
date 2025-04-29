@@ -69,17 +69,17 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             self._formula = self.init_state
             self._cur_avgQ = self._formula.avgQ()
             self._prev_avgQ = 0.0
-            self._literals_seq = [ls.vectorize(self._formula.num_vars) for ls in self._formula]
+            self._literals_seq = tuple(ls.vectorize(self._formula.num_vars) for ls in self._formula)
         else:
             self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=self.ftype, mono=self.mono)
             self._cur_avgQ = self._prev_avgQ = 0.
-            self._literals_seq = []
+            self._literals_seq = tuple()
             
         super().reset(seed=seed, options=options)
         self.observation_space.seed(seed=seed)
         self.action_space.seed(seed=seed)
         
-        return tuple(self._literals_seq), {}
+        return self._literals_seq, {}
     
     def step(self, action: Literals | NDArray[np.integer[Any]]) -> tuple[float, float, bool, bool, dict[str, Any]]:
         """
@@ -103,31 +103,31 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             pvs = [i for i in range(self.num_vars) if action[i] == 0]
             nvs = [i for i in range(self.num_vars) if action[i] == 1]
 
-            if len(pvs) + len(nvs) == 0: # <End of Sequence>
-                self._terminated = True
-                info['avgQ'] = self._cur_avgQ
-                return tuple(self._literals_seq), 0.0, self._terminated, False, info
-            else:
-                ls = Literals(pos=pvs, neg=nvs)
+            ls = Literals(pos=pvs, neg=nvs)
         else:
             ls = action
             
-        if not ls.is_constant: # TODO: and formula's truth table is unchanged
+        if ls.is_empty: # <End of Sequence>
+            self._terminated = True
+            info['avgQ'] = self._cur_avgQ
+            return self._literals_seq, 0.0, self._terminated, False, info
+        elif ls.is_contradictory:
+            pass
+        else:
             if not self.mono and ls in self._formula:
                 info['removing'] = True
-                self._formula.delete(ls)
+                self._formula.remove(ls)
             else:
                 info['adding'] = True
                 self._formula.add(ls)
                 
-            self._literals_seq = [ls.vectorize(self._formula.num_vars) for ls in self._formula]
+            self._literals_seq = tuple(ls.vectorize(self._formula.num_vars) for ls in self._formula)
             self._cur_avgQ = self._formula.avgQ()
             
-        obs = tuple(self._literals_seq)
         reward = self._cur_avgQ - self._prev_avgQ
         info['avgQ'] = self._cur_avgQ
         
-        return obs, reward, self._terminated, False, info
+        return self._literals_seq, reward, self._terminated, False, info
     
     def render(self) -> None:
         raise NotImplementedError("Rendering is not implemented yet.")

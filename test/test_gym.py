@@ -50,7 +50,6 @@ def test_mono_mode_1():
         
     env.reset()
     
-    
     a = Literals([0,1], [0]) # x0.¬x0.x1
     obs, *others = env.step(a)
     assert len(obs) == 0 and isinstance(obs, tuple)
@@ -130,6 +129,7 @@ def test_mono_mode_1():
     obs, *others = env.step(a)
     assert len(obs) == 11
     assert others == [-1.75, False, False, {'adding': True, 'removing': False, 'avgQ': 0.0}]
+    
     env.close()
 
 
@@ -216,10 +216,53 @@ def test_mono_mode_3():
 
     env.close()
 
+
+def test_counting_mode_1():
+    env = gym.make("longshot/avgQ-d2-formula-v0", 
+        n=4, 
+        ftype=FormulaType.Disjunctive,
+        mono=False,
+        )
+        
+    env.reset()
+
+    a = Literals([0], [1])
+    obs, *others = env.step(a)
+    assert len(obs) == 1
+    assert others == [1.5, False, False, {'adding': True, 'removing': False, 'avgQ': 1.5}]
+    a = Literals([0,2], [3])
+    obs, *others = env.step(a)
+    assert len(obs) == 2
+    assert others == [0.375, False, False, {'adding': True, 'removing': False, 'avgQ': 1.875}]
+    a = Literals([3], [0,1,2])
+    obs, *others = env.step(a)
+    assert len(obs) == 3
+    assert others == [0.875, False, False, {'adding': True, 'removing': False, 'avgQ': 2.75}]
+
+    a = Literals([3], [0,1,2])
+    obs, *others = env.step(a)
+    assert len(obs) == 2
+    assert others == [-0.875, False, False, {'adding': False, 'removing': True, 'avgQ': 1.875}]
+    a = Literals([0,2], [3])
+    obs, *others = env.step(a)
+    assert len(obs) == 1
+    assert others == [-0.375, False, False, {'adding': False, 'removing': True, 'avgQ': 1.5}]
+    a = Literals([0], [1])
+    obs, *others = env.step(a)
+    assert len(obs) == 0
+    assert others == [-1.5, False, False, {'adding': False, 'removing': True, 'avgQ': 0.0}]
+    
+    a = Literals([], [])
+    obs, *others = env.step(a)
+    assert others == [0.0, True, False, {'adding': False, 'removing': False, 'avgQ': 0.0}]
+    
+    env.close()
+
 if __name__ == "__main__":
     pytest.main([__file__])
     # test_gym_registration()
     # test_mono_mode_1()
     # test_mono_mode_2()
     # test_mono_mode_3()
+    # test_counting_mode_1()
     

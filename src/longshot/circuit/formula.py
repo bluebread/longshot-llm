@@ -266,7 +266,7 @@ class NormalFormFormula:
         
         self._literals.add(ls)
     
-    def delete(self, ls: Literals | dict) -> None:
+    def remove(self, ls: Literals | dict) -> None:
         """
         Deletes a clause from the formula.
         """

@@ -3,7 +3,6 @@ from collections.abc import Iterable
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any
-from sortedcontainers import SortedSet
 
 from ..error import LongshotError
 from .._core import (
@@ -90,6 +89,15 @@ class Literals(_Literals):
         """
         return '.'.join(self._get_literals_str())
 
+    def __dict__(self) -> dict[str, list[int]]:
+        """
+        Returns a dictionary representation of the Literals object.
+        """
+        return {
+            "pos": [i for i in range(MAX_NUM_VARS) if (self.pos & (1 << i)) > 0],
+            "neg": [i for i in range(MAX_NUM_VARS) if (self.neg & (1 << i)) > 0],
+        }
+
     def __hash__(self) -> int:
         """
         Returns the hash value of the Literals object.
@@ -165,6 +173,8 @@ class NormalFormFormula:
         ftype: FormulaType | None = FormulaType.Conjunctive,
         mono: bool = False,
         ):
+        # TODO: initialize the formula with a given set of literals
+        
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
         if num_vars < 0 or num_vars > MAX_NUM_VARS:
@@ -177,7 +187,7 @@ class NormalFormFormula:
         self._num_vars = num_vars
         self._ftype = ftype
         self._mono = mono
-        self._literals = SortedSet()
+        self._literals = set()
         
         if self._mono:
             self._bf = _MonotonicBooleanFunction(num_vars)
@@ -229,6 +239,12 @@ class NormalFormFormula:
         Returns an iterator over the literals in the formula.
         """
         return iter(self._literals)
+    
+    def __len__(self) -> int:
+        """
+        Returns the number of literals in the formula.
+        """
+        return len(self._literals)
     
     def __tuple__(self) -> tuple[Literals, ...]:
         """
@@ -336,6 +352,26 @@ class NormalFormFormula:
         
         return fop.join(lstr)
         
+    def random_permute(self, seed: int | None = None) -> None:
+        """
+        Randomly permutes the literals in the formula.
+        """
+        if not self._literals:
+            return
+        
+        rng = np.random.default_rng(seed=seed)
+        perm = rng.permutation(self._num_vars)
+        bf_prime = NormalFormFormula(self._num_vars, self._ftype, self._mono)
+        
+        for ls in self._literals:
+            d_ls = dict(ls)
+            ps = perm[d_ls["pos"]]
+            ng = perm[d_ls["neg"]]
+            ls_prime = Literals(pos=ps, neg=ng)
+            bf_prime.add(ls_prime)
+            
+        return bf_prime
+    
     @property
     def is_mono(self) -> bool:
         """
@@ -361,12 +397,12 @@ class ConjunctiveNormalFormFormula(NormalFormFormula):
     """
     A class representing a conjunctive normal form formula.
     """
-    def __init__(self, num_vars: int, mono: bool = False):
-        super().__init__(num_vars, ftype=FormulaType.Conjunctive, mono=mono)
+    def __init__(self, n: int, **config):
+        super().__init__(n, ftype=FormulaType.Conjunctive, **config)
 
 class DisjunctiveNormalFormFormula(NormalFormFormula):
     """
     A class representing a disjunctive normal form formula.
     """
-    def __init__(self, num_vars: int, mono: bool = False):
-        super().__init__(num_vars, ftype=FormulaType.Disjunctive, mono=mono)
+    def __init__(self, n: int, **config):
+        super().__init__(n, ftype=FormulaType.Disjunctive, **config)

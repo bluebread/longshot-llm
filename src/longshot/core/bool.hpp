@@ -197,13 +197,19 @@ namespace longshot
         SimpleTruthTable truth_table_;
 
     public:
-        MonotonicBooleanFunction(int n) : BaseBooleanFunction(n), truth_table_(n)
+        MonotonicBooleanFunction(int n) : 
+            BaseBooleanFunction(n), 
+            truth_table_(n)
         {
         }
-        MonotonicBooleanFunction(const MonotonicBooleanFunction &other) : BaseBooleanFunction(other.num_vars_), truth_table_(other.truth_table_)
+        MonotonicBooleanFunction(const MonotonicBooleanFunction &other) : 
+            BaseBooleanFunction(other.num_vars_), 
+            truth_table_(other.truth_table_)
         {
         }
-        MonotonicBooleanFunction(MonotonicBooleanFunction &&other) : BaseBooleanFunction(other.num_vars_), truth_table_(std::move(other.truth_table_))
+        MonotonicBooleanFunction(MonotonicBooleanFunction &&other) : 
+            BaseBooleanFunction(other.num_vars_), 
+            truth_table_(std::move(other.truth_table_))
         {
         }
 
@@ -278,13 +284,22 @@ namespace longshot
         bool is_true_based_;
 
     public:
-        CountingBooleanFunction(int n) : BaseBooleanFunction(n), truth_table_(n), is_true_based_(false)
+        CountingBooleanFunction(int n) : 
+            BaseBooleanFunction(n), 
+            truth_table_(n), 
+            is_true_based_(false)
         {
         }
-        CountingBooleanFunction(const CountingBooleanFunction &other) : BaseBooleanFunction(other.num_vars_), truth_table_(other.truth_table_), is_true_based_(other.is_true_based_)
+        CountingBooleanFunction(const CountingBooleanFunction &other) : 
+            BaseBooleanFunction(other.num_vars_), 
+            truth_table_(other.truth_table_), 
+            is_true_based_(other.is_true_based_)
         {
         }
-        CountingBooleanFunction(CountingBooleanFunction &&other) : BaseBooleanFunction(other.num_vars_), truth_table_(std::move(other.truth_table_)), is_true_based_(other.is_true_based_)
+        CountingBooleanFunction(CountingBooleanFunction &&other) : 
+            BaseBooleanFunction(other.num_vars_), 
+            truth_table_(std::move(other.truth_table_)), 
+            is_true_based_(other.is_true_based_)
         {
         }
 

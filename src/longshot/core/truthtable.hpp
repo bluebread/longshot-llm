@@ -99,6 +99,20 @@ namespace longshot
             }
             memset(chunks_, 0, sizeof(uint32_t) * longshot::pow2(n));
         }
+        CountingTruthTable(const CountingTruthTable &other) : num_vars_(other.num_vars_), chunks_(nullptr)
+        {
+            chunks_ = (uint32_t *)malloc(sizeof(uint32_t) * longshot::pow2(num_vars_));
+            if (chunks_ == nullptr)
+            {
+                throw std::bad_alloc();
+            }
+            memcpy(chunks_, other.chunks_, sizeof(uint32_t) * longshot::pow2(num_vars_));
+        }
+        CountingTruthTable(CountingTruthTable &&other) : num_vars_(other.num_vars_), chunks_(nullptr)
+        {
+            chunks_ = other.chunks_;
+            other.chunks_ = nullptr;
+        }
         ~CountingTruthTable()
         {
             free(chunks_);

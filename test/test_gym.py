@@ -52,7 +52,7 @@ def test_mono_mode_1():
     
     a = Literals([0,1], [0]) # x0.¬x0.x1
     obs, *others = env.step(a)
-    assert len(obs) == 0 and isinstance(obs, tuple)
+    assert len(obs) == 0 and isinstance(obs, np.ndarray)
     assert others == [0.0, False, False, {'adding': False, 'removing': False, 'avgQ': 0.0}]
     
     a = Literals([0,1], []) # x0.x1

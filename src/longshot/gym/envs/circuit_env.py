@@ -5,6 +5,7 @@ from gymnasium import spaces
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any
+import warnings
 
 from ...error import LongshotError
 from ...circuit import Literals, FormulaType, NormalFormFormula
@@ -18,7 +19,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         n: int,
         ftype: FormulaType | None = None,
         mono: bool = False,
-        init_state: NormalFormFormula | None = None,
+        init_formula: NormalFormFormula | None = None,
         render_mode: str | None = None ,    
     ):
         """
@@ -27,30 +28,30 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         super().__init__()
         
         # Check if types of the arguments are valid
-        if init_state is None:
+        if init_formula is None:
             if not isinstance(n, int):
                 raise LongshotError(f"Expected `n` to be int, got {type(n).__name__}")
             if render_mode is not None and not isinstance(render_mode, str):
                 raise LongshotError(f"Expected `render_mode` to be str or None, got {type(render_mode).__name__}")
-            if init_state is None and ftype is None:
+            if init_formula is None and ftype is None:
                 raise LongshotError("Either `init_state` or `ftype` should be provided.")
             
             self.num_vars = n
             self.ftype = ftype
             self.mono = mono
-            self.init_state = None
+            self.init_formula = None
             
         else:
-            if not isinstance(init_state, NormalFormFormula):
-                raise LongshotError(f"Expected `init_state` to be NormalFormFormula or None, got {type(init_state).__name__}")
+            if not isinstance(init_formula, NormalFormFormula):
+                raise LongshotError(f"Expected `init_state` to be NormalFormFormula or None, got {type(init_formula).__name__}")
             
-            self.num_vars = init_state.num_vars
-            self.ftype = init_state.ftype
-            self.mono = init_state.is_mono
-            self.init_state = init_state
+            self.num_vars = init_formula.num_vars
+            self.ftype = init_formula.ftype
+            self.mono = init_formula.is_mono
+            self.init_formula = init_formula.copy()
         
         self.action_space = spaces.MultiDiscrete([3] * n, dtype=np.int8)
-        self.observation_space = spaces.Sequence(self.action_space)
+        self.observation_space = spaces.Sequence(self.action_space, stack=True)
         self.render_mode = render_mode
         
         self._terminated = True
@@ -65,15 +66,15 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         self._terminated = False
         self._step_count = 0
         
-        if self.init_state is not None and isinstance(self.init_state, NormalFormFormula):
-            self._formula = self.init_state
+        if self.init_formula is not None and isinstance(self.init_formula, NormalFormFormula):
+            self._formula = self.init_formula.copy()
             self._cur_avgQ = self._formula.avgQ()
             self._prev_avgQ = 0.0
-            self._literals_seq = tuple(ls.vectorize(self._formula.num_vars) for ls in self._formula)
+            self._literals_seq = np.vstack([ls.vectorize(self._formula.num_vars) for ls in self._formula])
         else:
             self._formula = NormalFormFormula(num_vars=self.num_vars, ftype=self.ftype, mono=self.mono)
             self._cur_avgQ = self._prev_avgQ = 0.
-            self._literals_seq = tuple()
+            self._literals_seq = np.empty((0,), dtype=np.int8)
             
         super().reset(seed=seed, options=options)
         self.observation_space.seed(seed=seed)
@@ -100,8 +101,8 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         if isinstance(action, np.ndarray):
             if action.shape != (self.num_vars,):
                 raise LongshotError(f"Expected action to be of shape ({self.num_vars},), got {action.shape}")
-            pvs = [i for i in range(self.num_vars) if action[i] == 0]
-            nvs = [i for i in range(self.num_vars) if action[i] == 1]
+            pvs = np.where(action == 0)[0].tolist()
+            nvs = np.where(action == 1)[0].tolist()
 
             ls = Literals(pos=pvs, neg=nvs)
         else:
@@ -112,7 +113,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             info['avgQ'] = self._cur_avgQ
             return self._literals_seq, 0.0, self._terminated, False, info
         elif ls.is_contradictory:
-            pass
+            warnings.warn("Contradictory clause/term provided. No changes made to the formula.")
         else:
             if not self.mono and ls in self._formula:
                 info['removing'] = True
@@ -120,8 +121,15 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             else:
                 info['adding'] = True
                 self._formula.add(ls)
+            
+            if len(self._formula) > 0:
+                # it is hard to optimize here because Numpy arrays are immutable
+                self._literals_seq = np.vstack([
+                    ls.vectorize(self._formula.num_vars) for ls in self._formula
+                ])
+            else:
+                self._literals_seq = np.empty((0,))
                 
-            self._literals_seq = tuple(ls.vectorize(self._formula.num_vars) for ls in self._formula)
             self._cur_avgQ = self._formula.avgQ()
             
         reward = self._cur_avgQ - self._prev_avgQ
@@ -138,5 +146,18 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         
         del self._formula
         del self._literals_seq
+        del self.init_formula
         
-        
+    @property
+    def formula(self) -> NormalFormFormula:
+        """
+        Return the current formula.
+        """
+        return self._formula.copy()
+    
+    @property
+    def init_formula(self) -> NormalFormFormula:
+        """
+        Return the initial formula of the environment.
+        """
+        return self.init_formula.copy()

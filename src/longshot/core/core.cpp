@@ -2,7 +2,6 @@
 #include <pybind11/operators.h>
 #include <pybind11/stl.h>
 
-// #include "circuit.hpp"
 #include "bool.hpp"
 
 using namespace longshot;
@@ -55,12 +54,25 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("neg", &Literals::neg)
         ;
 
+    py::class_<DecisionTree>(m, "_CppDecisionTree")
+        .def(py::init<>())
+        .def(py::init<int>())
+        .def(py::init<int, const DecisionTree &, const DecisionTree &>())
+        .def(py::init<const DecisionTree &>())
+        .def("delete", &DecisionTree::delete_tree) // remember to delete the tree at the end
+        .def("_decide", &DecisionTree::decide) // has to be overloaded
+        .def_property_readonly("lt", &DecisionTree::ltree)
+        .def_property_readonly("rt", &DecisionTree::rtree)
+        .def_property_readonly("is_constant", &DecisionTree::is_constant)
+        .def_property_readonly("var", &DecisionTree::var)
+        ;
+
     py::class_<BaseBooleanFunction, PyBaseBooleanFunction /* <--- trampoline */>(m, "_BaseBooleanFunction")
         .def(py::init<int>())
         .def("eval", &BaseBooleanFunction::eval)
         .def("as_cnf", &BaseBooleanFunction::as_cnf)
         .def("as_dnf", &BaseBooleanFunction::as_dnf)
-        .def("avgQ", &BaseBooleanFunction::avgQ)
+        .def("avgQ", &BaseBooleanFunction::avgQ, "tree"_a = nullptr)
         .def_property_readonly("num_vars", &BaseBooleanFunction::num_vars)
         ;
 
@@ -70,7 +82,7 @@ PYBIND11_MODULE(_core, m) {
         .def("eval", &MonotonicBooleanFunction::eval)
         .def("as_cnf", &MonotonicBooleanFunction::as_cnf)
         .def("as_dnf", &MonotonicBooleanFunction::as_dnf)
-        .def("avgQ", &MonotonicBooleanFunction::avgQ)
+        .def("avgQ", &MonotonicBooleanFunction::avgQ, "tree"_a = nullptr)
         .def("add_clause", &MonotonicBooleanFunction::add_clause)
         .def("add_term", &MonotonicBooleanFunction::add_term)
         .def_property_readonly("num_vars", &MonotonicBooleanFunction::num_vars)
@@ -82,7 +94,7 @@ PYBIND11_MODULE(_core, m) {
         .def("eval", &CountingBooleanFunction::eval)
         .def("as_cnf", &CountingBooleanFunction::as_cnf)
         .def("as_dnf", &CountingBooleanFunction::as_dnf)
-        .def("avgQ", &CountingBooleanFunction::avgQ)
+        .def("avgQ", &CountingBooleanFunction::avgQ, "tree"_a = nullptr)
         .def("add_clause", &CountingBooleanFunction::add_clause)
         .def("add_term", &CountingBooleanFunction::add_term)
         .def("del_clause", &CountingBooleanFunction::del_clause)

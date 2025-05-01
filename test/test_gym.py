@@ -8,7 +8,7 @@ from longshot.circuit import FormulaType, Literals
 def test_gym_registration():
     print("test_gym_registration")
     # Check if the environment is registered
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
+    env = gym.make("longshot/avgQ-d2-formula", 
         n=3, 
         ftype=FormulaType.Conjunctive,
         )
@@ -20,7 +20,7 @@ def test_gym_registration():
 def test_random_loop(n):
     print("test_random_loop")
     # Check if the environment can be reset and stepped through
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
+    env = gym.make("longshot/avgQ-d2-formula", 
         n=n, 
         ftype=FormulaType.Conjunctive,
         mono=True
@@ -42,7 +42,7 @@ def test_random_loop(n):
 
     
 def test_mono_mode_1():
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
+    env = gym.make("longshot/avgQ-d2-formula", 
         n=3, 
         ftype=FormulaType.Disjunctive,
         mono=True,
@@ -134,7 +134,7 @@ def test_mono_mode_1():
 
 
 def test_mono_mode_2():
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
+    env = gym.make("longshot/avgQ-d2-formula", 
         n=3, 
         ftype=FormulaType.Disjunctive,
         mono=True,
@@ -166,7 +166,7 @@ def test_mono_mode_2():
 
 
 def test_mono_mode_3():
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
+    env = gym.make("longshot/avgQ-d2-formula", 
         n=4, 
         ftype=FormulaType.Disjunctive,
         mono=True,
@@ -218,7 +218,7 @@ def test_mono_mode_3():
 
 
 def test_counting_mode_1():
-    env = gym.make("longshot/avgQ-d2-formula-v0", 
+    env = gym.make("longshot/avgQ-d2-formula", 
         n=4, 
         ftype=FormulaType.Disjunctive,
         mono=False,

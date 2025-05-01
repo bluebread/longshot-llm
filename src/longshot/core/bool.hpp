@@ -1,5 +1,5 @@
-#ifndef __BOOL_HPP__
-#define __BOOL_HPP__
+#ifndef __LONGSHOT_CORE_BOOL_HPP__
+#define __LONGSHOT_CORE_BOOL_HPP__
 
 #include <cassert>
 #include <cstdint>
@@ -16,6 +16,7 @@
 #include "utils.hpp"
 #include "literals.hpp"
 #include "truthtable.hpp"
+#include "tree.hpp"
 
 namespace longshot 
 {
@@ -79,6 +80,11 @@ namespace longshot
             {
                 return unfixed_ == 0;
             }
+            void clear()
+            {
+                vals_ = 0;
+                unfixed_ = std::numeric_limits<input_t>::max();
+            }
 
             _rstr_t fix(int idx, bool b) const
             {
@@ -124,9 +130,42 @@ namespace longshot
 
             return s;
         }
+    private:
+        DecisionTree _build_tree(const _dp_item_t * lookup, const uint64_t *exp3_tb, _rstr_t rt, uint64_t rtidx, int level) const {
+            bool v = lookup[rtidx].val;
+            uint32_t d = lookup[rtidx].depth;
+
+            if (d == 0)
+                return DecisionTree(v);
+
+            uint32_t x = rt.unfixed();
+            unsigned int num_unfixed = num_vars_ - level; // equal to __builtin_popcount(x);
+            int p;
+
+            while (x != 0)
+            {
+                unsigned int mask = x & -x;
+                p = __builtin_ctz(mask);
+
+                _dp_item_t sf0 = lookup[rtidx - 2 * exp3_tb[p]];
+                _dp_item_t sf1 = lookup[rtidx - 1 * exp3_tb[p]];
+
+                if (d == longshot::pow2(num_unfixed) + sf0.depth + sf1.depth)
+                    break;
+
+                x ^= mask;
+            }
+            
+            uint64_t li = rtidx - 2 * exp3_tb[p];
+            uint64_t ri = rtidx - 1 * exp3_tb[p];
+            DecisionTree ltree = _build_tree(lookup, exp3_tb, rt.fix(p, 0), li, level + 1);
+            DecisionTree rtree = _build_tree(lookup, exp3_tb, rt.fix(p, 1), ri, level + 1);
+
+            return DecisionTree(p, ltree, rtree);
+        }
 
     public:
-        double avgQ() const
+        double avgQ(DecisionTree * tree = nullptr) const
         {
             uint64_t *exp3_tb = (uint64_t *)alloca(num_vars_ * sizeof(uint64_t));
 
@@ -184,6 +223,12 @@ namespace longshot
             }
 
             _dp_item_t ans = lookup[exp3_n - 1];
+
+            if (tree != nullptr)
+            {
+                rt.clear();
+                *tree = _build_tree(lookup, exp3_tb, rt, exp3_n - 1, 0);
+            }
 
             delete[] lookup;
 

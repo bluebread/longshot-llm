@@ -1,6 +1,5 @@
-#ifndef __UTILS_HPP__
-#define __UTILS_HPP__
-
+#ifndef __LONGSHOT_CORE_UTILS_HPP__
+#define __LONGSHOT_CORE_UTILS_HPP__
 
 namespace longshot
 {

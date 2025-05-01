@@ -3,12 +3,14 @@ from collections.abc import Iterable
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any
+from binarytree import Node
 
 from ..error import LongshotError
 from .._core import (
     _Literals,
     _MonotonicBooleanFunction,
     _CountingBooleanFunction,
+    _CppDecisionTree,
 )
 
 MAX_NUM_VARS = 24
@@ -156,6 +158,59 @@ class Term(Literals):
         """
         return '∧'.join(self._get_literals_str())
 
+class DecisionTree:
+    """
+    A class representing a decision tree.
+    """
+    def __init__(self, ctree: _CppDecisionTree | None = None, root: Node | None = None):
+        if not isinstance(ctree, _CppDecisionTree):
+            raise LongshotError("the argument `ctree` is not a DecisionTree object.")
+        
+        if ctree is not None:
+            self._root = self._recursive_build(ctree)
+            ctree.delete()
+        else:
+            self._root = root
+        
+    def _recursive_build(self, ctree: _CppDecisionTree) -> None:
+        """
+        Recursively builds the decision tree.
+        """
+        if ctree.is_constant:
+            return Node(bool(ctree.var))
+
+        node = Node(ctree.var)        
+        node.left = self._recursive_build(ctree.lt)
+        node.right = self._recursive_build(ctree.rt)
+        
+        return node
+        
+    def decide(self, x: Iterable[int | bool]) -> bool:
+        """
+        Decides the value of the decision tree.
+        """
+        if not isinstance(x, (int, Iterable)):
+            raise LongshotError("the argument `x` is neither an integer nor an iterable.")
+        
+        node = self._root
+        
+        while node.left is not None and node.right is not None:
+            node = node.right if x[node.value] else node.left
+        
+        return node.value
+    
+    @property
+    def root(self) -> Node:
+        """The root node of this decision tree."""
+        return self._root
+
+    @root.setter
+    def root(self, new_root: Node) -> None:
+        if not isinstance(new_root, Node):
+            raise LongshotError("root must be set to a Node instance")
+        self._root = new_root
+        
+
 class FormulaType(enum.IntEnum):
     """
     An enumeration representing the type of formula.
@@ -173,8 +228,6 @@ class NormalFormFormula:
         ftype: FormulaType | None = FormulaType.Conjunctive,
         mono: bool = False,
         ):
-        # TODO: initialize the formula with a given set of literals
-        
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
         if num_vars < 0 or num_vars > MAX_NUM_VARS:
@@ -203,7 +256,6 @@ class NormalFormFormula:
         """
         Returns a copy of the formula.
         """
-        # TODO: optimize the performance of the copy method
         cpy = NormalFormFormula(self._num_vars, self._ftype, self._mono)
         
         cpy._literals = self._literals.copy()
@@ -326,11 +378,14 @@ class NormalFormFormula:
         
         return self._bf.eval(x)
     
-    def avgQ(self) -> float:
+    def avgQ(self, build_tree: bool = False) -> float:
         """
         Returns the average-case deterministic query complexity of the formula.
         """
-        return self._bf.avgQ()
+        ctree = _CppDecisionTree() if build_tree else None
+        qv = self._bf.avgQ(ctree)
+        
+        return qv, DecisionTree(ctree)
     
     def __str__(self) -> str:
         """

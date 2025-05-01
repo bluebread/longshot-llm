@@ -1,5 +1,5 @@
-#ifndef __TRUTHTABLE_HPP__
-#define __TRUTHTABLE_HPP__
+#ifndef __LONGSHOT_CORE_TRUTHTABLE_HPP__
+#define __LONGSHOT_CORE_TRUTHTABLE_HPP__
 
 #include <random>
 #include <limits>

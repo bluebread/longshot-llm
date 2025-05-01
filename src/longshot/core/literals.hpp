@@ -1,5 +1,5 @@
-#ifndef __LITERALS_HPP__
-#define __LITERALS_HPP__
+#ifndef __LONGSHOT_CORE_LITERALS_HPP__
+#define __LONGSHOT_CORE_LITERALS_HPP__
 
 namespace longshot
 {

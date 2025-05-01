@@ -131,11 +131,11 @@ namespace longshot
             return s;
         }
     private:
-        DecisionTree _build_tree(const _dp_item_t * lookup, const uint64_t *exp3_tb, _rstr_t rt, uint64_t rtidx, int level) const {
-            bool v = lookup[rtidx].val;
-            uint32_t d = lookup[rtidx].depth;
+        DecisionTree _build_tree(const _dp_item_t * lookup, const uint64_t *exp3_tb, _rstr_t rt, uint64_t rti, int level) const {
+            bool v = lookup[rti].val;
+            uint32_t target_d = lookup[rti].depth;
 
-            if (d == 0)
+            if (target_d == 0)
                 return DecisionTree(v);
 
             uint32_t x = rt.unfixed();
@@ -147,17 +147,18 @@ namespace longshot
                 unsigned int mask = x & -x;
                 p = __builtin_ctz(mask);
 
-                _dp_item_t sf0 = lookup[rtidx - 2 * exp3_tb[p]];
-                _dp_item_t sf1 = lookup[rtidx - 1 * exp3_tb[p]];
+                _dp_item_t sf0 = lookup[rti - 2 * exp3_tb[p]];
+                _dp_item_t sf1 = lookup[rti - 1 * exp3_tb[p]];
+                uint32_t d = longshot::pow2(num_unfixed) + sf0.depth + sf1.depth;
 
-                if (d == longshot::pow2(num_unfixed) + sf0.depth + sf1.depth)
+                if (target_d == d)
                     break;
 
                 x ^= mask;
             }
             
-            uint64_t li = rtidx - 2 * exp3_tb[p];
-            uint64_t ri = rtidx - 1 * exp3_tb[p];
+            uint64_t li = rti - 2 * exp3_tb[p];
+            uint64_t ri = rti - 1 * exp3_tb[p];
             DecisionTree ltree = _build_tree(lookup, exp3_tb, rt.fix(p, 0), li, level + 1);
             DecisionTree rtree = _build_tree(lookup, exp3_tb, rt.fix(p, 1), ri, level + 1);
 

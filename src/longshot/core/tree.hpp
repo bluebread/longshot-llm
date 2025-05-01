@@ -84,6 +84,15 @@ namespace longshot
             else
                 return ltree().decide(x);            
         }
+
+        double h_ave() const {
+            if (root == nullptr)
+                throw std::runtime_error("Tree has been deleted.");
+
+            if (root->is_leaf())
+                return 0.0;
+            return 1.0 + (ltree().h_ave() + rtree().h_ave()) / 2.0;
+        }
     };
 }
 

@@ -4,6 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Any
 from binarytree import Node
+from sortedcontainers import SortedSet
 
 from ..error import LongshotError
 from .._core import (
@@ -240,7 +241,7 @@ class NormalFormFormula:
         self._num_vars = num_vars
         self._ftype = ftype
         self._mono = mono
-        self._literals = set()
+        self._literals = SortedSet()
         
         if self._mono:
             self._bf = _MonotonicBooleanFunction(num_vars)
@@ -385,7 +386,10 @@ class NormalFormFormula:
         ctree = _CppDecisionTree() if build_tree else None
         qv = self._bf.avgQ(ctree)
         
-        return qv, DecisionTree(ctree)
+        if build_tree:
+           return qv, DecisionTree(ctree)
+       
+        return qv
     
     def __str__(self) -> str:
         """

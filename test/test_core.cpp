@@ -4,7 +4,6 @@
 
 #include "testsuite.hpp"
 #include "bool.hpp"
-// #include "circuit.hpp"
 
 using namespace longshot;
 
@@ -256,11 +255,82 @@ void test_bool() {
     // TODO: more tests
 }
 
+void test_tree()
+{
+    {
+        MonotonicBooleanFunction f(3);
+        f.as_cnf();
+
+        Literals l1(0b001, 0b010);
+        Literals l2(0b100, 0b100);
+        Literals l3(0b110, 0b001);
+
+        f.add_clause(l1); 
+        f.add_clause(l2); 
+        f.add_clause(l3); 
+
+        DecisionTree tree;
+        double qv = f.avgQ(&tree);
+
+        TESTCASE(qv, tree.h_ave());
+        TESTCASE(f.eval(0b000), tree.decide(0b000));
+        TESTCASE(f.eval(0b001), tree.decide(0b001));
+        TESTCASE(f.eval(0b010), tree.decide(0b010));
+        TESTCASE(f.eval(0b011), tree.decide(0b011));
+        TESTCASE(f.eval(0b100), tree.decide(0b100));
+        TESTCASE(f.eval(0b101), tree.decide(0b101));
+        TESTCASE(f.eval(0b110), tree.decide(0b110));
+        TESTCASE(f.eval(0b111), tree.decide(0b111));
+    }
+    {
+        CountingBooleanFunction xor4(4);
+        
+        Literals l1(0b0001, 0b1110);
+        Literals l2(0b0010, 0b1101);
+        Literals l3(0b0100, 0b1011);
+        Literals l4(0b0111, 0b1000);
+        Literals l5(0b1000, 0b0111);
+        Literals l6(0b1011, 0b0100);
+        Literals l7(0b1101, 0b0010);
+        Literals l8(0b1110, 0b0001);
+
+        xor4.add_term(l1);
+        xor4.add_term(l2);
+        xor4.add_term(l3);
+        xor4.add_term(l4);
+        xor4.add_term(l5);
+        xor4.add_term(l6);
+        xor4.add_term(l7);
+        xor4.add_term(l8);
+
+        DecisionTree tree;
+        double qv = xor4.avgQ(&tree);
+
+        TESTCASE(qv, tree.h_ave());
+        TESTCASE(xor4.eval(0b0000), tree.decide(0b0000));
+        TESTCASE(xor4.eval(0b0001), tree.decide(0b0001));
+        TESTCASE(xor4.eval(0b0010), tree.decide(0b0010));
+        TESTCASE(xor4.eval(0b0011), tree.decide(0b0011));
+        TESTCASE(xor4.eval(0b0100), tree.decide(0b0100));
+        TESTCASE(xor4.eval(0b0101), tree.decide(0b0101));
+        TESTCASE(xor4.eval(0b0110), tree.decide(0b0110));
+        TESTCASE(xor4.eval(0b0111), tree.decide(0b0111));
+        TESTCASE(xor4.eval(0b1000), tree.decide(0b1000));
+        TESTCASE(xor4.eval(0b1001), tree.decide(0b1001));
+        TESTCASE(xor4.eval(0b1010), tree.decide(0b1010));
+        TESTCASE(xor4.eval(0b1011), tree.decide(0b1011));
+        TESTCASE(xor4.eval(0b1100), tree.decide(0b1100));
+        TESTCASE(xor4.eval(0b1101), tree.decide(0b1101));
+        TESTCASE(xor4.eval(0b1110), tree.decide(0b1110));
+        TESTCASE(xor4.eval(0b1111), tree.decide(0b1111));
+    }
+}
+
 int main () {
     try
     {
-        // test_circuit();
         test_bool();
+        test_tree();
     }
     catch(const std::exception& e)
     {

@@ -60,7 +60,7 @@ PYBIND11_MODULE(_core, m) {
         .def(py::init<int, const DecisionTree &, const DecisionTree &>())
         .def(py::init<const DecisionTree &>())
         .def("delete", &DecisionTree::delete_tree) // remember to delete the tree at the end
-        .def("_decide", &DecisionTree::decide) // has to be overloaded
+        .def("decide", &DecisionTree::decide) 
         .def_property_readonly("lt", &DecisionTree::ltree)
         .def_property_readonly("rt", &DecisionTree::rtree)
         .def_property_readonly("is_constant", &DecisionTree::is_constant)

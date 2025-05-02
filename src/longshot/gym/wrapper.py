@@ -6,13 +6,15 @@ import numpy.typing as NDarray
 class FlattenSequence(ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.observation_space = spaces.MultiBinary(int(3 ** env.num_vars))
+        self.observation_space = spaces.MultiBinary(int(3 ** env.unwrapped.num_vars))
     
     def observation(self, seq: NDarray) -> NDarray:
-        obs = np.zeros(int(3 ** self.env.num_vars), dtype=np.int8)
-        exp3_v = 3 ** np.arange(self.env.num_vars).reshape(-1,1)
-        indices = seq @ exp3_v.T
-        obs[indices] = 1
+        obs = np.zeros(int(3 ** self.env.unwrapped.num_vars), dtype=np.int8)
+        
+        if seq.size > 0:
+            exp3_v = 3 ** np.arange(self.env.unwrapped.num_vars).reshape(-1,1)
+            indices = seq @ exp3_v
+            obs[indices] = 1
         
         return obs
         
@@ -27,8 +29,8 @@ class LambdaMixedReward(Wrapper):
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        avgQ = self.env._cur_avgQ
-        prev_avgQ = self.env._prev_avgQ
+        avgQ = self.env.unwrapped.cur_avgQ
+        prev_avgQ = self.env.unwrapped.prev_avgQ
         lam = info["lambda"] = self._avgQ_to_lambda(avgQ)
         prev_lam = self._avgQ_to_lambda(prev_avgQ)
         r = self.alpha * reward + self.beta * (lam - prev_lam) - self.gamma
@@ -46,13 +48,13 @@ class LambdaMixedReward(Wrapper):
         """
         if avgQ < self.eps:
             return 0.
-        return 1 / (1 - ((avgQ - self.eps) / self.env.num_vars)) - 1
+        return 1 / (1 - ((avgQ - self.eps) / self.env.unwrapped.num_vars)) - 1
     
 class XORAction(ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.action_space = spaces.MultiBinary(env.num_vars + 1)
-        self._EOS = np.array([2] * env.num_vars, dtype=np.int8)
+        self.action_space = spaces.MultiBinary(env.unwrapped.num_vars + 1)
+        self._EOS = np.array([2] * env.unwrapped.num_vars, dtype=np.int8)
     
     def action(self, action: NDarray) -> NDarray:
         if action[-1].item() >= 1:

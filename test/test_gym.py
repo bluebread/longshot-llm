@@ -2,8 +2,9 @@ import gymnasium as gym
 import pytest
 import numpy as np
 
-import longshot.gym
+import longshot
 from longshot.circuit import FormulaType, Literals
+from longshot.gym import FlattenSequence, LambdaMixedReward, XORAction
 
 def test_gym_registration():
     print("test_gym_registration")
@@ -26,7 +27,7 @@ def test_random_loop(n):
         mono=True
         )
         
-    observation, info = env.reset(seed=587)
+    observation, info = env.reset()
 
     episode_over = False
 
@@ -258,6 +259,33 @@ def test_counting_mode_1():
     
     env.close()
 
+@pytest.mark.repeat(3)
+def test_wrappers():
+    env = gym.make("longshot/avgQ-d2-formula", 
+        n=5, 
+        ftype=FormulaType.Disjunctive,
+        mono=False,
+        )
+        
+    env = FlattenSequence(env)
+    env = LambdaMixedReward(env)
+    env = XORAction(env)
+    
+    observation, info = env.reset()
+
+    for _ in range(100):
+        action = env.action_space.sample()  # agent policy that uses the observation and info
+        # print(str(Character(CharacterType(action[0].item()), action[1].item())))
+        observation, reward, terminated, truncated, info = env.step(action)
+        # print(observation, reward, terminated, truncated, info)
+
+        episode_over = terminated or truncated
+        
+        if episode_over:
+            break
+
+    env.close()
+    
 if __name__ == "__main__":
     pytest.main([__file__])
     # test_gym_registration()
@@ -265,4 +293,5 @@ if __name__ == "__main__":
     # test_mono_mode_2()
     # test_mono_mode_3()
     # test_counting_mode_1()
+    # test_wrappers()
     

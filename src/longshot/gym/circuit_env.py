@@ -154,3 +154,17 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         Return the current formula.
         """
         return self._formula.copy()
+    
+    @property
+    def cur_avgQ(self) -> float:
+        """
+        Return the current average Q value.
+        """
+        return self._cur_avgQ
+    
+    @property
+    def prev_avgQ(self) -> float:
+        """
+        Return the previous average Q value.
+        """
+        return self._prev_avgQ

@@ -48,9 +48,24 @@ def test_dnf():
     
     assert dnf.avgQ() == 2.1875 # this number has been checked manually
     
+def test_tree():
+    dnf = DNF(5)
+    dnf.add(Term(pos=0b10101, neg=0b01010))
+    dnf.add(Term(pos=[3], neg=[0, 1]))
+    qv, tree = dnf.avgQ(build_tree=True)
+    
+    assert qv == 2.1875
+    assert dnf.eval(0b10101) == tree.decide(0b10101)
+    assert dnf.eval(0b00000) == tree.decide(0b00000)
+    assert dnf.eval(0b11111) == tree.decide(0b11111)
+    
+    tree.root.pprint()
+    print("hello")
+    
     
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
     # test_literals()
     # test_cnf()
     # test_dnf()
+    test_tree()

@@ -178,7 +178,7 @@ class DecisionTree:
         Recursively builds the decision tree.
         """
         if ctree.is_constant:
-            return Node(bool(ctree.var))
+            return Node('T' if bool(ctree.var) else 'F')
 
         node = Node(ctree.var)        
         node.left = self._recursive_build(ctree.lt)
@@ -192,13 +192,15 @@ class DecisionTree:
         """
         if not isinstance(x, (int, Iterable)):
             raise LongshotError("the argument `x` is neither an integer nor an iterable.")
+        if isinstance(x, int):
+            x = [bool((x >> i) & 1) for i in range(MAX_NUM_VARS)]
         
         node = self._root
         
         while node.left is not None and node.right is not None:
             node = node.right if x[node.value] else node.left
         
-        return node.value
+        return node.value == 'T'
     
     @property
     def root(self) -> Node:
@@ -379,7 +381,7 @@ class NormalFormFormula:
         
         return self._bf.eval(x)
     
-    def avgQ(self, build_tree: bool = False) -> float:
+    def avgQ(self, build_tree: bool = False) -> float | tuple[float, DecisionTree]:
         """
         Returns the average-case deterministic query complexity of the formula.
         """

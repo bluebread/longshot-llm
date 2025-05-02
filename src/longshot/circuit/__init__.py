@@ -3,6 +3,7 @@ from .formula import (
     Literals,
     Clause,
     Term,
+    DecisionTree,
     FormulaType,
     NormalFormFormula,
     ConjunctiveNormalFormFormula,

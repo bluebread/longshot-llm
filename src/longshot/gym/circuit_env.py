@@ -7,8 +7,8 @@ from numpy.typing import NDArray
 from typing import Any
 import warnings
 
-from ...error import LongshotError
-from ...circuit import Literals, FormulaType, NormalFormFormula
+from ..error import LongshotError
+from ..circuit import Literals, FormulaType, NormalFormFormula
 
 
 class AvgQ_D2_FormulaEnv(gym.Env):

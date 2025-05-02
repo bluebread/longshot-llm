@@ -113,7 +113,7 @@ class AvgQ_D2_FormulaEnv(gym.Env):
             info['avgQ'] = self._cur_avgQ
             return self._literals_seq, 0.0, self._terminated, False, info
         elif ls.is_contradictory:
-            warnings.warn("Contradictory clause/term provided. No changes made to the formula.")
+            pass
         else:
             if not self.mono and ls in self._formula:
                 info['removing'] = True
@@ -154,10 +154,3 @@ class AvgQ_D2_FormulaEnv(gym.Env):
         Return the current formula.
         """
         return self._formula.copy()
-    
-    @property
-    def init_formula(self) -> NormalFormFormula:
-        """
-        Return the initial formula of the environment.
-        """
-        return self.init_formula.copy()

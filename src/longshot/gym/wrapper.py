@@ -19,13 +19,13 @@ class FlattenSequence(ObservationWrapper):
         return obs
         
 class LambdaMixedReward(Wrapper):
-    def __init__(self, env, alpha: float = 1., beta: float = 1., gamma: float = 0., eps: float = 1e-5):
+    def __init__(self, env, alpha: float = 1., beta: float = 1., gamma: float = 0., eps: float | None = None):
         super().__init__(env)
         
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.eps = eps
+        self.eps = 2**(-env.unwrapped.num_vars) if eps is None else eps
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -64,3 +64,25 @@ class XORAction(ActionWrapper):
         
         return action
     
+class XORObservation(ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = spaces.MultiBinary(int(2 ** env.unwrapped.num_vars))
+
+    def observation(self, seq: NDarray) -> NDarray:
+        obs = np.zeros(int(2 ** self.env.unwrapped.num_vars), dtype=np.int8)
+        
+        if seq.size > 0:
+            exp3_v = 2 ** np.arange(self.env.unwrapped.num_vars).reshape(-1,1)
+            indices = seq @ exp3_v
+            obs[indices] = 1
+        
+        return obs
+    
+class SearchForXOR(Wrapper):
+    def __init__(self, env):
+        env = XORObservation(XORAction(env))
+        super().__init__(env)
+    
+    def step(self, action):
+        return self.env.step(action)

@@ -127,6 +127,7 @@ class Literals(_Literals):
         """
         Returns a vector representation of the Literals object.
         """
+        # TODO: implement this method in C++ to improve performance
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
         if num_vars < 0 or num_vars > MAX_NUM_VARS:

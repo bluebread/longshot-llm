@@ -15,13 +15,13 @@ __version__ = "0.1.3"
 
 ext_modules = [
     Pybind11Extension("longshot._core",
-        ["src/longshot/core/core.cpp"],
+        ["longshot/core/core.cpp"],
         # Example: passing in the version to the compiled code
         define_macros = [
             ('VERSION_INFO', __version__)
         ],
         cxx_std = 17,
-        include_dirs = ["src/longshot/core"],
+        include_dirs = ["longshot/core"],
         extra_compile_args = [
             "-Ofast", "-fopenmp"
         ]
@@ -35,8 +35,8 @@ setup(
     author_email="hotbread70127@gmail.com",
     url="https://github.com/bluebread/gym-longshot",
     description="A C++/Python library for boolean function",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=find_packages(where="."),
+    package_dir={"": "."},
     ext_modules=ext_modules,
     # extras_require={"test": "pytest"},
     # # Currently, build_ext only provides an optional "highest supported C++

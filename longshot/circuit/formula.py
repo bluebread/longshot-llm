@@ -5,11 +5,19 @@ from numpy.typing import NDArray
 from typing import Any
 from binarytree import Node
 from sortedcontainers import SortedSet
+import networkx as nx
+from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
+from networkx.algorithms.isomorphism import (
+    categorical_node_match,
+    vf2pp_is_isomorphic, 
+    could_be_isomorphic
+)
+import torch
+import torch.nn.functional as F
 
 from ..error import LongshotError
 from .._core import (
     _Literals,
-    _MonotonicBooleanFunction,
     _CountingBooleanFunction,
     _CppDecisionTree,
 )
@@ -92,7 +100,13 @@ class Literals(_Literals):
         """
         return '.'.join(self._get_literals_str())
 
-    def __dict__(self) -> dict[str, list[int]]:
+    def __int__(self) -> int:
+        """
+        Returns the integer representation of the Literals object.
+        """
+        return self.pos + self.neg * (2 ** MAX_NUM_VARS)
+
+    def to_dict(self) -> dict[str, list[int]]:
         """
         Returns a dictionary representation of the Literals object.
         """
@@ -122,26 +136,6 @@ class Literals(_Literals):
         if not isinstance(other, Literals):
             raise LongshotError("the argument `other` is not a Literals object.")   
         return (self.pos, self.neg) < (other.pos, other.neg)
-
-    def vectorize(self, num_vars: int) -> NDArray[np.integer[Any]]:
-        """
-        Returns a vector representation of the Literals object.
-        """
-        # TODO: implement this method in C++ to improve performance
-        if not isinstance(num_vars, int):
-            raise LongshotError("the argument `num_vars` is not an integer.")
-        if num_vars < 0 or num_vars > MAX_NUM_VARS:
-            raise LongshotError(f"the argument `num_vars` should be between 0 and {MAX_NUM_VARS}.")
-        
-        vector = np.array([2] * num_vars, dtype=np.int8)
-        
-        for i in range(num_vars):
-            if (self.pos & (1 << i)) > 0:
-                vector[i] = 0
-            if (self.neg & (1 << i)) > 0:
-                vector[i] = 1
-        
-        return vector
 
 class Clause(Literals):
     """
@@ -230,7 +224,6 @@ class NormalFormFormula:
         self, 
         num_vars: int, 
         ftype: FormulaType | None = FormulaType.Conjunctive,
-        mono: bool = False,
         ):
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
@@ -238,36 +231,45 @@ class NormalFormFormula:
             raise LongshotError(f"the argument `num_vars` should be between 0 and {MAX_NUM_VARS}.")
         if not isinstance(ftype, FormulaType):
             raise LongshotError("the argument `ftype` is not a FormulaType.")
-        if not isinstance(mono, bool):
-            raise LongshotError("the argument `mono` is not a boolean.")
         
+        # Initialize the formula
         self._num_vars = num_vars
         self._ftype = ftype
-        self._mono = mono
         self._literals = SortedSet()
-        
-        if self._mono:
-            self._bf = _MonotonicBooleanFunction(num_vars)
-        else:
-            self._bf = _CountingBooleanFunction(num_vars)
-        
+        self._bf = _CountingBooleanFunction(num_vars)
+        self._graph = nx.Graph()
+        self._tensor_capacity = 2**1 # 64
+        self._tensor = torch.zeros((self._tensor_capacity, 2*num_vars), dtype=torch.int8)
+        self._idxmap: dict[Literals, int] = {} # map from Literals to tensor indices
+
+        # Convert the boolean function to the specified normal form
         if ftype == FormulaType.Conjunctive:
             self._bf.as_cnf()
         if ftype == FormulaType.Disjunctive:
             self._bf.as_dnf()
+            
+        # Initialize the graph with the number of variables
+        var_nodes = [f"x{i}" for i in range(num_vars)]
+        pos_nodes = [f"+x{i}" for i in range(num_vars)]
+        neg_nodes = [f"-x{i}" for i in range(num_vars)]
+        self._graph.add_nodes_from(var_nodes, label="var")
+        self._graph.add_nodes_from(pos_nodes + neg_nodes, label="literal")
+        self._graph.add_edges_from([(f"x{i}", f"+x{i}") for i in range(num_vars)])
+        self._graph.add_edges_from([(f"x{i}", f"-x{i}") for i in range(num_vars)])
     
     def copy(self):
         """
-        Returns a copy of the formula.
+        Deep copies the formula.
+        :return: A new NormalFormFormula object with the same properties.
         """
-        cpy = NormalFormFormula(self._num_vars, self._ftype, self._mono)
+        cpy = NormalFormFormula(self._num_vars, self._ftype)
         
         cpy._literals = self._literals.copy()
-        
-        if self._mono:
-            cpy._bf = _MonotonicBooleanFunction(self._bf)
-        else:
-            cpy._bf = _CountingBooleanFunction(self._bf)
+        cpy._bf = _CountingBooleanFunction(self._bf)
+        cpy._graph = self._graph.copy()
+        cpy._tensor_capacity = self._tensor_capacity
+        cpy._tensor = self._tensor.clone()
+        cpy._idxmap = self._idxmap.copy()
         
         return cpy
     
@@ -290,33 +292,9 @@ class NormalFormFormula:
         
         return ls in self._literals        
     
-    def __iter__(self) -> Iterable[Literals]:
+    def toggle(self, ls: Literals | dict) -> None:
         """
-        Returns an iterator over the literals in the formula.
-        """
-        return iter(self._literals)
-    
-    def __len__(self) -> int:
-        """
-        Returns the number of literals in the formula.
-        """
-        return len(self._literals)
-    
-    def __tuple__(self) -> tuple[Literals, ...]:
-        """
-        Returns a tuple representation of the formula.
-        """
-        return tuple(self._literals)
-    
-    def __list__(self) -> list[Literals]:
-        """
-        Returns a list representation of the formula.
-        """
-        return list(self._literals)
-    
-    def add(self, ls: Literals | dict) -> None:
-        """
-        Adds a clause to the formula.
+        Toggles a clause in the formula.
         """
         if not isinstance(ls, Literals) and not isinstance(ls, dict):
             raise LongshotError("the argument `clause` is not a Clause or a dictionary.") 
@@ -330,40 +308,50 @@ class NormalFormFormula:
             if "pos" not in ls or "neg" not in ls:
                 raise LongshotError("the dictionary `clause` should contain 'pos' and 'neg' keys.")
             ls = Literals(d_literals=ls)
-                   
-        if self._ftype == FormulaType.Conjunctive:
-            self._bf.add_clause(ls)
-        if self._ftype == FormulaType.Disjunctive:
-            self._bf.add_term(ls)
         
-        self._literals.add(ls)
-    
-    def remove(self, ls: Literals | dict) -> None:
-        """
-        Deletes a clause from the formula.
-        """
-        if self._mono:
-            raise LongshotError("the formula is monotonic.")
-        
-        if not isinstance(ls, Literals) and not isinstance(ls, dict):
-            raise LongshotError("the argument `clause` is not a Clause or a dictionary.") 
-        
-        if self._ftype == FormulaType.Conjunctive and isinstance(ls, Term):
-            raise LongshotError("the argument `ls` is not a Clause.")
-        if self._ftype == FormulaType.Disjunctive and isinstance(ls, Clause):
-            raise LongshotError("the argument `ls` is not a Term.")
-        
-        if isinstance(ls, dict):
-            if "pos" not in ls or "neg" not in ls:
-                raise LongshotError("the dictionary `clause` should contain 'pos' and 'neg' keys.")
-            ls = Literals(d_literals=ls)
-        
-        if self._ftype == FormulaType.Conjunctive:
-            self._bf.del_clause(ls)
-        if self._ftype == FormulaType.Disjunctive:
-            self._bf.del_term(ls)
-        
-        self._literals.discard(ls)
+        if ls not in self._literals:
+            # Add the literals to the graph as gate
+            gn = int(ls)
+            self._graph.add_node(gn, label="gate")    
+            dls = ls.to_dict()
+            edges = [(f"+x{i}", gn) for i in dls["pos"]] + [(f"-x{i}", gn) for i in dls["neg"]]
+            self._graph.add_edges_from(edges)     
+            
+            # Add the literals to the tensor
+            if self.num_gates >= self._tensor_capacity:
+                self._tensor = F.pad(self._tensor, (0, 0, 0, self._tensor_capacity), mode='constant', value=0)
+                self._tensor_capacity *= 2
+            
+            gt = torch.zeros(2*self._num_vars, dtype=torch.int8)
+            gt[dls["pos"]] = 1
+            gt[self._num_vars:][dls["neg"]] = 1
+            gidx = self.num_gates
+            self._idxmap[ls] = gidx
+            self._tensor[gidx] = gt
+            
+            # Apply the literals to the boolean function
+            if self._ftype == FormulaType.Conjunctive:
+                self._bf.add_clause(ls)
+            if self._ftype == FormulaType.Disjunctive:
+                self._bf.add_term(ls)
+            
+            self._literals.add(ls)
+                
+        else:
+            # Remove the literals from the graph and tensor
+            gn = int(ls)
+            self._graph.remove_node(gn)
+            gidx = self._idxmap.pop(ls, None)
+            self._tensor[gidx] = self._tensor[self.num_gates - 1]
+            self._tensor[self.num_gates - 1] = 0
+            
+            # Remove the literals from the boolean function
+            if self._ftype == FormulaType.Conjunctive:
+                self._bf.del_clause(ls)
+            if self._ftype == FormulaType.Disjunctive:
+                self._bf.del_term(ls)
+            
+            self._literals.discard(ls)
     
     def eval(self, x: int | tuple[int | bool, ...]) -> bool:
         """
@@ -394,6 +382,20 @@ class NormalFormFormula:
        
         return qv
     
+    def wl_graph_hash(self, iterations: int = None) -> int:
+        """
+        Computes the Weisfeiler-Lehman graph hash of the formula.
+        :param iterations: Number of iterations for the WL algorithm.
+        :return: The hash value of the formula.
+        """
+        if iterations is not None:
+            if not isinstance(iterations, int) or iterations < 1:
+                raise LongshotError("the argument `iterations` should be a positive integer.")
+        else:
+            iterations = self._num_vars # Default to the number of variables
+        
+        return weisfeiler_lehman_graph_hash(self._graph, iterations=iterations, node_attr="label")
+    
     def __str__(self) -> str:
         """
         Returns the string representation of the formula.
@@ -414,33 +416,6 @@ class NormalFormFormula:
         
         return fop.join(lstr)
         
-    def random_permute(self, seed: int | None = None) -> None:
-        """
-        Randomly permutes the literals in the formula.
-        """
-        if not self._literals:
-            return
-        
-        rng = np.random.default_rng(seed=seed)
-        perm = rng.permutation(self._num_vars)
-        bf_prime = NormalFormFormula(self._num_vars, self._ftype, self._mono)
-        
-        for ls in self._literals:
-            d_ls = dict(ls)
-            ps = perm[d_ls["pos"]]
-            ng = perm[d_ls["neg"]]
-            ls_prime = Literals(pos=ps, neg=ng)
-            bf_prime.add(ls_prime)
-            
-        return bf_prime
-    
-    @property
-    def is_mono(self) -> bool:
-        """
-        Returns True if the formula is monotonic, False otherwise.
-        """
-        return self._mono
-        
     @property
     def num_vars(self) -> int:
         """
@@ -449,11 +424,49 @@ class NormalFormFormula:
         return self._num_vars
         
     @property
+    def num_gates(self) -> int:
+        """
+        Returns the number of gates in the formula.
+        """
+        return len(self._literals)
+
+    @property
     def ftype(self) -> FormulaType:
         """
         Returns the type of the formula.
         """
         return self._ftype
+
+    @property
+    def gates(self) -> SortedSet[Literals]:
+        """
+        Returns the set of literals in the formula.
+        """
+        return self._literals.copy()
+
+    @property
+    def tensor(self) -> torch.Tensor:
+        """
+        Returns the tensor representation of the formula.
+        """
+        return self._tensor[:self.num_gates].clone()
+
+    @property
+    def graph(self) -> nx.Graph:
+        """
+        Returns the graph representation of the formula.
+        """
+        return self._graph.copy()
+        
+    @classmethod
+    def is_isomorphic(cls, F1, F2) -> bool:
+        """
+        Checks if two formulas are isomorphic.
+        :param F1: The first formula.
+        :param F2: The second formula.
+        :return: True if the formulas are isomorphic, False otherwise.
+        """
+        return vf2pp_is_isomorphic(F1._graph, F2._graph, node_label='label')
         
 class ConjunctiveNormalFormFormula(NormalFormFormula):
     """

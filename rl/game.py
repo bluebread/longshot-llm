@@ -1,5 +1,4 @@
 from tensordict import TensorDict, TensorDictBase
-from tensordict.nn import TensorDictModule
 from torch import nn
 import torch.nn.functional as F
 import torch
@@ -74,15 +73,16 @@ class FormulaGame(EnvBase):
         n = self._num_vars
         d = 2 * n
         s = self._size
+        p = self._cur_f.num_perms
         self.observation_spec = Composite(
-            sequence=Binary(d, shape=(s, d), dtype=torch.int8, device=self._device),
-            length=Bounded(low=0, high=s+1, shape=(1,), dtype=torch.int32, device=self._device),
-            avgQ=UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device),
+            sequence=Binary(d, shape=(p, s, d), dtype=torch.int8, device=self._device),
+            length=Bounded(low=0, high=s+1, shape=(p,), dtype=torch.int32, device=self._device),
+            avgQ=UnboundedContinuous(shape=(p,), dtype=torch.float32, device=self._device),
             device=self._device,
         )
         self.action_spec = Binary(d, device=self._device)
         self.state_spec = self.observation_spec.clone()
-        self.reward_spec = UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device)
+        self.reward_spec = UnboundedContinuous(shape=(p,), dtype=torch.float32, device=self._device)
         
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """        
@@ -100,6 +100,7 @@ class FormulaGame(EnvBase):
         n = self._num_vars
         s = self._size
         w = self._width
+        p = self._cur_f.num_perms
         eps = self._eps
         pos = [i for i,v in enumerate(tensordict["action"][:n]) if v == 1]
         neg = [i for i,v in enumerate(tensordict["action"][n:]) if v == 1]
@@ -121,11 +122,11 @@ class FormulaGame(EnvBase):
         
         return TensorDict(
             {
-                "avgQ": self._cur_avgQ,
+                "avgQ": torch.tensor([self._cur_avgQ] * p, dtype=torch.float32, device=self._device),
                 "sequence": seq_t,
-                "length": torch.tensor(self._cur_f.num_gates, dtype=torch.int32, device=self._device),
-                "reward": torch.tensor(reward, dtype=torch.float32, device=self._device),
-                "done": torch.tensor(False, dtype=torch.bool, device=self._device),
+                "length": torch.tensor([self._cur_f.num_gates] * p, dtype=torch.int32, device=self._device),
+                "reward": torch.tensor([reward] * p, dtype=torch.float32, device=self._device),
+                "done": torch.tensor([False] * p, dtype=torch.bool, device=self._device),
             },
             device=self._device,
         )
@@ -143,6 +144,7 @@ class FormulaGame(EnvBase):
                             including the average-case query complexity (avgQ), sequence tensor, 
                             and length of the sequence.
         """
+        p = self._cur_f.num_perms
         self._cur_f = self._init_f.copy()
         self._cur_avgQ = self._init_avgQ
         pd = self._size - self._cur_f.num_gates
@@ -151,18 +153,20 @@ class FormulaGame(EnvBase):
         if pd > 0:
             seq_t = F.pad(seq_t, (0, 0, 0, pd), mode='constant', value=0)
             
+        print(seq_t.shape)
+            
         return TensorDict(
             {
-                "avgQ": self._cur_avgQ,
+                "avgQ": torch.tensor([self._cur_avgQ] * p, dtype=torch.float32, device=self._device),
                 "sequence": seq_t,
-                "length": torch.tensor(self._cur_f.num_gates, dtype=torch.int32, device=self._device),
+                "length": torch.tensor([self._cur_f.num_gates] * p, dtype=torch.int32, device=self._device),
             },
             device=self._device,
         )
         
 if __name__ == "__main__":
     env = FormulaGame(
-        formula=CNF(5),
+        formula=CNF(5, num_perms=3),
         width=3,
         size=8,
         eps=0.1,

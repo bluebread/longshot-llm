@@ -82,9 +82,9 @@ def test_graph():
     
     
 if __name__ == "__main__":
-    # pytest.main([__file__])
+    pytest.main([__file__])
     # test_literals()
     # test_cnf()
     # test_dnf()
     # test_tree()
-    test_graph()
+    # test_graph()

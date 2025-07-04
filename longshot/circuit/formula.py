@@ -7,11 +7,7 @@ from binarytree import Node
 from sortedcontainers import SortedSet
 import networkx as nx
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
-from networkx.algorithms.isomorphism import (
-    categorical_node_match,
-    vf2pp_is_isomorphic, 
-    could_be_isomorphic
-)
+from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
 import torch
 import torch.nn.functional as F
 
@@ -99,6 +95,14 @@ class Literals(_Literals):
         Returns the string representation of the Clause object.
         """
         return '.'.join(self._get_literals_str())
+
+    def __repr__(self) -> str:
+        """
+        Returns the string representation of the Literals object.
+        """
+        pos_str = ','.join(str(i) for i in range(MAX_NUM_VARS) if (self.pos & (1 << i)) > 0)
+        neg_str = ','.join(str(i) for i in range(MAX_NUM_VARS) if (self.neg & (1 << i)) > 0)
+        return f"Literals(pos=[{pos_str}], neg=[{neg_str}])"
 
     def __int__(self) -> int:
         """
@@ -309,6 +313,9 @@ class NormalFormFormula:
                 raise LongshotError("the dictionary `clause` should contain 'pos' and 'neg' keys.")
             ls = Literals(d_literals=ls)
         
+        if ls.is_constant:
+            return  # No need to toggle constants
+        
         if ls not in self._literals:
             # Add the literals to the graph as gate
             gn = int(ls)
@@ -429,6 +436,13 @@ class NormalFormFormula:
         Returns the number of gates in the formula.
         """
         return len(self._literals)
+
+    @property
+    def width(self) -> int:
+        """
+        Returns the width of the formula.
+        """
+        return max([ls.width for ls in self._literals], default=0)
 
     @property
     def ftype(self) -> FormulaType:

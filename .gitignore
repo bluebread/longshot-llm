@@ -243,5 +243,6 @@ Mkfile.old
 dkms.conf
 
 # Custom
-rl/*
+rl/playground
+rl/jupyter
 *.txt

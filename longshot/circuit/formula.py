@@ -228,7 +228,6 @@ class NormalFormFormula:
         self, 
         num_vars: int, 
         ftype: FormulaType | None = FormulaType.Conjunctive,
-        num_perms: int = 1,
         device: str | torch.device | None = None,
         ):
         if not isinstance(num_vars, int):
@@ -241,7 +240,6 @@ class NormalFormFormula:
         # Initialize the formula
         self._num_vars = num_vars
         self._ftype = ftype
-        self._num_perms = num_perms
         self._device = device if device is not None else torch.device('cpu')
         
         # Initialize the properties of the formula
@@ -249,11 +247,8 @@ class NormalFormFormula:
         self._bf = _CountingBooleanFunction(num_vars)
         self._graph = nx.Graph()
         self._tensor_capacity = 2**1 # 64
-        self._tensor = torch.zeros((num_perms, self._tensor_capacity, 2*num_vars), dtype=torch.int8, device=device)
+        self._tensor = torch.zeros((self._tensor_capacity, 2*num_vars), dtype=torch.int8, device=device)
         self._idxmap: dict[Literals, int] = {} # map from Literals to tensor indices
-        
-        # Initialize the permutations
-        self._perms = self._generate_permutations()
         
         # Convert the boolean function to the specified normal form
         if ftype == FormulaType.Conjunctive:
@@ -270,19 +265,19 @@ class NormalFormFormula:
         self._graph.add_edges_from([(f"x{i}", f"+x{i}") for i in range(num_vars)])
         self._graph.add_edges_from([(f"x{i}", f"-x{i}") for i in range(num_vars)])
     
-    def _generate_permutations(self) -> torch.Tensor:
-        n = self._num_vars
-        p = self._num_perms
-        perms = [torch.arange(2*n, dtype=torch.int32)]
+    # def _generate_permutations(self, num_perms) -> torch.Tensor:
+    #     n = self._num_vars
+    #     p = num_perms
+    #     perms = [torch.arange(2*n, dtype=torch.int32)]
 
-        for i in range(p - 1):
-            perm = torch.randperm(n, dtype=torch.int32).repeat(2)
-            sgn = torch.randint(0, 2, (n,), dtype=torch.int32)
-            perm[:n] += (2*i + sgn) * n
-            perm[n:] += (2*i + 1 - sgn) * n
-            perms.append(perm)
+    #     for i in range(p - 1):
+    #         perm = torch.randperm(n, dtype=torch.int32).repeat(2)
+    #         sgn = torch.randint(0, 2, (n,), dtype=torch.int32)
+    #         perm[:n] += (2*i + sgn) * n
+    #         perm[n:] += (2*i + 1 - sgn) * n
+    #         perms.append(perm)
         
-        return torch.cat(perms, dim=0).to(self._device)
+    #     return torch.cat(perms, dim=0).to(self._device)
     
     def copy(self):
         """
@@ -355,12 +350,9 @@ class NormalFormFormula:
             gt = torch.zeros(2*self._num_vars, dtype=torch.int8)
             gt[dls["pos"]] = 1
             gt[self._num_vars:][dls["neg"]] = 1
-            gt = gt.repeat(self._num_perms)
-            gt = gt[self._perms]
-            gt = gt.view(self._num_perms, 2*self._num_vars)
             gidx = self.num_gates
             self._idxmap[ls] = gidx
-            self._tensor[:, gidx, :] = gt
+            self._tensor[gidx, :] = gt
             
             # Apply the literals to the boolean function
             if self._ftype == FormulaType.Conjunctive:
@@ -375,8 +367,8 @@ class NormalFormFormula:
             gn = int(ls)
             self._graph.remove_node(gn)
             gidx = self._idxmap.pop(ls, None)
-            self._tensor[:, gidx, :] = self._tensor[:, self.num_gates - 1, :]
-            self._tensor[:, self.num_gates - 1, :] = 0
+            self._tensor[gidx, :] = self._tensor[self.num_gates - 1, :]
+            self._tensor[self.num_gates - 1, :] = 0
             
             # Remove the literals from the boolean function
             if self._ftype == FormulaType.Conjunctive:
@@ -464,13 +456,6 @@ class NormalFormFormula:
         return len(self._literals)
 
     @property
-    def num_perms(self) -> int:
-        """
-        Returns the number of permutations used in the formula.
-        """
-        return self._num_perms
-
-    @property
     def width(self) -> int:
         """
         Returns the width of the formula.
@@ -496,7 +481,7 @@ class NormalFormFormula:
         """
         Returns the tensor representation of the formula.
         """
-        return self._tensor[:, :self.num_gates].clone()
+        return self._tensor[:self.num_gates].clone()
 
     @property
     def graph(self) -> nx.Graph:

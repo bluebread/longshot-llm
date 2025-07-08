@@ -114,7 +114,7 @@ class GumbelTopK(Distribution):
 
         denom = self._total_psi - excl_cumsum # [..., k]
         denom_logs = torch.log(denom).sum(dim=-1) # scalar [...], log of the denominator
-
+        
         return num - denom_logs # scalar [...], log probability of the top-k indices
         
     def entropy(self):
@@ -130,9 +130,9 @@ class GumbelTopK(Distribution):
      
 if __name__ == "__main__":
     # Example usage
-    phi = torch.tensor([[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]])
+    phi = torch.tensor([[0.1, 0.2, 0.3, 0.4], [0.1, 0.1, 0.1, 0.1]])
     k = 2
-    gumbel_topk_dist = GumbelTopK(phi, k)
+    gumbel_topk_dist = GumbelTopK(phi, k, num_sample_entropy=2000)
     
     samples = gumbel_topk_dist.sample()
     print("Samples:", samples)
@@ -140,4 +140,7 @@ if __name__ == "__main__":
     print("Log Probabilities:", log_probs)
     entropy = gumbel_topk_dist.entropy()
     print("Entropy:", entropy)
+    # You can check the entropy value by hand. The answer should be [2.4764, 2.4849].
+    # Note that 2.4849 is exactly log(12), which is the maximum entropy for a 
+    # uniform distribution over 12 sequences.
     

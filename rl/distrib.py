@@ -9,7 +9,7 @@ class GumbelTopK(Distribution):
     the number of top elements to sample from the weighted distribution.
     """
     arg_constraints = { 
-        "phi": constraints.real_vector,
+        "_phi": constraints.real_vector,
     }
     has_rsample = False
     
@@ -95,8 +95,16 @@ class GumbelTopK(Distribution):
         Returns:
             torch.Tensor: A tensor containing the log probabilities of the given indices.
         """
-        phivals = self._phi.gather(-1, value) # [..., k]
-        psivals = self._psi.gather(-1, value) # [..., k]
+        phi = self._phi[(None,) * (value.dim() - self._phi.dim()) + (...,)]
+        rshape = value.shape[:-self._phi.dim()] + (1,) * self._phi.dim()
+        phi = phi.repeat(*rshape)  # repeat phi to match value shape
+        
+        psi = self._psi[(None,) * (value.dim() - self._psi.dim()) + (...,)]
+        rshape = value.shape[:-self._psi.dim()] + (1,) * self._psi.dim()
+        psi = psi.repeat(*rshape)  # repeat psi to match value shape
+        
+        phivals = phi.gather(-1, value) # [..., k], gather phi values for the top-k indices
+        psivals = psi.gather(-1, value) # [..., k], gather psi
 
         num = phivals.sum(dim=-1) # scalar [...], sum of phi values for the top-k indices
 
@@ -120,4 +128,16 @@ class GumbelTopK(Distribution):
         
         return -x.mean(dim=0)
      
-     
+if __name__ == "__main__":
+    # Example usage
+    phi = torch.tensor([[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]])
+    k = 2
+    gumbel_topk_dist = GumbelTopK(phi, k)
+    
+    samples = gumbel_topk_dist.sample()
+    print("Samples:", samples)
+    log_probs = gumbel_topk_dist.log_prob(samples)
+    print("Log Probabilities:", log_probs)
+    entropy = gumbel_topk_dist.entropy()
+    print("Entropy:", entropy)
+    

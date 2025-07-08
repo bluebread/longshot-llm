@@ -176,9 +176,10 @@ if __name__ == "__main__":
     print('- length', td['length'])
     print('- terminated', td['terminated'])
     print(f"{'='*20} RANDOM ACTION {'='*20}")
-    a = env.action_spec.rand()
+    a = env.action_spec.rand()  # This is a tensor, not TensorDict
     print(a)
-    td['action'] = a
+    # To pass action `a` to `env`, we need store `a` in `td`
+    td['action'] = a 
     
     print(f"{'='*20} STEP {'='*20}")
     td = env.step(td)

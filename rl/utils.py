@@ -43,7 +43,6 @@ def permute_tensor(
     Args:
         tensor (torch.Tensor): The tensor to permute.
         permutations (torch.Tensor): The permutations to apply.
-        num_vars (int): The number of variables in the tensor.
     Returns:
         torch.Tensor: The permuted tensor.
     """
@@ -64,16 +63,17 @@ def permute_tensor(
 
 if __name__ == "__main__":
     # Example usage
-    num_vars = 2
-    num_perms = 3
+    num_vars = 3
+    num_perms = 4
+    flen = 5
     device = torch.device('cpu')
     
-    permutations = random_formula_permutations(num_vars, num_perms, device)
+    permutations = random_formula_permutations(num_vars, num_perms, keep_origin=False, device=device)
     print("Generated Permutations:")
     print(permutations)
     
     # Create a sample tensor to permute
-    tensor = torch.randn((num_perms, 2 * num_vars), device=device)
+    tensor = torch.randn((flen, 2 * num_vars), device=device)
     permuted_tensor = permute_tensor(tensor, permutations)
     
     print("Original Tensor:")

@@ -229,6 +229,7 @@ class NormalFormFormula:
         num_vars: int, 
         ftype: FormulaType | None = FormulaType.Conjunctive,
         device: str | torch.device | None = None,
+        **kwargs
         ):
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
@@ -250,6 +251,9 @@ class NormalFormFormula:
         self._tensor = torch.zeros((self._tensor_capacity, 2*num_vars), dtype=torch.int8, device=device)
         self._idxmap: dict[Literals, int] = {} # map from Literals to tensor indices
         
+        if 'max_size' in kwargs:
+            self._tensor_capacity = kwargs['max_size']
+        
         # Convert the boolean function to the specified normal form
         if ftype == FormulaType.Conjunctive:
             self._bf.as_cnf()
@@ -264,20 +268,6 @@ class NormalFormFormula:
         self._graph.add_nodes_from(pos_nodes + neg_nodes, label="literal")
         self._graph.add_edges_from([(f"x{i}", f"+x{i}") for i in range(num_vars)])
         self._graph.add_edges_from([(f"x{i}", f"-x{i}") for i in range(num_vars)])
-    
-    # def _generate_permutations(self, num_perms) -> torch.Tensor:
-    #     n = self._num_vars
-    #     p = num_perms
-    #     perms = [torch.arange(2*n, dtype=torch.int32)]
-
-    #     for i in range(p - 1):
-    #         perm = torch.randperm(n, dtype=torch.int32).repeat(2)
-    #         sgn = torch.randint(0, 2, (n,), dtype=torch.int32)
-    #         perm[:n] += (2*i + sgn) * n
-    #         perm[n:] += (2*i + 1 - sgn) * n
-    #         perms.append(perm)
-        
-    #     return torch.cat(perms, dim=0).to(self._device)
     
     def copy(self):
         """

@@ -1,3 +1,4 @@
+import math
 import torch
 from torch.distributions import constraints
 from torch.distributions import Distribution, Gumbel
@@ -13,13 +14,13 @@ class GumbelTopK(Distribution):
     }
     has_rsample = False
     
-    def __init__(self, phi: torch.Tensor, k: int, num_sample_entropy: int = 1536, validate_args = None):
+    def __init__(self, phi: torch.Tensor, k: int, statis_freq: int = 1536, validate_args = None):
         """
         Initialize the GumbelTopK distribution.
         Args:
             phi (torch.Tensor): A tensor of shape (..., n) representing the weights for the distribution.
             k (int): The number of top elements to sample.
-            num_sample_entropy (int): Number of samples to use for estimating entropy.
+            statis_freq (int): Number of samples to use for estimating entropy.
             validate_args (bool): Whether to validate arguments.
         """
         if not isinstance(phi, torch.Tensor) or not isinstance(k, int):
@@ -28,14 +29,15 @@ class GumbelTopK(Distribution):
             raise ValueError("`phi` must be at least 1-dimensional")
         if not isinstance(k, int) or k <= 0:
             raise ValueError("`k` must be a positive integer (>=1)")
-        if not isinstance(num_sample_entropy, int) or num_sample_entropy <= 0:
-            raise ValueError("`num_sample_entropy` must be a positive integer (>=1)")
+        if not isinstance(statis_freq, int) or statis_freq <= 0:
+            raise ValueError("`statis_freq` must be a positive integer (>=1)")
         
         # Initialize parameters
         self._phi = phi
         self._k = k
         self._gumbel = Gumbel(0, 1)
-        self._num_sample_entropy = num_sample_entropy
+        self._statis_freq = statis_freq
+        self._validate_args = validate_args
         
         # Calculate temporary variables
         self._psi = torch.exp(phi)
@@ -65,11 +67,11 @@ class GumbelTopK(Distribution):
         
         # Copy over other parameters
         new._gumbel = self._gumbel
-        new._k = torch.Size([self._k])
-        new._num_sample_entropy = self._num_sample_entropy
+        new._k = self._k
+        new._statis_freq = self._statis_freq
         
         # Initialize the superclass with the new batch shape and event shape
-        super(GumbelTopK, new).__init__(batch_shape, torch.Size([self._k]), self.validate_args)
+        super(GumbelTopK, new).__init__(batch_shape, torch.Size([self._k]), self._validate_args)
         return new
     
     def sample(self, sample_shape=torch.Size()):
@@ -80,12 +82,13 @@ class GumbelTopK(Distribution):
         Returns:
             torch.Tensor: A tensor containing the indices of the top-k elements sampled from the GumbelTopK distribution.
         """
-        phi = self._phi
-        g = self._gumbel
-        k = self._k
-        x = phi + g.sample(sample_shape + phi.shape)
-        
-        return torch.topk(x, k, dim=-1).indices
+        with torch.no_grad():
+            phi = self._phi
+            g = self._gumbel
+            k = self._k
+            x = phi + g.sample(sample_shape + phi.shape)
+            
+            return torch.topk(x, k, dim=-1).indices
     
     def log_prob(self, value: torch.Tensor):
         """ 
@@ -123,16 +126,47 @@ class GumbelTopK(Distribution):
         Returns:
             torch.Tensor: A tensor containing the estimated entropy of the distribution.
         """
-        sample_shape = torch.Size([self._num_sample_entropy])
+        sample_shape = torch.Size([self._statis_freq])
         x = self.log_prob(self.sample(sample_shape))
         
         return -x.mean(dim=0)
-     
+    
+class GumbelTopKSubset(GumbelTopK):
+    def __init__(self, *args, **kwargs):
+        """
+        Initialize the GumbelTopKSubset distribution.
+        This is a subclass of GumbelTopK that can be used for specific subsets of the distribution.
+        """
+        super().__init__(*args, **kwargs)
+    
+    def log_prob(self, value):
+        """
+        Calculate the log probability of the given value under the GumbelTopKSubset distribution.
+        This method overrides the log_prob method of the parent class.
+        Args:
+            value (torch.Tensor): The indices of the top-k elements to calculate the log probability for.
+        Returns:
+            torch.Tensor: A tensor containing the log probabilities of the given indices.
+        """
+        # TODO: Monte Carlo sampling for probability estimation is unbiased but with 
+        #       high variance, which would cause hilarious results when the number of samples 
+        #       is insufficient. Try to adopt a more stable method, such as self-normalized 
+        #       importance sampling.
+        perms = torch.rand(self._statis_freq, *value.shape, device=value.device).argsort(dim=-1) # random sample to get the indices
+        value = value.expand(self._statis_freq, *value.shape) # expand value to match the sample shape
+        value = value.gather(-1, perms) # gather the values based on the random indices
+        logp = super().log_prob(value) # calculate log probabilities using the parent class method
+        m = math.factorial(value.shape[-1]) # factorial of the number of top-k elements
+        p = torch.exp(logp) # exponentiate the log probabilities
+        
+        return torch.log(p.mean(dim=0) * m) # return the mean log probability multiplied by the factorial
+
+
 if __name__ == "__main__":
     # Example usage
     phi = torch.tensor([[0.1, 0.2, 0.3, 0.4], [0.1, 0.1, 0.1, 0.1]])
     k = 2
-    gumbel_topk_dist = GumbelTopK(phi, k, num_sample_entropy=2000)
+    gumbel_topk_dist = GumbelTopK(phi, k, statis_freq=2000)
     
     samples = gumbel_topk_dist.sample()
     print("Samples:", samples)
@@ -140,7 +174,11 @@ if __name__ == "__main__":
     print("Log Probabilities:", log_probs)
     entropy = gumbel_topk_dist.entropy()
     print("Entropy:", entropy)
-    # You can check the entropy value by hand. The answer should be [2.4764, 2.4849].
+    # You can check the entropy values by hand. The answer should be [2.4764, 2.4849].
     # Note that 2.4849 is exactly log(12), which is the maximum entropy for a 
-    # uniform distribution over 12 sequences.
+    # uniform distribution over 4 * 3 = 12 sequences.
     
+    new_g = gumbel_topk_dist.expand(torch.Size([2]))
+    print("Expanded Samples:", new_g.sample())
+    print("Expanded Log Probabilities:", new_g.log_prob(samples))
+    print("Expanded Entropy:", new_g.entropy())

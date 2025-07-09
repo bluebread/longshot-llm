@@ -148,10 +148,18 @@ class GumbelTopKSubset(GumbelTopK):
         Returns:
             torch.Tensor: A tensor containing the log probabilities of the given indices.
         """
-        # TODO: Monte Carlo sampling for probability estimation is unbiased but with 
-        #       high variance, which would cause hilarious results when the number of samples 
-        #       is insufficient. Try to adopt a more stable method, such as self-normalized 
-        #       importance sampling.
+        # Note: The probability of a subset is the sum of the probabilities of all permutations of 
+        # the elements in the subset, which is equivalent to the number of all permutations times
+        # the mean probability. To estimate this, we adopt importance sampling technique: 
+        #       (1) sample a number of random permutations of elements in the subset.
+        #       (2) calculate the mean probability.
+        #       (3) multiply it by the number of permutations, which is exactly the factorial of the size 
+        #           of the subset.
+        #       (4) return the log of that value.
+        # Caution: This is an approximation and may not be exact, and if the sampling frequency is low, 
+        # the result may be highly inaccurate (and could be even over 1).
+        # TODO: since the result could be over 1, apply softmax to the result to make it a valid probability.
+        
         perms = torch.rand(self._statis_freq, *value.shape, device=value.device).argsort(dim=-1) # random sample to get the indices
         value = value.expand(self._statis_freq, *value.shape) # expand value to match the sample shape
         value = value.gather(-1, perms) # gather the values based on the random indices

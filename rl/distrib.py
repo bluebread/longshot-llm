@@ -2,6 +2,7 @@ import math
 import torch
 from torch.distributions import constraints
 from torch.distributions import Distribution, Gumbel
+from deprecation import deprecated
 
 class GumbelTopK(Distribution):
     """
@@ -99,12 +100,12 @@ class GumbelTopK(Distribution):
             torch.Tensor: A tensor containing the log probabilities of the given indices.
         """
         phi = self._phi[(None,) * (value.dim() - self._phi.dim()) + (...,)]
-        rshape = value.shape[:-self._phi.dim()] + (1,) * self._phi.dim()
-        phi = phi.repeat(*rshape)  # repeat phi to match value shape
+        rshape = value.shape[:-self._phi.dim()] + self._phi.shape  # shape to match value
+        phi = phi.expand(*rshape)  # expand phi to match value shape
         
         psi = self._psi[(None,) * (value.dim() - self._psi.dim()) + (...,)]
-        rshape = value.shape[:-self._psi.dim()] + (1,) * self._psi.dim()
-        psi = psi.repeat(*rshape)  # repeat psi to match value shape
+        rshape = value.shape[:-self._psi.dim()] + self._psi.shape
+        psi = psi.expand(*rshape)  # expand psi to match value shape
         
         phivals = phi.gather(-1, value) # [..., k], gather phi values for the top-k indices
         psivals = psi.gather(-1, value) # [..., k], gather psi
@@ -130,7 +131,8 @@ class GumbelTopK(Distribution):
         x = self.log_prob(self.sample(sample_shape))
         
         return -x.mean(dim=0)
-    
+
+@deprecated    
 class GumbelTopKSubset(GumbelTopK):
     def __init__(self, *args, **kwargs):
         """

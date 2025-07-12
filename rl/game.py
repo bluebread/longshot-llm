@@ -3,6 +3,14 @@ from torch import nn
 import torch.nn.functional as F
 import torch
 from torchrl.envs import EnvBase
+from torchrl.envs import (
+    Compose,
+    DoubleToFloat,
+    ObservationNorm,
+    StepCounter,
+    TransformedEnv,
+)
+from torchrl.envs.utils import check_env_specs
 from torchrl.data import Composite, Binary, Bounded, UnboundedContinuous
 from longshot.circuit import NormalFormFormula, Literals, CNF, DNF
 from longshot.error import LongshotError
@@ -209,3 +217,19 @@ if __name__ == "__main__":
     print('- length:', td['next']['length'])
     print('- reward:', td['next']['reward'])
     print('- avgQ:', td['next']['avgQ'])
+    
+    base_env = FormulaGame(
+        formula=DNF(4),
+        width=4,
+        size=16,
+        eps=0.1,
+        device=torch.device('cuda')
+    )
+    env = TransformedEnv(
+        base_env,
+        Compose(
+            DoubleToFloat(),
+            StepCounter(),
+        ),
+    )
+    check_env_specs(env)

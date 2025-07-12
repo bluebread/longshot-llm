@@ -23,16 +23,29 @@ def random_formula_permutations(
     perms = []
     
     if keep_origin:
-        perms = [torch.arange(2*n, dtype=torch.int32)]
+        perms = [torch.arange(2*n, dtype=torch.int64)]
 
     for i in range(s,p):
-        perm = torch.randperm(n, dtype=torch.int32).repeat(2)
-        sgn = torch.randint(0, 2, (n,), dtype=torch.int32)
+        perm = torch.randperm(n, dtype=torch.int64).repeat(2)
+        sgn = torch.randint(0, 2, (n,), dtype=torch.int64)
         perm[:n] += (2*i + sgn) * n
         perm[n:] += (2*i + 1 - sgn) * n
         perms.append(perm)
         
     return torch.cat(perms, dim=0).to(device)
+
+def inverse_permutation(perm: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the inverse of a given permutation.
+    Args:
+        perm (torch.Tensor): A tensor containing the permutation indices.
+    Returns:
+        torch.Tensor: A tensor containing the inverse permutation indices.
+    """
+    d = len(perm)
+    inv_perm = torch.zeros_like(perm)
+    inv_perm.scatter_(-1, perm, torch.arange(d))
+    return inv_perm
 
 def permute_tensor(
     tensor: torch.Tensor, 
@@ -80,3 +93,16 @@ if __name__ == "__main__":
     print(tensor)
     print("Permuted Tensor:")
     print(permuted_tensor)
+    
+    # Example of inverse permutation
+    inv_perm = inverse_permutation(permutations)
+    print("Inverse Permutation:")
+    print(inv_perm)
+    tensor = torch.arange(2 * num_vars * num_perms, dtype=torch.int64, device=device)
+    permuted_tensor = permute_tensor(tensor, permutations)[0]
+    print("Permuted Tensor with Inverse Permutation:")
+    print(permuted_tensor)
+    recovered_tensor = permute_tensor(permuted_tensor, inv_perm)[0]
+    print("Recovered Tensor after Inverse Permutation:")
+    print(recovered_tensor)
+    print("Original Tensor Matches Recovered Tensor:", torch.equal(tensor, recovered_tensor))

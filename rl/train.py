@@ -9,12 +9,15 @@ from torchrl.envs import (
     StepCounter,
     TransformedEnv,
 )
-from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data.replay_buffers.storages import LazyTensorStorage
+from torchrl.data.replay_buffers import (
+    LazyMemmapStorage, 
+    TensorDictReplayBuffer,
+    SamplerWithoutReplacement,
+)
 from torchrl.modules import ActorCriticOperator, ActorValueOperator, ProbabilisticActor, ValueOperator
 from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
+import tempfile
 from tqdm import tqdm
 import multiprocessing
 
@@ -71,6 +74,14 @@ dropout = 0.1
 layer_norm_eps = 1e-5
 bias = True
 
+# Replay buffer parameters
+buffer_size = 20  # maximum size of the replay buffer
+batch_size = 5  # batch size for sampling from the replay buffer
+
+# GAE parameters
+gamma_gae = 0.98  # discount factor for GAE
+lmbda_gae = 0.95  # lambda for GAE
+
 # Other parameters
 statis_freq = 2000  # number of samples to estimate the log probability and entropy
 
@@ -125,4 +136,42 @@ value_head = ValueOperator(
         torch.nn.Linear(d_model, 1)
     ),
     in_keys=["latent"],
+)
+
+# Define replay buffer
+tmpdir = tempfile.TemporaryDirectory()
+buffer = TensorDictReplayBuffer(
+    storage=LazyMemmapStorage(max_size=buffer_size, scratch_dir=tmpdir), 
+    sampler=SamplerWithoutReplacement(),
+    batch_size=batch_size,
+)
+# DO NOT forget to clean up the temporary directory after creating the buffer
+# # tmpdir.cleanup()  # Clean up the temporary directory after creating the buffer
+
+# Define the advantage estimation module
+gae_module = GAE(
+    gamma=gamma_gae,
+    lmbda=lmbda_gae,
+    value_network=None,
+    average_gae=True,
+    differentiable=True,
+    device=device,
+)
+
+# Define the loss module
+loss_module = ClipPPOLoss(
+    actor_network=action_head,
+    critic_network=value_head,
+    clip_epsilon=clip_epsilon,
+    entropy_bonus=bool(entropy_eps),
+    entropy_coef=entropy_eps,
+    # these keys match by default but we set this for completeness
+    critic_coef=1.0,
+    loss_critic_type="smooth_l1",
+)
+
+# Define the optimizer and scheduler
+optim = torch.optim.Adam(loss_module.parameters(), lr)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optim, total_frames // frames_per_batch, 0.0
 )

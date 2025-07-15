@@ -1,3 +1,4 @@
+import math
 from tensordict import TensorDict, TensorDictBase
 from torch import nn
 import torch.nn.functional as F
@@ -87,7 +88,7 @@ class FormulaGame(EnvBase):
             avgQ=UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device),
             device=self._device,
         )
-        self.action_spec = Binary(d, device=self._device)
+        self.action_spec = Binary(d + 1, device=self._device)
         self.state_spec = self.observation_spec.clone()
         self.reward_spec = UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device)
         
@@ -167,6 +168,63 @@ class FormulaGame(EnvBase):
             device=self._device,
         )
         
+class SimpleFixedWidthFormulaGame(FormulaGame):
+    """
+    A simplified version of FormulaGame with a fixed width for the formula.
+    This class inherits from FormulaGame and sets a fixed width for the formula.
+    """
+    def __init__(self, formula: NormalFormFormula, device=None, *args, **kwargs):
+        if 'width' not in kwargs:
+            raise LongshotError("Width must be specified for SimpleFixedWidthFormulaGame.")
+        if kwargs['width'] != formula.width:
+            raise LongshotError(f"Formula width {formula.width} does not match specified width {kwargs['width']}.")
+        
+        # Call the parent class constructor
+        super().__init__(formula, device=device, *args, **kwargs)        
+        
+        # Reset the observation's spec
+        n = self._num_vars
+        w = self._width
+        max_num_gates = math.comb(n, w) * (2 ** w)  # Maximum number of gates for a fixed width formula
+        self.observation_spec = Composite(
+            gates=Binary(max_num_gates, device=self._device),
+            avgQ=UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device),
+            device=self._device,
+        )
+        self.obs_tensor = self.observation_spec.empty(device=self._device)
+        
+    def _step(self, tensordict):
+        td = super()._step(tensordict)
+        td.pop("sequence", None)  # Remove sequence from the observation
+        td.pop("length", None)  # Remove length from the observation
+        
+        n = self._num_vars
+        s = self._size
+        w = self._width
+        pos = [i for i,v in enumerate(tensordict["action"][:n]) if v == 1]
+        neg = [i for i,v in enumerate(tensordict["action"][n:]) if v == 1]
+        ls = Literals(pos, neg)
+        
+        if ls.is_constant or ls.width != w or self._cur_f.num_gates >= s:
+            td.update({ 
+                'gates': self.obs_tensor,
+                'reward': torch.tensor([self._kwargs.get('penalty', -1.0)], dtype=torch.float32, device=self._device),
+            })
+        else:
+            a: torch.Tensor = tensordict["action"]
+            lv = [i for i in range(n) if a[i] == 1 or a[i + n] == 1] # involved variables
+            signs = [a[i + n] for i in lv]  # signs of the literals
+            i = sum([math.comb(a, i + 1) for a in lv])  # index of the gate in the observation tensor
+            j = sum([x * 2**i for i,x in enumerate(signs)])  # index of the gate in the observation tensor
+            self.obs_tensor[i * (2**n) + j] = 1  # set the gate to 1
+            td.update({
+                'gates': self.obs_tensor,
+            })
+    
+        return td
+    
+
+
 if __name__ == "__main__":
     env = FormulaGame(
         formula=CNF(5),

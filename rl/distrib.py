@@ -1,7 +1,7 @@
 import math
 import torch
 from torch.distributions import constraints
-from torch.distributions import Distribution, Gumbel
+from torch.distributions import Distribution, Gumbel, Bernoulli
 from deprecation import deprecated
 
 class GumbelTopK(Distribution):
@@ -171,6 +171,55 @@ class GumbelTopKSubset(GumbelTopK):
         
         return torch.log(p.mean(dim=0) * m) # return the mean log probability multiplied by the factorial
 
+class GateTokenDistribution(Distribution):
+    """
+    GateTokenDistribution is a specialized distribution for sampling gate tokens.
+    It inherits from GumbelTopK and is used to sample tokens based on their probabilities.
+    """
+    def __init__(self, phi: torch.Tensor, p_EOS: torch.Tensor, k: int, statis_freq: int = 1536, validate_args = None):
+        """
+        Initialize the GateTokenDistribution.
+        Args:
+            phi (torch.Tensor): A tensor of shape (..., n) representing the weights for the distribution.
+            p_EOS (torch.Tensor): A tensor of shape (..., 1) representing the probability of EOS token.
+            k (int): The number of top elements to sample.
+            statis_freq (int): Number of samples to use for estimating entropy.
+            validate_args (bool): Whether to validate arguments.
+        """
+        if not isinstance(p_EOS, torch.Tensor):
+            raise TypeError("`p_EOS` must be torch.Tensor")
+        if p_EOS.dim() != 1:
+            raise ValueError("`p_EOS` must be 1-dimensional")
+        if p_EOS.shape[:-1] != phi.shape[:-1]:
+            raise ValueError("`p_EOS` must have the same batch shape as `phi`")
+        
+        self.bernoulli = Bernoulli(p_EOS)
+        self.gumbel_topk = GumbelTopK(phi, k, statis_freq, validate_args)
+    
+    def sample(self, sample_shape=torch.Size()):
+        """
+        Sample from the GateTokenDistribution.
+        Args:
+            sample_shape (torch.Size): The shape of the samples to draw.
+        Returns:
+            torch.Tensor: A tensor containing the indices of the top-k elements sampled from the distribution.
+        """
+        # Call the parent class sample method to get the top-k indices
+        eos = self.bernoulli.sample(sample_shape)
+        topk_indices = self.gumbel_topk.sample(sample_shape)
+        
+        return torch.cat([topk_indices, eos.unsqueeze(-1)], dim=-1)  # concatenate EOS token at the end
+
+    def log_prob(self, value: torch.Tensor):
+        """
+        Calculate the log probability of the given value under the GateTokenDistribution.
+        Args:
+            value (torch.Tensor): The indices of the top-k elements to calculate the log probability for.
+        Returns:
+            torch.Tensor: A tensor containing the log probabilities of the given indices.
+        """
+        # Call the parent class log_prob method to get the log probabilities
+        return super().log_prob(value) * (1 - value[..., -1]) + self.bernoulli.log_prob(value[..., -1])
 
 if __name__ == "__main__":
     # Example usage

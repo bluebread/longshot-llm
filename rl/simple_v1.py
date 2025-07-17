@@ -6,6 +6,7 @@ import multiprocessing
 
 import torch
 import torch.nn as nn
+from torch.distributions import kl_divergence, register_kl
 from tensordict import TensorDict, TensorDictBase
 from tensordict.nn import TensorDictModule
 from torchrl.collectors import SyncDataCollector
@@ -92,6 +93,7 @@ iso_lookup: dict[int, list[int]] = {} # map the Weisfeiler-Lehman graph hash to 
 total_steps: int = 0
 arms: list[tuple[float, int, float]] = []
 
+# TODO: This is wrong to update the arms.
 def update_arm(idx: int, reward: float):
     global total_steps
     total_steps += 1
@@ -111,6 +113,12 @@ def select_arms(k: int) -> list[int]:
     
     topk = heapq.nlargest(k, enumerate(arms), key=lambda x: x[1][0])
     return [idx for idx, _ in topk]
+
+# TODO: Define the KL divergence function for the GateTokenDistribution
+
+@register_kl(GateTokenDistribution, GateTokenDistribution)
+def kl_gate_token_distribution(p: GateTokenDistribution, q: GateTokenDistribution) -> torch:
+    raise NotImplementedError("KL divergence for GateTokenDistribution is not implemented. ")
 
 # Define initial environment
 
@@ -248,9 +256,14 @@ for i in range(num_episodes):
         device=device,
     )
     
-    for j, td_data in enumerate(collector):
-        advantage_module(td_data)
-        buffer.extend(td_data)
+    for j, td in enumerate(collector):
+        # TODO: First, extract formulas with the largest D_ave(f) and save them to the pool.
+        #       You have to find the largest D_ave(f) in the current batch, and turn the corresponding
+        #       formula into a formula. Then, add it to the pool and update the
+        
+        # Start the training loop
+        advantage_module(td)
+        buffer.extend(td)
         
         for _ in range(frames_per_batch // sub_batch_size):
             subdata = buffer.sample(sub_batch_size)
@@ -269,6 +282,12 @@ for i in range(num_episodes):
             optim.step()
             optim.zero_grad()
             
+            # TODO: If KL divergence is over some point, stop training. Need the output 
+            #       of the new policy to compute the KL divergence. The original policy's
+            #       output is not needed for the training since it has been saved in the
+            #       `td`.
+        
+        # TODO: log the results. refer to the tutorial. 
         
         # We're also using a learning rate scheduler. Like the gradient clipping,
         # this is a nice-to-have but nothing necessary for PPO to work.

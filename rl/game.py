@@ -100,7 +100,7 @@ class FormulaGame(EnvBase):
             avgQ=UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device),
             device=self._device,
         )
-        self.action_spec = Binary(d + 1, device=self._device)
+        self.action_spec = Binary(d + 1, device=self._device) # TODO: may be +3. one for EOS, one for adding, and one for removing a gate
         self.state_spec = self.observation_spec.clone()
         self.reward_spec = UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device)
         
@@ -203,7 +203,13 @@ class SimpleFixedWidthFormulaGame(FormulaGame):
             avgQ=UnboundedContinuous(shape=(1,), dtype=torch.float32, device=self._device),
             device=self._device,
         )
-        self.obs_tensor = self.observation_spec.empty(device=self._device)
+        self.obs_tensor = self.observation_spec.empty(device=self._device) # TODO: this line is wrong. 
+        # TODO: Initialize the observation tensor
+        
+    # TODO: Implement the reset method to initialize the observation tensor
+    def reset(self, tensordict = None, **kwargs):
+        pass
+        # return super().reset(tensordict, **kwargs)
         
     def _step(self, tensordict):
         td = super()._step(tensordict)

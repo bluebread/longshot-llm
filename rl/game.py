@@ -61,6 +61,18 @@ class FormulaGame(EnvBase):
         self._make_spec()
         super().__init__(*args, **kwargs)
     
+    def cur_formula(self) -> NormalFormFormula:
+        """
+        Returns the current formula being manipulated in the environment.
+        This method provides access to the current state of the formula.
+        Returns:
+            NormalFormFormula: The current logical formula in CNF or DNF form.
+        """
+        return self._cur_f.copy()
+    
+    def wl_graph_hash(self, iterations: int = None) -> int:
+        return self._cur_f.wl_graph_hash(iterations=iterations)
+    
     def _set_seed(self, seed: int = None) -> None:
         """
         Sets the random seed for reproducibility.

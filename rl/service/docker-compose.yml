@@ -1,10 +1,7 @@
-version: "3.8"
-
 services:
   neo4j:
     image: neo4j:2025.06.2
     container_name: neo4j-bread
-    restart: always
     ports:
       - "7474:7474"   # Web UI
       - "7687:7687"   # Bolt protocol, used for Python driver, etc.
@@ -19,7 +16,6 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq-bread
-    restart: always
     ports:
       - "5672:5672"   # RabbitMQ communication (AMQP protocol)
       - "15672:15672" # Management interface (http://localhost:15672)
@@ -30,17 +26,11 @@ services:
   redis:
     image: redis:7
     container_name: redis-bread
-    restart: always
     ports:
       - "6379:6379"   # Redis port
     volumes:
       - redis_data:/data
-    restart: always
     command: ["redis-server", "--requirepass", "bread861122"] 
-    ports:
-      - "6379:6379"   # Redis protocol
-    volumes:
-      - redis_data:/data
 
 volumes:
   neo4j_data:

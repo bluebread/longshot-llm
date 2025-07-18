@@ -1,5 +1,5 @@
 import torch
-from .transformer import TransformerWithCache
+from .transformer_v2 import TransformerWithCache
 
 class LongshotModel(torch.nn.Module):
     def __init__(

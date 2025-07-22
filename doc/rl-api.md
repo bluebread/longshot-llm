@@ -79,12 +79,9 @@ This document outlines the structure and content of the API documentation for th
     - Maintains the evolution graph of formulas.
     - Implements policies for arm selection (e.g., UCB algorithm).
     - Submodules:
-        1. *Arm Filter Gateway*: Provides a public interface for the arm filter service.
-        2. *Trajectory Processor*: Processes trajectories and updates the evolution graph.
-        3. *Arm Deduplicator*: Checks if a formula is isomorphic to any existing formula using the isomorphism hash table.
-        4. *Graph Change Detector*: Detects changes in the evolution graph and calls the evolution graph manager and the arm ranker to update the graph and the arm ranking.
-        5. *Evolution Graph Manager*: Manages the evolution graph and its updates.
-        6. *Arm Ranker*: Ranks the arms (formulas) based on their performance and potential.
+        1. *Trajectory Processor*: Processes trajectories and updates the evolution graph.
+        2. *Evolution Graph Manager*: Manages the evolution graph and its updates.
+        3. *Arm Ranker*: Ranks the arms (formulas) based on their performance and potential.
     - Main API:
         - `GET /topk_arms`: Return the current best top-K arms.
 
@@ -135,7 +132,7 @@ Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number
 | formula\_id      | UUID   | The node's ID, corresponding to the primary key of the FormulaTable    |
 | avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
 | visited\_counter | int    | The number of times this node has been touched by a trajectory                   |
-| inactive         | bool   | Whether this node is inactive                    |
+| inactive         | bool   | Whether this node is inactive. If inactive, it will not be collected while traversing the graph.                    |
 | in_degree        | int    | The in-degree of this node in the evolution graph  |
 | out_degree       | int    | The out-degree of this node in the evolution graph  |
 
@@ -295,12 +292,7 @@ channel.start_consuming()
 
 ### Warehouse
 
-The Warehouse is a microservice that manages the storage and retrieval of data related to formulas, trajectories, and the evolution graph. It abstracts the complexity of data management and provides a simple interface for data access.
-
-
-### Warehouse API Reference
-
-Below are the RESTful API endpoints provided by the Warehouse microservice. Each endpoint is described with its purpose, request/response formats, and expected status codes.
+The Warehouse is a microservice that manages the storage and retrieval of data related to formulas, trajectories, and the evolution graph. It abstracts the complexity of data management and provides a simple interface for data access. 
 
 #### `GET /formula/info`
 Retrieve information about a formula by its ID.
@@ -832,13 +824,7 @@ GET /topk_arms
 
 ### Arm Filter
 
-#### Arm Filter Gateway
-
-#### Arm Deduplicator
-
 #### Trajectory Processor
-
-#### Graph Change Detector
 
 #### Evolution Graph Manager
 

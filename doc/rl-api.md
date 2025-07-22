@@ -812,20 +812,153 @@ GET /topk_arms
 
 ### Formula Game
 
----
+#### `Class FormulaGame(formula: NormalFormFormula, **config)`
 
-### Environment Agent
+The `FormulaGame` class implements the RL environment that simulates the process of adding or deleting gates in a normal form formula. It calculates the average-case deterministic query complexity, which is the optimization target.
 
----
+##### Constructor Parameters
 
-### Trainer
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `formula` | NormalFormFormula | The formula to be manipulated in the game |
+| `config`  | dict   | Configuration parameters for the game         |
+
+#### `Method FormulaGame.reset(self) -> None`
+
+Resets the internal variables of the formula game. This method is called at the beginning of each episode to prepare the environment for a new game.
+
+#### `Method FormulaGame.step(self, token: GateToken) -> float`
+
+Simulates a step in the formula game by applying the given token (which indicates adding or deleting a gate) to the formula. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
+
+##### Parameters
+
+| Parameter | Type     | Description                                   |
+| --------- | :-------: | --------------------------------------------- |
+| `token`   | GateToken | The token representing the gate operation     |
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `float` | The reward received after applying the token, based on the average-case deterministic query complexity of the formula. |
+
+### `Class GateToken`
+
+The `GateToken` class represents a token that indicates an operation (adding or deleting a gate) in the formula game. It contains information about the type of operation and the literals involved.
+
+##### Constructor Parameters
+
+| Parameter       | Type   | Description                                   |
+| --------------- | :-----: | --------------------------------------------- |
+| `token_type`    | str    | The type of the token, either "ADD", "DELETE" or "EOS" |
+| `token_literals` | list   | The literals involved in the operation, represented as a list of strings |
+
+### `Class EnvironmentAgent(**config)`
+
+The `EnvironmentAgent` class is responsible for interacting with the environment in which the formula game is played. It manages the state of the environment and provides methods for the formula game to query and update the environment.
+
+##### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `config`  | dict   | Configuration parameters for the agent        |
+
+#### `Method EnvironmentAgent.replace_arms(self) -> None`
+
+Replaces all arms/environments using the arm filter. This method is called to update the set of available arms based on the latest trajectories and evolution graph.
+
+#### `Method EnvironmentAgent.reset(self) -> None`
+
+Resets the formula games and saves trajectories to the trajectory queue, except for the first time calling `reset()`. This method prepares the environment for a new episode by resetting the state of all formula games.
+
+#### `Method EnvironmentAgent.step(self, tokens: list[GateToken]) -> float`
+
+Executes a step of the formula games by applying the given token. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
+
+##### Parameters
+
+| Parameter | Type          | Description                                   |
+| --------- | :------------: | --------------------------------------------- |
+| `tokens`  | list[GateToken] | A list of tokens representing the operations to be applied to the formula games |
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `float` | The reward received after applying the tokens, based on the average-case deterministic query complexity of the formula. |
 
 ---
 
 ### Arm Filter
 
-#### Trajectory Processor
+#### `Class TrajectoryProcessor(**config)`
 
-#### Evolution Graph Manager
 
-#### Arm Ranker
+The `TrajectoryProcessor` class processes trajectories and updates the evolution graph. It is responsible for managing the data flow between the trajectory queue and the evolution graph.
+
+##### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `config`  | dict   | Configuration parameters for the processor    |
+
+#### `TrajectoryProcessor.process_trajectory(self, data: dict) -> None`
+
+Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `data`    | dict   | The trajectory data to process in the message schema (JSON) defined in Trajectory Queue.                  |
+
+#### `Class EvolutionGraphManager(**config)`
+
+The `EvolutionGraphManager` class manages the evolution graph and its updates. It is responsible for keeping the graph's size manageable using graph contraction techniques, which adds skipping edges to the graph. 
+
+##### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `config`  | dict   | Configuration parameters for the manager      |
+
+#### `Method EvolutionGraphManager.check(self) -> bool`
+
+Checks if the evolution graph satisfies the size constraints defined in the configuration. If the graph is too large, it will trigger a contraction process.
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `bool`  | `True` if the graph is within size constraints, `False` otherwise. |
+
+#### `Method EvolutionGraphManager.contract_graph(self) -> None`
+
+Contracts the evolution graph by merging nodes and edges based on the provided data. This method is called when the graph exceeds the size constraints. The result is then saved to the warehouse.
+
+#### `Class ArmRanker(**config)`
+
+The `ArmRanker` class ranks the arms (formulas) based on their performance and potential. It uses the evolution graph and trajectories to determine the best arms.
+
+##### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `config`  | dict   | Configuration parameters for the ranker       |
+
+#### `Method ArmRanker.rank_arms(self, arms: list) -> list[dict]`
+
+Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `arms`    | list   | A list of arms (formulas' IDs) to rank                  |
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `list`  | A list of dictionaries containing the ranked arms and their scores. |

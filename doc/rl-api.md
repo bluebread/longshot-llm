@@ -753,7 +753,7 @@ The Arm Filter is a microservice responsible for filtering and selecting the bes
 
 ##### Description
 
-Returns the current best top-K arms based on the latest trajectories and evolution graph.
+Returns the current best top-K arms based on the latest trajectories and evolution graph. If parameter `size` is provided, it will return only the formulas of size less than or equal to `size`. If `size` is not provided, it will return the formulas of any size.
 
 ##### Endpoint
 ```
@@ -766,7 +766,9 @@ GET /topk_arms
 | --------- | :-----: | --------------------------------------------- |
 | num_vars | int | The number of variables in the formula  |
 | width    | int | The width of the formula           |
-| k       | int | The number of top arms to return  
+| k       | int | The number of top arms to return  |
+| size     | int | The maximum size of the formula. Default: None |
+
 
 ##### Response (Success)
 
@@ -810,9 +812,35 @@ GET /topk_arms
 
 ## Local Modules
 
+
+### `Class GateToken(literals, *, type: str)`
+
+The `GateToken` class represents a token that indicates an operation (adding or deleting a gate) in the formula game. It contains information about the type of operation and the literals involved.
+
+##### Constructor Parameters
+
+| Parameter       | Type   | Description                                   |
+| --------------- | :-----: | --------------------------------------------- |
+| `literals`      | list   | A list of literals involved in the operation   |
+| `type`    | str    | The type of operation, either "ADD" or "DEL" or "EOS" |
+
+
+#### `Method GateToken.dim_token(num_vars: int) -> int`
+
+Returns `2 * num_vars + 3`, the dimension of the token tensor based on the number of variables in the formula, where `num_vars` is the number of variables in the formula. The first `num_vars` elements represent the literals, the next `num_vars` elements represent the negated literals, and the last three elements represent the token type.
+
+#### `Method GateToken.to_tensor(self) -> torch.Tensor`
+
+Converts the `GateToken` instance to a PyTorch tensor representation. The tensor will have a shape of `(dim_token,)`. 
+
+#### `Method GateToken.to_token(torch.Tensor) -> GateToken`
+
+Converts a PyTorch tensor back to a `GateToken` instance. The tensor should have a shape of `(dim_token,)`.
+
+
 ### Formula Game
 
-#### `Class FormulaGame(formula: NormalFormFormula, **config)`
+#### `Class FormulaGame(init_formula: list[GateToken], **config)`
 
 The `FormulaGame` class implements the RL environment that simulates the process of adding or deleting gates in a normal form formula. It calculates the average-case deterministic query complexity, which is the optimization target.
 
@@ -820,7 +848,7 @@ The `FormulaGame` class implements the RL environment that simulates the process
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
-| `formula` | NormalFormFormula | The formula to be manipulated in the game |
+| `init_formula` | list[GateToken] | The formula to be manipulated in the game |
 | `config`  | dict   | Configuration parameters for the game         |
 
 #### `Method FormulaGame.reset(self) -> None`
@@ -843,50 +871,53 @@ Simulates a step in the formula game by applying the given token (which indicate
 | :------: | --------------------------------------------- |
 | `float` | The reward received after applying the token, based on the average-case deterministic query complexity of the formula. |
 
-### `Class GateToken`
 
-The `GateToken` class represents a token that indicates an operation (adding or deleting a gate) in the formula game. It contains information about the type of operation and the literals involved.
+### `Class EnvironmentAgent(num_env: int, num_var: int, width: int, size: int, device: torch.device = None, **config)`
 
-##### Constructor Parameters
-
-| Parameter       | Type   | Description                                   |
-| --------------- | :-----: | --------------------------------------------- |
-| `token_type`    | str    | The type of the token, either "ADD", "DELETE" or "EOS" |
-| `token_literals` | list   | The literals involved in the operation, represented as a list of strings |
-
-### `Class EnvironmentAgent(**config)`
-
-The `EnvironmentAgent` class is responsible for interacting with the environment in which the formula game is played. It manages the state of the environment and provides methods for the formula game to query and update the environment.
+The `EnvironmentAgent` class manages multiple environments (formula games) and transforms data into Tensor/TensorDict format. It is responsible for replacing arms/environments using the arm filter, resetting formula games, and executing steps in the formula games. During initialization, it will create `num_env` games of empty formulas with the given number of variables and width.
 
 ##### Constructor Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
+| `num_env` | int    | The number of environments to manage          |
+| `num_var` | int    | The number of variables in the formula        |
+| `width`   | int    | The width of the formula                      |
+| `size`    | int    | The maximum size of the formula      |
+| `device`  | torch.device | The device to run the agent on (default: CPU) |
 | `config`  | dict   | Configuration parameters for the agent        |
 
 #### `Method EnvironmentAgent.replace_arms(self) -> None`
 
 Replaces all arms/environments using the arm filter. This method is called to update the set of available arms based on the latest trajectories and evolution graph.
 
-#### `Method EnvironmentAgent.reset(self) -> None`
+#### `Method EnvironmentAgent.reset(self) -> tuple[torch.Tensor, torch.Tensor]`
 
-Resets the formula games and saves trajectories to the trajectory queue, except for the first time calling `reset()`. This method prepares the environment for a new episode by resetting the state of all formula games.
+Resets the formula games and saves trajectories to the trajectory queue unless the agent has not called `step()` method before. This method prepares the environment for a new episode by resetting the state of all formula games, and returns the gates and lengths of the initial formulas in Tensor format.
 
-#### `Method EnvironmentAgent.step(self, tokens: list[GateToken]) -> float`
+##### Returns
 
-Executes a step of the formula games by applying the given token. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
+| Name   | Type          | Description                                   |
+| :-----: | :------------: | --------------------------------------------- |
+| `gates` | torch.Tensor  | A tensor representing the gates of the initial formulas, with shape `(num_env, size, dim_token)` |
+| `lengths` | torch.Tensor | A tensor representing the lengths of the initial formulas, with shape `(num_env,)` |
+
+
+#### `Method EnvironmentAgent.step(self, tokens: torch.Tensor) -> torch.Tensor`
+
+Executes a step of the formula games by applying the tensor of the given token. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
 
 ##### Parameters
 
 | Parameter | Type          | Description                                   |
 | --------- | :------------: | --------------------------------------------- |
-| `tokens`  | list[GateToken] | A list of tokens representing the operations to be applied to the formula games |
+| `tokens`  | torch.Tensor  | A tensor representing the operations to be applied to the formula games, with shape `(num_env, dim_token)` |
 
 ##### Returns
 
 | Type    | Description                                   |
 | :------: | --------------------------------------------- |
-| `float` | The reward received after applying the tokens, based on the average-case deterministic query complexity of the formula. |
+| `torch.Tensor` | A tensor representing the rewards for this step, based on the average-case deterministic query complexity of the resulting formula. |
 
 ---
 
@@ -947,7 +978,7 @@ The `ArmRanker` class ranks the arms (formulas) based on their performance and p
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the ranker       |
 
-#### `Method ArmRanker.rank_arms(self, arms: list) -> list[dict]`
+#### `Method ArmRanker.rank_arms(self, arms: list[int]) -> list[int]`
 
 Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms.
 
@@ -955,10 +986,10 @@ Ranks the provided arms based on their performance and potential. This method us
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
-| `arms`    | list   | A list of arms (formulas' IDs) to rank                  |
+| `arms`    | list[int] | A list of indices representing the arms to be ranked |
 
 ##### Returns
 
 | Type    | Description                                   |
 | :------: | --------------------------------------------- |
-| `list`  | A list of dictionaries containing the ranked arms and their scores. |
+| `list[int]`  | A list of indices representing the ranked arms, sorted by their performance and potential. |

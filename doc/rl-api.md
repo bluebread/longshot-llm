@@ -8,7 +8,7 @@ This document outlines the structure and content of the API documentation for th
 
 1. **Formula Game**
     - Implements the RL environment that simulates the process of adding/deleting gates in a normal formed formula. 
-    - Calcultes *average-case deterministic query complexity*, the optimization target.
+    - Calculates *average-case deterministic query complexity*, the optimization target.
     - Main functions:
         1. `reset()`: Resets internal variables. 
         2. `step()`: Given the passed token (which indicates adding or deleting a gate), simulates a step and returns the reward. 
@@ -16,7 +16,7 @@ This document outlines the structure and content of the API documentation for th
     - Manages environments. 
     - Transforms data in Tensor/TensorDict format. 
     - Main functions:
-        1. `replace_arms()`: Replaces all arms/environments using arm filter. 
+        1. `replace_arms()`: Replaces all arms/environments using the arm filter. 
         2. `reset()`: Resets formula games and saves trajectories to the trajectory queue (except the first time calling `reset()`). 
         3. `step()`: Executes a step of formula games. 
 3. **Trainer**
@@ -144,6 +144,7 @@ Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number
 | new_formula_id  | UUID   | The ID of the new formula, corresponding to the primary key of FormulaTable    |
 | distance         | int    | The Hamming distance between the base formula and the new formula (e.g., adding or removing a gate) |
 
+TODO: How to calculate the Hamming distance efficiently? 
 
 ## Microservice
 
@@ -798,8 +799,8 @@ GET /topk_arms
 | Field          | Type   | Description                                   |
 | -------------- | :-----: | --------------------------------------------- |
 | `top_k_arms`   | array  | List of top-K arms                             |
-| `formula_id`   | string | The unique ID of the formula                   |
-| `definition`   | array  | The definition of the formula, represented as a list of lists of literals |
+| `arm.formula_id`   | string | The unique ID of the formula                   |
+| `arm.definition`   | array  | The definition of the formula, represented as a list of lists of literals |
 
 
 ##### Status Codes

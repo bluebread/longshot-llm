@@ -1,15 +1,11 @@
 import enum
 from collections.abc import Iterable
 import numpy as np
-from numpy.typing import NDArray
-from typing import Any
 from binarytree import Node
 from sortedcontainers import SortedSet
 import networkx as nx
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
-import torch
-import torch.nn.functional as F
 
 from ..error import LongshotError
 from .._core import (
@@ -228,7 +224,6 @@ class NormalFormFormula:
         self, 
         num_vars: int, 
         ftype: FormulaType | None = FormulaType.Conjunctive,
-        device: str | torch.device | None = None,
         **kwargs
         ):
         if not isinstance(num_vars, int):
@@ -241,18 +236,11 @@ class NormalFormFormula:
         # Initialize the formula
         self._num_vars = num_vars
         self._ftype = ftype
-        self._device = device if device is not None else torch.device('cpu')
         
         # Initialize the properties of the formula
         self._literals = SortedSet()
         self._bf = _CountingBooleanFunction(num_vars)
         self._graph = nx.Graph()
-        self._tensor_capacity = 2**1 # 64
-        self._tensor = torch.zeros((self._tensor_capacity, 2*num_vars), dtype=torch.int8, device=device)
-        self._idxmap: dict[Literals, int] = {} # map from Literals to tensor indices
-        
-        if 'max_size' in kwargs:
-            self._tensor_capacity = kwargs['max_size']
         
         # Convert the boolean function to the specified normal form
         if ftype == FormulaType.Conjunctive:
@@ -279,9 +267,6 @@ class NormalFormFormula:
         cpy._literals = self._literals.copy()
         cpy._bf = _CountingBooleanFunction(self._bf)
         cpy._graph = self._graph.copy()
-        cpy._tensor_capacity = self._tensor_capacity
-        cpy._tensor = self._tensor.clone()
-        cpy._idxmap = self._idxmap.copy()
         
         return cpy
     
@@ -332,18 +317,6 @@ class NormalFormFormula:
             edges = [(f"+x{i}", gn) for i in dls["pos"]] + [(f"-x{i}", gn) for i in dls["neg"]]
             self._graph.add_edges_from(edges)     
             
-            # Add the literals to the tensor
-            if self.num_gates >= self._tensor_capacity:
-                self._tensor = F.pad(self._tensor, (0, 0, 0, self._tensor_capacity), mode='constant', value=0)
-                self._tensor_capacity *= 2
-            
-            gt = torch.zeros(2*self._num_vars, dtype=torch.int8)
-            gt[dls["pos"]] = 1
-            gt[self._num_vars:][dls["neg"]] = 1
-            gidx = self.num_gates
-            self._idxmap[ls] = gidx
-            self._tensor[gidx, :] = gt
-            
             # Apply the literals to the boolean function
             if self._ftype == FormulaType.Conjunctive:
                 self._bf.add_clause(ls)
@@ -356,9 +329,6 @@ class NormalFormFormula:
             # Remove the literals from the graph and tensor
             gn = int(ls)
             self._graph.remove_node(gn)
-            gidx = self._idxmap.pop(ls, None)
-            self._tensor[gidx, :] = self._tensor[self.num_gates - 1, :]
-            self._tensor[self.num_gates - 1, :] = 0
             
             # Remove the literals from the boolean function
             if self._ftype == FormulaType.Conjunctive:
@@ -465,14 +435,7 @@ class NormalFormFormula:
         Returns the set of literals in the formula.
         """
         return self._literals.copy()
-
-    @property
-    def tensor(self) -> torch.Tensor:
-        """
-        Returns the tensor representation of the formula.
-        """
-        return self._tensor[:self.num_gates].clone()
-
+    
     @property
     def graph(self) -> nx.Graph:
         """

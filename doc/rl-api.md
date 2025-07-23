@@ -64,10 +64,9 @@ This document outlines the structure and content of the API documentation for th
         - `DELETE /evolution_graph/node`: Deletes a node from the evolution graph.
         - `GET /evolution_graph/edge`: Retrieves an edge in the evolution graph by its ID.
         - `POST /evolution_graph/edge`: Adds a new edge to the evolution graph.
-        - `PUT /evolution_graph/edge`: Updates an existing edge in the evolution graph.
+        - `PUT /evolution_graph/edge (unused)`: Updates an existing edge in the evolution graph.
         - `DELETE /evolution_graph/edge`: Deletes an edge from the evolution graph.
     - High-level API:
-        - `GET /formula/is_duplicate`: Checks if a formula is isomorphic to any existing formula.
         - `GET /formula/definition`: Retrieves the full definition of a formula by its ID.
         - `GET /evolution_graph/subgraph`: Retrieves the evolution subgraph of active nodes. 
         - `POST /formula/add`: Adds a new formula to the warehouse, including updating the isomorphism hash table and the evolution graph.
@@ -107,6 +106,7 @@ This document outlines the structure and content of the API documentation for th
 
 ### Trajectory Table
 
+Each trajectory is either a partial trajectory or the full definition of a formula, and its table ID must be recorded somewhere in the formula table.
 
 | Column Name      | Type     | Description                                      |
 |------------------|:----------:|--------------------------------------------------|
@@ -142,9 +142,6 @@ Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number
 | ---------------- | :----: | ----------------------------- |
 | base_formula_id | UUID   | The ID of the base formula, corresponding to the primary key of FormulaTable |
 | new_formula_id  | UUID   | The ID of the new formula, corresponding to the primary key of FormulaTable    |
-| distance         | int    | The Hamming distance between the base formula and the new formula (e.g., adding or removing a gate) |
-
-TODO: How to calculate the Hamming distance efficiently? 
 
 ## Microservice
 
@@ -333,7 +330,10 @@ Add a new formula entry to the formula table.
         "wl-hash": "abcd1234...",
         "num_vars": 3,
         "width": 2,
-        "size": 5
+        "size": 5,
+        "timestamp": "2025-07-21T12:00:00Z",
+        "node_id": "n789",
+        "full_trajectory_id": "t999"
     }
     ```
 - **Response:**  
@@ -507,7 +507,7 @@ Retrieve a node in the evolution graph by its ID.
 
 
 #### `POST /evolution_graph/node`
-Add a new node to the evolution graph.
+Add a new node to the evolution graph. The visited counter is set to 1, and the inactive flag is set to false by default.
 
 - **Request Body:**  
     ```json
@@ -527,13 +527,13 @@ Add a new node to the evolution graph.
 
 
 #### `PUT /evolution_graph/node`
-Update an existing node.
+Update an existing node. The parameter ``inc_visited_counter`` is used to increment the visited counter by a specified amount and suppose to be greater than 0. 
 
 - **Request Body:**  
     ```json
     {
         "node_id": "n789",
-        "visited_counter": 11,
+        "inc_visited_counter": 11,
         "inactive": true
     }
     ```
@@ -565,8 +565,7 @@ Retrieve an edge in the evolution graph by its ID.
     ```json
     {
         "base_formula_id": "f123",
-        "new_formula_id": "f124",
-        "distance": 1
+        "new_formula_id": "f124"
     }
     ```
 - **Status Codes:**  
@@ -580,8 +579,7 @@ Add a new edge.
     ```json
     {
         "base_formula_id": "f123",
-        "new_formula_id": "f124",
-        "distance": 1
+        "new_formula_id": "f124"
     }
     ```
 - **Response:**  
@@ -594,20 +592,8 @@ Add a new edge.
     - `201 Created`, `400 Bad Request`
 
 
-#### `PUT /evolution_graph/edge`
-Update an existing edge.
-
-- **Request Body:**  
-    ```json
-    {
-        "edge_id": "e456",
-        "distance": 2
-    }
-    ```
-- **Response:**  
-    - Success message.
-- **Status Codes:**  
-    - `200 OK`, `400 Bad Request`, `404 Not Found`
+#### `PUT /evolution_graph/edge  (unused)`
+Update an existing edge. Unused for now since no attribute is stored in the edge entity.
 
 
 #### `DELETE /evolution_graph/edge`
@@ -620,23 +606,6 @@ Delete an edge.
     - Success message.
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
-
-
-#### `GET /formula/is_duplicate`
-Check if a formula is isomorphic to any existing formula.
-
-- **Query Parameters:**  
-    - `wl-hash` (string, required): Weisfeiler-Lehman hash.
-
-- **Response:**  
-    ```json
-    {
-        "is_duplicate": true,
-        "duplicate_ids": ["f123", "f124"]
-    }
-    ```
-- **Status Codes:**  
-    - `200 OK`, `400 Bad Request`
 
 
 #### `GET /formula/definition`
@@ -822,26 +791,26 @@ The `GateToken` class represents a token that indicates an operation (adding or 
 
 | Parameter       | Type   | Description                                   |
 | --------------- | :-----: | --------------------------------------------- |
-| `literals`      | list   | A list of literals involved in the operation   |
+| `literals`      | Literals   | A list of literals involved in the operation   |
 | `type`    | str    | The type of operation, either "ADD" or "DEL" or "EOS" |
 
 
-#### `Method GateToken.dim_token(num_vars: int) -> int`
+#### `GateToken.dim_token(num_vars: int) -> int`
 
 Returns `2 * num_vars + 3`, the dimension of the token tensor based on the number of variables in the formula, where `num_vars` is the number of variables in the formula. The first `num_vars` elements represent the literals, the next `num_vars` elements represent the negated literals, and the last three elements represent the token type.
 
-#### `Method GateToken.to_tensor(self) -> torch.Tensor`
+#### `GateToken.to_tensor(self) -> torch.Tensor`
 
 Converts the `GateToken` instance to a PyTorch tensor representation. The tensor will have a shape of `(dim_token,)`. 
 
-#### `Method GateToken.to_token(torch.Tensor) -> GateToken`
+#### `GateToken.to_token(torch.Tensor) -> GateToken`
 
 Converts a PyTorch tensor back to a `GateToken` instance. The tensor should have a shape of `(dim_token,)`.
 
 
 ### Formula Game
 
-#### `Class FormulaGame(init_formula: list[GateToken], **config)`
+#### `Class FormulaGame(init_formula_def: list[GateToken], **config)`
 
 The `FormulaGame` class implements the RL environment that simulates the process of adding or deleting gates in a normal form formula. It calculates the average-case deterministic query complexity, which is the optimization target.
 
@@ -849,14 +818,14 @@ The `FormulaGame` class implements the RL environment that simulates the process
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
-| `init_formula` | list[GateToken] | The formula to be manipulated in the game |
+| `init_formula_def` | list[GateToken] | The formula's definition to be manipulated in the game |
 | `config`  | dict   | Configuration parameters for the game         |
 
-#### `Method FormulaGame.reset(self) -> None`
+#### `FormulaGame.reset(self) -> None`
 
 Resets the internal variables of the formula game. This method is called at the beginning of each episode to prepare the environment for a new game.
 
-#### `Method FormulaGame.step(self, token: GateToken) -> float`
+#### `FormulaGame.step(self, token: GateToken) -> float`
 
 Simulates a step in the formula game by applying the given token (which indicates adding or deleting a gate) to the formula. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
 
@@ -875,7 +844,7 @@ Simulates a step in the formula game by applying the given token (which indicate
 
 ### `Class EnvironmentAgent(num_env: int, num_var: int, width: int, size: int, device: torch.device = None, **config)`
 
-The `EnvironmentAgent` class manages multiple environments (formula games) and transforms data into Tensor/TensorDict format. It is responsible for replacing arms/environments using the arm filter, resetting formula games, and executing steps in the formula games. During initialization, it will create `num_env` games of empty formulas with the given number of variables and width.
+The `EnvironmentAgent` class manages multiple environments (formula games) and transforms data into Tensor/TensorDict format. It is responsible for replacing arms/environments using the arm filter, resetting formula games, and executing steps in the formula games. During initialization, it will create `num_env` games of formulas with the given number of variables and width and call `replace_arms()` to initialize the arms.
 
 ##### Constructor Parameters
 
@@ -888,11 +857,11 @@ The `EnvironmentAgent` class manages multiple environments (formula games) and t
 | `device`  | torch.device | The device to run the agent on (default: CPU) |
 | `config`  | dict   | Configuration parameters for the agent        |
 
-#### `Method EnvironmentAgent.replace_arms(self) -> None`
+#### `EnvironmentAgent.replace_arms(self) -> None`
 
 Replaces all arms/environments using the arm filter. This method is called to update the set of available arms based on the latest trajectories and evolution graph.
 
-#### `Method EnvironmentAgent.reset(self) -> tuple[torch.Tensor, torch.Tensor]`
+#### `EnvironmentAgent.reset(self) -> tuple[torch.Tensor, torch.Tensor]`
 
 Resets the formula games and saves trajectories to the trajectory queue unless the agent has not called `step()` method before. This method prepares the environment for a new episode by resetting the state of all formula games, and returns the gates and lengths of the initial formulas in Tensor format.
 
@@ -904,7 +873,7 @@ Resets the formula games and saves trajectories to the trajectory queue unless t
 | `lengths` | torch.Tensor | A tensor representing the lengths of the initial formulas, with shape `(num_env,)` |
 
 
-#### `Method EnvironmentAgent.step(self, tokens: torch.Tensor) -> torch.Tensor`
+#### `EnvironmentAgent.step(self, tokens: torch.Tensor) -> torch.Tensor`
 
 Executes a step of the formula games by applying the tensor of the given token. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
 
@@ -935,6 +904,23 @@ The `TrajectoryProcessor` class processes trajectories and updates the evolution
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the processor    |
 
+#### `TrajectoryProcessor.check_if_duplicate(self, formula: NormalFormFormula) -> bool`
+
+Checks if a given formula is isomorphic to any existing formula in the warehouse. This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `formula` | NormalFormFormula | The formula to check for isomorphism         |
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `bool`  | `True` if the formula is isomorphic to any existing formula
+
+
 #### `TrajectoryProcessor.process_trajectory(self, data: dict) -> None`
 
 Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse.
@@ -955,7 +941,7 @@ The `EvolutionGraphManager` class manages the evolution graph and its updates. I
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the manager      |
 
-#### `Method EvolutionGraphManager.check(self) -> bool`
+#### `EvolutionGraphManager.check(self) -> bool`
 
 Checks if the evolution graph satisfies the size constraints defined in the configuration. If the graph is too large, it will trigger a contraction process.
 
@@ -965,7 +951,7 @@ Checks if the evolution graph satisfies the size constraints defined in the conf
 | :------: | --------------------------------------------- |
 | `bool`  | `True` if the graph is within size constraints, `False` otherwise. |
 
-#### `Method EvolutionGraphManager.contract_graph(self) -> None`
+#### `EvolutionGraphManager.contract_graph(self) -> None`
 
 Contracts the evolution graph by merging nodes and edges based on the provided data. This method is called when the graph exceeds the size constraints. The result is then saved to the warehouse.
 
@@ -979,7 +965,7 @@ The `ArmRanker` class ranks the arms (formulas) based on their performance and p
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the ranker       |
 
-#### `Method ArmRanker.rank_arms(self, arms: list[int]) -> list[int]`
+#### `ArmRanker.rank_arms(self, arms: list[int]) -> list[int]`
 
 Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms.
 

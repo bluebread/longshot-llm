@@ -12,6 +12,8 @@ services:
       - neo4j_logs:/logs
       - neo4j_import:/var/lib/neo4j/import
       - neo4j_plugins:/plugins
+    networks:
+      - longshot-net
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -22,6 +24,8 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: haowei
       RABBITMQ_DEFAULT_PASS: bread861122 
+    networks:
+      - longshot-net
 
   redis:
     image: redis:7
@@ -31,6 +35,8 @@ services:
     volumes:
       - redis_data:/data
     command: ["redis-server", "--requirepass", "bread861122"] 
+    networks:
+      - longshot-net
 
 volumes:
   neo4j_data:
@@ -38,3 +44,7 @@ volumes:
   neo4j_import:
   neo4j_plugins:
   redis_data:
+
+networks:
+  longshot-net:
+    driver: bridge

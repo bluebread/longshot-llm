@@ -803,9 +803,9 @@ Returns `2 * num_vars + 3`, the dimension of the token tensor based on the numbe
 
 Converts the `GateToken` instance to a PyTorch tensor representation. The tensor will have a shape of `(dim_token,)`. 
 
-#### `GateToken.to_token(torch.Tensor) -> GateToken`
+#### `GateToken.from_tensor(torch.Tensor) -> GateToken`
 
-Converts a PyTorch tensor back to a `GateToken` instance. The tensor should have a shape of `(dim_token,)`.
+Converts a PyTorch tensor back to a `GateToken` instance. The tensor should have a shape of `(dim_token,)`. This is a class method. 
 
 
 ### Formula Game
@@ -842,7 +842,7 @@ Simulates a step in the formula game by applying the given token (which indicate
 | `float` | The reward received after applying the token, based on the average-case deterministic query complexity of the formula. |
 
 
-### `Class EnvironmentAgent(num_env: int, num_var: int, width: int, size: int, device: torch.device = None, **config)`
+### `Class EnvironmentAgent(num_env: int, num_vars: int, width: int, size: int, device: torch.device = None, **config)`
 
 The `EnvironmentAgent` class manages multiple environments (formula games) and transforms data into Tensor/TensorDict format. It is responsible for replacing arms/environments using the arm filter, resetting formula games, and executing steps in the formula games. During initialization, it will create `num_env` games of formulas with the given number of variables and width and call `replace_arms()` to initialize the arms.
 
@@ -851,7 +851,7 @@ The `EnvironmentAgent` class manages multiple environments (formula games) and t
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
 | `num_env` | int    | The number of environments to manage          |
-| `num_var` | int    | The number of variables in the formula        |
+| `num_vars` | int    | The number of variables in the formula        |
 | `width`   | int    | The width of the formula                      |
 | `size`    | int    | The maximum size of the formula      |
 | `device`  | torch.device | The device to run the agent on (default: CPU) |
@@ -891,7 +891,63 @@ Executes a step of the formula games by applying the tensor of the given token. 
 
 ---
 
+### Trajectory Queue
+
+Here are the methods that wrapper the RabbitMQ interface for the Trajectory Queue microservice. These methods allow for pushing and popping serialized trajectory data for downstream processing.
+
+#### Class `TrajectoryQueue(host: str, port: int, **config)`
+
+##### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `host`  | str    | The IP address of the RabbitMQ server |
+| `port`  | int    | The port number of the RabbitMQ server        |
+| `config`  | dict   | Configuration parameters for the queue        |
+
+##### Exceptions
+
+| Exception | Description                                   |
+| :--------: | --------------------------------------------- |
+| `pika.exceptions.AMQPConnectionError` | Raised when the connection to the RabbitMQ server fails |
+
+#### `TrajectoryQueue.push(self, trajectory: dict) -> None`
+
+Pushes a serialized trajectory to the RabbitMQ queue for downstream processing.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `trajectory` | dict | The serialized trajectory data to push to the queue |
+
+#### `TrajectoryQueue.pop(self) -> dict | None`
+
+Pops a serialized trajectory from the RabbitMQ queue for processing.
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `dict`  | The serialized trajectory data popped from the queue. Returns `None` if the queue is empty. |
+
+#### `TrajectoryQueue.close(self) -> None`
+
+Closes the connection to the RabbitMQ server. This method should be called when the queue is no longer needed to release resources.
+
+#### `TrajectoryQueue.start_consuming(self, callback: callable) -> None`
+
+Starts consuming messages from the RabbitMQ queue.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `callback` | callable | A function to call with each message. A message in the TrajectoryQueue message schema would be passed to this function. |
+
 ### Arm Filter
+
+The internal components of the Arm Filter microservice are responsible for processing trajectories, managing the evolution graph, and ranking arms (formulas). These components work together to maintain the evolution graph of formulas and implement policies for arm selection.
 
 #### `Class TrajectoryProcessor(**config)`
 

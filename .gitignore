@@ -246,3 +246,4 @@ dkms.conf
 */playground
 */jupyter
 *.txt
+!rl/env

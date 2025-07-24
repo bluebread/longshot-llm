@@ -6,7 +6,7 @@ class TrajectoryQueue:
     A class to manage a queue of trajectories using RabbitMQ.
     """
 
-    def __init__(self, host: str, port: int = 5672):
+    def __init__(self, host: str, port: int = 5672, **config):
         """
         Initializes the TrajectoryQueue with the specified queue name and RabbitMQ host.
 
@@ -16,7 +16,10 @@ class TrajectoryQueue:
         self.queue_name = 'trajectory.queue'
         self.exchange_name = 'trajectory.exchange'
         self.routing_key = 'trajectory.routing'
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host, port))
+        username = 'haowei'
+        password = 'bread861122'
+        credentials = pika.PlainCredentials(username=username, password=password)
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host, port, credentials=credentials))
         self.channel = self.connection.channel()
         
         # Declare the exchange and queue
@@ -29,6 +32,11 @@ class TrajectoryQueue:
             queue=self.queue_name, 
             auto_delete=False,
             durable=True,
+        )
+        self.channel.queue_bind(
+            exchange=self.exchange_name,
+            queue=self.queue_name,
+            routing_key=self.routing_key
         )
 
     def push(self, trajectory: dict) -> None:
@@ -80,6 +88,12 @@ class TrajectoryQueue:
             auto_ack=False
         )
         self.channel.start_consuming()
+
+    def stop_consuming(self):
+        """
+        Stops consuming messages from the RabbitMQ queue.
+        """
+        self.channel.stop_consuming()
 
     def close(self):
         """

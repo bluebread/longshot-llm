@@ -6,7 +6,7 @@ class TrajectoryQueue:
     A class to manage a queue of trajectories using RabbitMQ.
     """
 
-    def __init__(self, host: str, port: int = 5672, **config):
+    def __init__(self, host: str, port: int = 5672):
         """
         Initializes the TrajectoryQueue with the specified queue name and RabbitMQ host.
 
@@ -88,13 +88,7 @@ class TrajectoryQueue:
             auto_ack=False
         )
         self.channel.start_consuming()
-
-    def stop_consuming(self):
-        """
-        Stops consuming messages from the RabbitMQ queue.
-        """
-        self.channel.stop_consuming()
-
+        
     def close(self):
         """
         Closes the connection to the RabbitMQ server.

@@ -47,4 +47,6 @@ volumes:
 
 networks:
   longshot-net:
+    external: true
+    name: longshot-net
     driver: bridge

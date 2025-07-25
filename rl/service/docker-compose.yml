@@ -38,12 +38,51 @@ services:
     networks:
       - longshot-net
 
+  mongodb:
+    image: mongo:7.0.22-jammy
+    container_name: mongo-bread
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: haowei
+      MONGO_INITDB_ROOT_PASSWORD: bread861122
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - longshot-net
+
+  # warehouse:
+  #   build:
+  #     context: ./warehouse
+  #     dockerfile: dockerfile
+  #   container_name: warehouse-bread
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"   # Warehouse API port
+  #   environment:
+  #     - PYTHONPATH=/app
+  #   depends_on:
+  #     - mongodb
+  #     - neo4j
+  #     - redis
+  #     - rabbitmq
+  #   networks:
+  #     - longshot-net
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+
 volumes:
   neo4j_data:
   neo4j_logs:
   neo4j_import:
   neo4j_plugins:
   redis_data:
+  mongo-data:
 
 networks:
   longshot-net:

@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Query
 from typing import Optional
 import uuid
 
-from .models import (
+from rl.service.warehouse.models import (
     FormulaInfo,
     CreateFormulaRequest,
     UpdateFormulaRequest,

@@ -15,7 +15,7 @@ class FormulaInfo(BaseModel):
     base_formula_id: Optional[str] = None
     trajectory_id: Optional[str] = None
     avgQ: Optional[float] = None
-    wl_hash: Optional[str] = Field(None, alias="wl-hash")
+    wl_hash: Optional[str] = None
     num_vars: Optional[int] = None
     width: Optional[int] = None
     size: Optional[int] = None

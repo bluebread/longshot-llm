@@ -95,14 +95,18 @@ This document outlines the structure and content of the API documentation for th
 | base_formula_id   | UUID        | Parent formula ID                             |
 | trajectory_id     | UUID        | Associated trajectory table ID (can be NULL)            |
 | avgQ        | float       | Average-case deterministic query complexity                             |
-| wl-hash              | char(32)      | Weisfeiler-Lehman hash value              |
+| wl_hash              | char(32)      | Weisfeiler-Lehman hash value              |
 | num_vars          | int         | Number of variables                               |
 | width             | int         | Formula width                               |
 | size              | int         | Formula size (number of nodes)                     |
 | timestamp         | datetime    | Insertion time                               |
 | node_id         | UUID        | Node ID in the evolution graph (can be NULL) |
-| full_trajectory_id | UUID        | Full trajectory table ID (default NULL)                     |
+| definition_cached | bool        | Whether the full definition is cached (default FALSE)                     |
 
+### Definition Cache Table
+
+- Key (*UUIS*): the ID of the formula.
+- Value (*List[UUID]*): the indices of trajectories that can be used to reconstruct the full definition of the formula.
 
 ### Trajectory Table
 
@@ -311,7 +315,7 @@ Retrieve information about a formula by its ID.
         "size": 5,
         "timestamp": "2025-07-21T12:00:00Z",
         "node_id": "n789",
-        "full_trajectory_id": "t999"
+        "definition_cached": false,
     }
     ```
 - **Status Codes:**  
@@ -333,7 +337,7 @@ Add a new formula entry to the formula table.
         "size": 5,
         "timestamp": "2025-07-21T12:00:00Z",
         "node_id": "n789",
-        "full_trajectory_id": "t999"
+        "definition_cached": false,
     }
     ```
 - **Response:**  
@@ -782,6 +786,92 @@ GET /topk_arms
 
 ## Local Modules
 
+### `Class service.utils.TrajectoryQueue(host: str, port: int = 5672)`
+
+The `TrajectoryQueue` class provides a high-level interface for managing trajectory data using RabbitMQ. It handles the connection setup, message publishing, and consumption for trajectory processing in the RL system.
+
+##### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `host`    | str    | The RabbitMQ server host address             |
+| `port`    | int    | The RabbitMQ server port (default: 5672)     |
+
+#### `TrajectoryQueue.__init__(self, host: str, port: int = 5672) -> None`
+
+Initializes the TrajectoryQueue with the specified RabbitMQ host and port. This constructor establishes a connection to the RabbitMQ server, declares the necessary exchange and queue, and sets up the binding between them.
+
+The following RabbitMQ components are automatically configured:
+- Queue Name: `trajectory.queue`
+- Exchange Name: `trajectory.exchange`
+- Exchange Type: `direct`
+- Routing Key: `trajectory.routing`
+- Durability: `true` (both queue and exchange persist across server restarts)
+
+#### `TrajectoryQueue.push(self, trajectory: dict) -> None`
+
+Pushes a trajectory dictionary to the RabbitMQ queue. The trajectory is serialized to JSON format before being published to the queue.
+
+##### Parameters
+
+| Parameter    | Type | Description                                   |
+| ------------ | :--: | --------------------------------------------- |
+| `trajectory` | dict | The trajectory data to be queued              |
+
+##### Raises
+
+- `ValueError`: If the trajectory parameter is not a dictionary.
+
+#### `TrajectoryQueue.pop(self) -> dict | None`
+
+Pops a trajectory from the RabbitMQ queue using basic_get for immediate retrieval. If a message is available, it is acknowledged and returned as a dictionary. If the queue is empty, returns None.
+
+##### Returns
+
+| Type         | Description                                   |
+| :----------: | --------------------------------------------- |
+| `dict | None` | The popped trajectory data or None if queue is empty |
+
+#### `TrajectoryQueue.start_consuming(self, callback: callable) -> None`
+
+Starts continuous consumption of messages from the RabbitMQ queue. This method blocks and processes incoming messages using the provided callback function.
+
+##### Parameters
+
+| Parameter  | Type     | Description                                   |
+| ---------- | :------: | --------------------------------------------- |
+| `callback` | callable | Function to process each received trajectory  |
+
+The callback function should accept a single parameter of type `dict` containing the trajectory data.
+
+
+#### `TrajectoryQueue.close(self) -> None`
+
+Closes the connection to the RabbitMQ server. This method should be called to properly clean up resources when the TrajectoryQueue is no longer needed.
+
+### `Class service.utils.Deduplicator()`
+
+The `Deduplicator` class is responsible for identifying and removing duplicate trajectories from the queue. It ensures that only unique trajectories are processed, improving the efficiency of the RL system.
+
+#### `Deduplicator.__init__(self) -> None`
+
+Initializes the Deduplicator with an empty set to keep track of seen trajectories.
+
+#### `Deduplicator.is_duplicate(self, trajectory: dict) -> bool`
+
+Checks if the given trajectory is a duplicate. If it is unique, it adds it to the set of seen trajectories.
+
+##### Parameters
+
+| Parameter    | Type | Description                                   |
+| ------------ | :--: | --------------------------------------------- |
+| `trajectory` | dict | The trajectory data to check for duplicates   |
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `bool` | True if the trajectory is a duplicate, False otherwise |
 
 ### `Class GateToken(literals, *, type: str)`
 

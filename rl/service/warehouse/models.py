@@ -2,53 +2,53 @@
 Pydantic models for the Warehouse API.
 """
 
-from typing import List, Optional, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 
 
 # Formula-related models
 class FormulaInfo(BaseModel):
     """Formula information model."""
-    id: Optional[str] = None
-    base_formula_id: Optional[str] = None
-    trajectory_id: Optional[str] = None
-    avgQ: Optional[float] = None
-    wl_hash: Optional[str] = None
-    num_vars: Optional[int] = None
-    width: Optional[int] = None
-    size: Optional[int] = None
-    timestamp: Optional[datetime] = None
-    node_id: Optional[str] = None
-    full_trajectory_id: Optional[str] = None
-
-    class Config:
-        allow_population_by_field_name = True
-
-
-class CreateFormulaRequest(BaseModel):
-    """Request model for creating a formula."""
-    base_formula_id: Optional[str] = None
-    trajectory_id: Optional[str] = None
+    id: str = Field(alias="_id", serialization_alias="id")
+    base_formula_id: str
+    trajectory_id: str
     avgQ: float
-    wl_hash: str = Field(alias="wl-hash")
+    wl_hash: str
     num_vars: int
     width: int
     size: int
-    timestamp: Optional[datetime] = None
-    node_id: Optional[str] = None
-    full_trajectory_id: Optional[str] = None
+    timestamp: datetime
+    node_id: str
 
     class Config:
         allow_population_by_field_name = True
+        allow_population_by_alias = True
+        
+class CreateFormulaRequest(BaseModel):
+    """Request model for creating a formula."""
+    base_formula_id: str 
+    trajectory_id: str
+    avgQ: float
+    wl_hash: str
+    num_vars: int
+    width: int
+    size: int
+    node_id: str
 
 
 class UpdateFormulaRequest(BaseModel):
     """Request model for updating a formula."""
     id: str
-    avgQ: Optional[float] = None
-    size: Optional[int] = None
+    base_formula_id: str | None = None
+    trajectory_id: str | None = None
+    avgQ: float | None = None
+    wl_hash: str | None = None
+    num_vars: int | None = None
+    width: int | None = None
+    size: int | None = None
+    timestamp: datetime | None = None
+    node_id: str | None = None
 
 
 class FormulaResponse(BaseModel):
@@ -58,12 +58,12 @@ class FormulaResponse(BaseModel):
 
 class LikelyIsomorphicResponse(BaseModel):
     """Response model for likely isomorphic formulas."""
-    isomorphic_ids: List[str]
+    isomorphic_ids: list[str]
 
 
 class LikelyIsomorphicRequest(BaseModel):
     """Request model for adding likely isomorphic formula."""
-    wl_hash: str = Field(alias="wl-hash")
+    wl_hash: str
     formula_id: str
 
     class Config:
@@ -81,19 +81,19 @@ class TrajectoryStep(BaseModel):
 
 class TrajectoryInfo(BaseModel):
     """Trajectory information model."""
-    id: Optional[str] = None
-    steps: List[TrajectoryStep]
+    id: str | None = None
+    steps: list[TrajectoryStep]
 
 
 class CreateTrajectoryRequest(BaseModel):
     """Request model for creating a trajectory."""
-    steps: List[TrajectoryStep]
+    steps: list[TrajectoryStep]
 
 
 class UpdateTrajectoryRequest(BaseModel):
     """Request model for updating a trajectory."""
     id: str
-    steps: List[TrajectoryStep]
+    steps: list[TrajectoryStep]
 
 
 class TrajectoryResponse(BaseModel):
@@ -121,8 +121,8 @@ class CreateNodeRequest(BaseModel):
 class UpdateNodeRequest(BaseModel):
     """Request model for updating a node."""
     node_id: str
-    inc_visited_counter: Optional[int] = None
-    inactive: Optional[bool] = None
+    inc_visited_counter: int | None = None
+    inactive: bool | None = None
 
 
 class NodeResponse(BaseModel):
@@ -152,29 +152,29 @@ class EdgeResponse(BaseModel):
 class FormulaDefinition(BaseModel):
     """Formula definition model."""
     id: str
-    definition: List[List[str]]
+    definition: list[list[str]]
 
 
 # Subgraph models
 class SubgraphResponse(BaseModel):
     """Response model for subgraph."""
-    nodes: List[Any]
-    edges: List[Any]
+    nodes: list
+    edges: list
 
 
 class SubgraphRequest(BaseModel):
     """Request model for adding subgraph."""
-    nodes: List[Any]
-    edges: List[Any]
+    nodes: list
+    edges: list
 
 
 # High-level API models
 class AddFormulaRequest(BaseModel):
     """Request model for high-level formula addition."""
-    base_formula_id: Optional[str] = None
-    trajectory_id: Optional[str] = None
+    base_formula_id: str | None = None
+    trajectory_id: str | None = None
     avgQ: float
-    wl_hash: str = Field(alias="wl-hash")
+    wl_hash: str
     num_vars: int
     width: int
     size: int

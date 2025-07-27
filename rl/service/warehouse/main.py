@@ -2,9 +2,13 @@
 FastAPI application for the Warehouse microservice.
 """
 
-from fastapi import FastAPI, HTTPException, Query
-from typing import Optional
+from fastapi import FastAPI, HTTPException, Query, Response
+from pymongo import MongoClient
+from contextlib import asynccontextmanager
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import logging
 
 from models import (
     FormulaInfo,
@@ -32,59 +36,92 @@ from models import (
     SuccessResponse
 )
 
+logging.basicConfig(
+    level=logging.INFO, 
+    filename="warehouse.log", 
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filemode="a",
+)
+logger = logging.getLogger(__name__)
+
+mongo_client = MongoClient("mongodb://haowei:bread861122@mongo-bread:27017")
+mongodb = mongo_client["LongshotWarehouse"]
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize resources
+    try:
+       mongodb.create_collection("FormulaTable", check_exists=True) # TODO: add validator 
+    except Exception as e:
+        pass
+    yield
+    # Cleanup resources
+    mongo_client.close()
+    
 app = FastAPI(
     title="Warehouse API",
-    description="Warehouse microservice for managing formulas, trajectories, and evolution graphs",
-    version="1.0.0"
+    lifespan=lifespan,
 )
-
+formula_table = mongodb["FormulaTable"]
 
 # Formula endpoints
 @app.get("/formula/info", response_model=FormulaInfo)
 async def get_formula_info(id: str = Query(..., description="Formula UUID")):
     """Retrieve information about a formula by its ID."""
-    # Stub implementation
-    return FormulaInfo(
-        id=id,
-        base_formula_id="f122",
-        trajectory_id="t456",
-        avgQ=2.5,
-        wl_hash="abcd1234...",
-        num_vars=3,
-        width=2,
-        size=5,
-        timestamp="2025-07-21T12:00:00Z",
-        node_id="n789",
-        full_trajectory_id="t999"
-    )
-
+    formula_doc = formula_table.find_one({"_id": id})
+    if formula_doc:
+        return FormulaInfo(**formula_doc)
+    raise HTTPException(status_code=404, detail="Formula not found")
 
 @app.post("/formula/info", response_model=FormulaResponse, status_code=201)
-async def create_formula_info(formula: CreateFormulaRequest):
+async def create_formula_info(request: CreateFormulaRequest):
     """Add a new formula entry to the formula table."""
-    # Stub implementation
     new_id = str(uuid.uuid4())
+    formula_doc = request.model_dump()
+    formula_doc["_id"] = formula_doc.pop("id", new_id)
+    formula_doc["timestamp"] = formula_doc.get('timestamp', datetime.now().astimezone())
+    
+    formula_table.insert_one(formula_doc)
+    
     return FormulaResponse(id=new_id)
 
 
 @app.put("/formula/info", response_model=SuccessResponse)
-async def update_formula_info(formula: UpdateFormulaRequest):
+async def update_formula_info(request: UpdateFormulaRequest):
     """Update an existing formula entry."""
-    # Stub implementation
+    formula_id = request.id
+    update_data = request.model_dump(exclude_unset=True, exclude={"id"})
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+
+    result = formula_table.update_one(
+        {"_id": formula_id},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Formula not found")
+    
     return SuccessResponse(message="Formula updated successfully")
 
 
 @app.delete("/formula/info", response_model=SuccessResponse)
 async def delete_formula_info(id: str = Query(..., description="Formula UUID")):
     """Delete a formula entry."""
-    # Stub implementation
+    result = formula_table.delete_one({"_id": id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Formula not found")
+        
     return SuccessResponse(message="Formula deleted successfully")
 
 
 @app.get("/formula/likely_isomorphic", response_model=LikelyIsomorphicResponse)
-async def get_likely_isomorphic(wl_hash: str = Query(..., alias="wl-hash", description="Weisfeiler-Lehman hash")):
+async def get_likely_isomorphic(wl_hash: str = Query(..., description="Weisfeiler-Lehman hash")):
     """Retrieve IDs of likely isomorphic formulas."""
     # Stub implementation
+    logger.info(f"Retrieving likely isomorphic formulas for hash: {wl_hash}")
     return LikelyIsomorphicResponse(isomorphic_ids=["f123", "f124"])
 
 

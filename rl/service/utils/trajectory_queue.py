@@ -48,6 +48,8 @@ class TrajectoryQueue:
         if not isinstance(trajectory, dict):
             raise ValueError("Trajectory must be a dictionary.")
         
+        # TODO: Validate trajectory structure by Pydantic model 
+        
         message = json.dumps(trajectory)  # Convert dict to JSON string
         self.channel.basic_publish(
             exchange=self.exchange_name,

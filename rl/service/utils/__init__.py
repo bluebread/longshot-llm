@@ -1,1 +1,1 @@
-from .trajectory_queue import TrajectoryQueue
+from .trajectory_queue import TrajectoryQueueAgent

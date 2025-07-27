@@ -19,7 +19,16 @@ This document outlines the structure and content of the API documentation for th
         1. `replace_arms()`: Replaces all arms/environments using the arm filter. 
         2. `reset()`: Resets formula games and saves trajectories to the trajectory queue (except the first time calling `reset()`). 
         3. `step()`: Executes a step of formula games. 
-3. **Trainer**
+3. **Trajectory Queue Agent**
+    - Manages the trajectory queue using RabbitMQ.
+    - Provides methods to push and pop trajectories.
+    - Main functions:
+        1. `push()`: Pushes a trajectory to the RabbitMQ queue.
+        2. `pop()`: Pops a trajectory from the RabbitMQ queue.
+        3. `start_consuming()`: Starts consuming messages from the RabbitMQ queue.
+        4. `close()`: Closes the connection to RabbitMQ.
+    - This class is a local module, which is accessible for any other components in the RL system.
+4. **Trainer**
     - Trains a RL policy that learns how to build a CNF/DNF formula with the largest average-case deterministic query complexity.
     - Retrieves dataset (trajectories) from the environment (wrapper). 
     - Includes but not limited to the following modules:
@@ -89,7 +98,7 @@ This document outlines the structure and content of the API documentation for th
 
 Because MongoDB does not have a native UUID type, we use UUIDs as strings in the database. 
 
-### Formula Table
+### Formula Table (MongoDB)
 
 In the database, the formula table is labeled as `FormulaTable`. Each entry in the formula table represents a formula and contains the following columns:
 
@@ -106,12 +115,12 @@ In the database, the formula table is labeled as `FormulaTable`. Each entry in t
 | timestamp         | datetime    | Insertion time                               |
 | node_id         | UUID        | Node ID in the evolution graph  |
 
-### Definition Cache Table
+### Definition Cache Table (Redis)
 
-- Key (*UUIS*): the ID of the formula.
+- Key (*UUID*): the ID of the formula.
 - Value (*List[UUID]*): the indices of trajectories that can be used to reconstruct the full definition of the formula.
 
-### Trajectory Table
+### Trajectory Table (MongoDB)
 
 The trajectory table is labeled as `TrajectoryTable#<trajectory_id>`, where `<trajectory_id>` is the ID of the trajectory. 
 Each trajectory is either a partial trajectory or the full definition of a formula, and its table ID must be recorded somewhere in the formula table.
@@ -124,12 +133,12 @@ Each trajectory is either a partial trajectory or the full definition of a formu
 | reward           | float    | The immediate reward received after this step                      |
 
 
-### Isomorphism Hash Table
+### Isomorphism Hash Table (Redis)
 
 - Key (*string*): WL hash value of a formula.
 - Value (*List[UUID]*): the indices of probably isomorphic formulas with the same WL hash value.
 
-### Evolution Graph
+### Evolution Graph (Neo4j)
 
 Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number of variables and `width` is the width of the formula.
 
@@ -790,9 +799,9 @@ GET /topk_arms
 
 ## Local Modules
 
-### `Class service.utils.TrajectoryQueue(host: str, port: int = 5672)`
+### `Class service.utils.TrajectoryQueueAgent(host: str, port: int = 5672)`
 
-The `TrajectoryQueue` class provides a high-level interface for managing trajectory data using RabbitMQ. It handles the connection setup, message publishing, and consumption for trajectory processing in the RL system.
+The `TrajectoryQueueAgent` class provides a high-level interface for managing trajectory data using RabbitMQ. It handles the connection setup, message publishing, and consumption for trajectory processing in the RL system.
 
 ##### Constructor Parameters
 
@@ -801,9 +810,9 @@ The `TrajectoryQueue` class provides a high-level interface for managing traject
 | `host`    | str    | The RabbitMQ server host address             |
 | `port`    | int    | The RabbitMQ server port (default: 5672)     |
 
-#### `TrajectoryQueue.__init__(self, host: str, port: int = 5672) -> None`
+#### `TrajectoryQueueAgent.__init__(self, host: str, port: int = 5672) -> None`
 
-Initializes the TrajectoryQueue with the specified RabbitMQ host and port. This constructor establishes a connection to the RabbitMQ server, declares the necessary exchange and queue, and sets up the binding between them.
+Initializes the TrajectoryQueueAgent with the specified RabbitMQ host and port. This constructor establishes a connection to the RabbitMQ server, declares the necessary exchange and queue, and sets up the binding between them.
 
 The following RabbitMQ components are automatically configured:
 - Queue Name: `trajectory.queue`
@@ -812,7 +821,7 @@ The following RabbitMQ components are automatically configured:
 - Routing Key: `trajectory.routing`
 - Durability: `true` (both queue and exchange persist across server restarts)
 
-#### `TrajectoryQueue.push(self, trajectory: dict) -> None`
+#### `TrajectoryQueueAgent.push(self, trajectory: dict) -> None`
 
 Pushes a trajectory dictionary to the RabbitMQ queue. The trajectory is serialized to JSON format before being published to the queue.
 
@@ -826,7 +835,7 @@ Pushes a trajectory dictionary to the RabbitMQ queue. The trajectory is serializ
 
 - `ValueError`: If the trajectory parameter is not a dictionary.
 
-#### `TrajectoryQueue.pop(self) -> dict | None`
+#### `TrajectoryQueueAgent.pop(self) -> dict | None`
 
 Pops a trajectory from the RabbitMQ queue using basic_get for immediate retrieval. If a message is available, it is acknowledged and returned as a dictionary. If the queue is empty, returns None.
 
@@ -836,7 +845,7 @@ Pops a trajectory from the RabbitMQ queue using basic_get for immediate retrieva
 | :----------: | --------------------------------------------- |
 | `dict | None` | The popped trajectory data or None if queue is empty |
 
-#### `TrajectoryQueue.start_consuming(self, callback: callable) -> None`
+#### `TrajectoryQueueAgent.start_consuming(self, callback: callable) -> None`
 
 Starts continuous consumption of messages from the RabbitMQ queue. This method blocks and processes incoming messages using the provided callback function.
 
@@ -849,7 +858,7 @@ Starts continuous consumption of messages from the RabbitMQ queue. This method b
 The callback function should accept a single parameter of type `dict` containing the trajectory data.
 
 
-#### `TrajectoryQueue.close(self) -> None`
+#### `TrajectoryQueueAgent.close(self) -> None`
 
 Closes the connection to the RabbitMQ server. This method should be called to properly clean up resources when the TrajectoryQueue is no longer needed.
 

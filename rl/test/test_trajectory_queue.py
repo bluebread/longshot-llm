@@ -1,7 +1,7 @@
 import pytest
 import threading
 import queue
-from rl.service.utils.trajectory_queue import TrajectoryQueue
+from rl.service.utils.trajectory_queue import TrajectoryQueueAgent
 
 host = 'rabbitmq-bread'
 port = 5672
@@ -9,11 +9,11 @@ port = 5672
 
 @pytest.fixture(scope="function")
 def que():
-    que = TrajectoryQueue(host, port)
+    que = TrajectoryQueueAgent(host, port)
     yield que
     que.close()
 
-def test_pingpong(que: TrajectoryQueue):
+def test_pingpong(que: TrajectoryQueueAgent):
     def time_is_up():
         raise TimeoutError("Time's up!")
 
@@ -52,12 +52,12 @@ def test_pingpong(que: TrajectoryQueue):
     timer.cancel()
     assert ans == msg, "The popped message does not match the pushed message."
     
-def test_consuming_multiple(que: TrajectoryQueue):
+def test_consuming_multiple(que: TrajectoryQueueAgent):
     msg_count = 10
     result_queue = queue.Queue()
 
     def task():
-        th_que = TrajectoryQueue(host, port)
+        th_que = TrajectoryQueueAgent(host, port)
         
         def callback(message):
             result_queue.put(message)

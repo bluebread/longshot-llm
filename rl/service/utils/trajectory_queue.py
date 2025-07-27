@@ -1,7 +1,7 @@
 import json
 import pika
 
-class TrajectoryQueue:
+class TrajectoryQueueAgent:
     """
     A class to manage a queue of trajectories using RabbitMQ.
     """

@@ -1,7 +1,7 @@
 import pytest
 import threading
 import queue
-from rl.service.utils.trajectory_queue import TrajectoryQueueAgent
+from lsutils import TrajectoryQueueAgent
 
 host = 'rabbitmq-bread'
 port = 5672

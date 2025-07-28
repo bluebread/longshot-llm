@@ -107,8 +107,8 @@ In the database, the formula table is labeled as `FormulaTable`. Each entry in t
 | id                | UUID        | Primary key                                 |
 | base_formula_id   | UUID        | Parent formula ID                             |
 | trajectory_id     | UUID        | Associated trajectory table ID            |
-| avgQ        | float       | Average-case deterministic query complexity                             |
-| wl_hash              | char(32)      | Weisfeiler-Lehman hash value              |
+| avgQ        | string       | Average-case deterministic query complexity (in base64 format)                             |
+| wl_hash              | string      | Weisfeiler-Lehman hash value              |
 | num_vars          | int         | Number of variables                               |
 | width             | int         | Formula width                               |
 | size              | int         | Formula size (number of nodes)                     |
@@ -122,15 +122,15 @@ In the database, the formula table is labeled as `FormulaTable`. Each entry in t
 
 ### Trajectory Table (MongoDB)
 
-The trajectory table is labeled as `TrajectoryTable#<trajectory_id>`, where `<trajectory_id>` is the ID of the trajectory. 
 Each trajectory is either a partial trajectory or the full definition of a formula, and its table ID must be recorded somewhere in the formula table.
 
 | Column Name      | Type     | Description                                      |
 |------------------|:----------:|--------------------------------------------------|
-| order            | int      | The order of this token in the entire trace (0-based)             |
-| token_type       | bool   | The type of the token, 0 for ADD, 1 for DELETE    |
-| token_literals   | int   | The binary representation for the literals of the token |
-| reward           | float    | The immediate reward received after this step                      |
+| id               | UUID     | Primary key                                      |
+| steps            | list     | List of steps in the trajectory, each step is a dictionary with the following fields: |
+| step.token_type       | bool   | The type of the token, 0 for ADD, 1 for DELETE    |
+| step.token_literals   | int   | The binary representation for the literals of the token |
+| step.reward           | string    | The immediate reward received after this step (in base64 format)                      |
 
 
 ### Isomorphism Hash Table (Redis)

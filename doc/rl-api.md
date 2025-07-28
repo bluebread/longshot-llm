@@ -19,15 +19,26 @@ This document outlines the structure and content of the API documentation for th
         1. `replace_arms()`: Replaces all arms/environments using the arm filter. 
         2. `reset()`: Resets formula games and saves trajectories to the trajectory queue (except the first time calling `reset()`). 
         3. `step()`: Executes a step of formula games. 
-3. **Trajectory Queue Agent**
-    - Manages the trajectory queue using RabbitMQ.
-    - Provides methods to push and pop trajectories.
-    - Main functions:
-        1. `push()`: Pushes a trajectory to the RabbitMQ queue.
-        2. `pop()`: Pops a trajectory from the RabbitMQ queue.
-        3. `start_consuming()`: Starts consuming messages from the RabbitMQ queue.
-        4. `close()`: Closes the connection to RabbitMQ.
-    - This class is a local module, which is accessible for any other components in the RL system.
+3. **Longshot Utilities (lsutils)**
+    - Contains utility functions and classes for the RL system.
+    - Includes:
+        1. `class TrajectoryQueueAgent`:
+            - Manages the trajectory queue using RabbitMQ.
+            - Provides methods to push and pop trajectories.
+            - Main functions:
+                1. `push()`: Pushes a trajectory to the RabbitMQ queue.
+                2. `pop()`: Pops a trajectory from the RabbitMQ queue.
+                3. `start_consuming()`: Starts consuming messages from the RabbitMQ queue.
+                4. `close()`: Closes the connection to RabbitMQ.
+            - This class is a local module, which is accessible for any other components in the RL system.
+        2. `class Deduplicator`: 
+            - Identifies and removes duplicate trajectories from the queue.
+        3. `class GateToken`: 
+            - Represents a token indicating an operation in the formula game.
+        4. base64 encoding/decoding functions:
+            1. `encode_float64_to_base64(value: float) -> str`: Encodes a float64 value to a base64 string.
+            2. `decode_base64_to_float64(value: str) -> float`: Decodes a base64 string to a float64 value.
+            3. `class Float64Base64`: A Pydantic model that validates base64-encoded float64 strings.
 4. **Trainer**
     - Trains a RL policy that learns how to build a CNF/DNF formula with the largest average-case deterministic query complexity.
     - Retrieves dataset (trajectories) from the environment (wrapper). 
@@ -107,7 +118,7 @@ In the database, the formula table is labeled as `FormulaTable`. Each entry in t
 | id                | UUID        | Primary key                                 |
 | base_formula_id   | UUID        | Parent formula ID                             |
 | trajectory_id     | UUID        | Associated trajectory table ID            |
-| avgQ        | string       | Average-case deterministic query complexity (in base64 format)                             |
+| avgQ        | float       | Average-case deterministic query complexity                             |
 | wl_hash              | string      | Weisfeiler-Lehman hash value              |
 | num_vars          | int         | Number of variables                               |
 | width             | int         | Formula width                               |
@@ -130,7 +141,7 @@ Each trajectory is either a partial trajectory or the full definition of a formu
 | steps            | list     | List of steps in the trajectory, each step is a dictionary with the following fields: |
 | step.token_type       | bool   | The type of the token, 0 for ADD, 1 for DELETE    |
 | step.token_literals   | int   | The binary representation for the literals of the token |
-| step.reward           | string    | The immediate reward received after this step (in base64 format)                      |
+| step.reward           | float    | The immediate reward received after this step                      |
 
 
 ### Isomorphism Hash Table (Redis)
@@ -311,6 +322,8 @@ The Warehouse is a microservice that manages the storage and retrieval of data r
 
 When request is not passed in a correct format, the server will return a `422 Unprocessable Entity` error.
 
+Every float value in the request body should be encoded in **base64** format to ensure compatibility with the database. The server will decode the base64 string to a float value before processing.
+
 #### `GET /formula/info`
 Retrieve information about a formula by its ID.
 
@@ -436,7 +449,6 @@ Retrieve a trajectory by its ID.
         "id": "t456",
         "steps": [
             {
-                "order": 0,
                 "token_type": 0,
                 "token_literals": 5,
                 "reward": 0.1
@@ -456,7 +468,6 @@ Add a new trajectory.
     {
         "steps": [
             {
-                "order": 0,
                 "token_type": 0,
                 "token_literals": 5,
                 "reward": 0.1
@@ -481,7 +492,14 @@ Update an existing trajectory.
     ```json
     {
         "id": "t456",
-        "steps": [ ... ]
+        "steps": [
+            {
+                "order": 3,
+                "token_type": 1,
+                "token_literals": 3,
+                "reward": -0.05    
+            }
+        ]
     }
     ```
 - **Response:**  
@@ -797,13 +815,13 @@ GET /topk_arms
 
 
 
-## Local Modules
+## Local Modules: Longshot Utilities (lsutils)
 
-### `Class service.utils.TrajectoryQueueAgent(host: str, port: int = 5672)`
+### `Class lsutils.TrajectoryQueueAgent(host: str, port: int = 5672)`
 
 The `TrajectoryQueueAgent` class provides a high-level interface for managing trajectory data using RabbitMQ. It handles the connection setup, message publishing, and consumption for trajectory processing in the RL system.
 
-##### Constructor Parameters
+#### Constructor Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
@@ -862,7 +880,7 @@ The callback function should accept a single parameter of type `dict` containing
 
 Closes the connection to the RabbitMQ server. This method should be called to properly clean up resources when the TrajectoryQueue is no longer needed.
 
-### `Class service.utils.Deduplicator()`
+### `Class lsutils.Deduplicator()`
 
 The `Deduplicator` class is responsible for identifying and removing duplicate trajectories from the queue. It ensures that only unique trajectories are processed, improving the efficiency of the RL system.
 
@@ -886,11 +904,75 @@ Checks if the given trajectory is a duplicate. If it is unique, it adds it to th
 | :------: | --------------------------------------------- |
 | `bool` | True if the trajectory is a duplicate, False otherwise |
 
-### `Class GateToken(literals, *, type: str)`
+### Class `TrajectoryQueue(host: str, port: int, **config)`
+
+Here are the methods that wrapper the RabbitMQ interface for the Trajectory Queue microservice. These methods allow for pushing and popping serialized trajectory data for downstream processing.
+
+#### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `host`  | str    | The IP address of the RabbitMQ server |
+| `port`  | int    | The port number of the RabbitMQ server        |
+| `config`  | dict   | Configuration parameters for the queue        |
+
+#### Exceptions
+
+| Exception | Description                                   |
+| :--------: | --------------------------------------------- |
+| `pika.exceptions.AMQPConnectionError` | Raised when the connection to the RabbitMQ server fails |
+
+#### `TrajectoryQueue.push(self, trajectory: dict) -> None`
+
+Pushes a serialized trajectory to the RabbitMQ queue for downstream processing.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `trajectory` | dict | The serialized trajectory data to push to the queue |
+
+#### `TrajectoryQueue.pop(self) -> dict | None`
+
+Pops a serialized trajectory from the RabbitMQ queue for processing.
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `dict`  | The serialized trajectory data popped from the queue. Returns `None` if the queue is empty. |
+
+#### `TrajectoryQueue.close(self) -> None`
+
+Closes the connection to the RabbitMQ server. This method should be called when the queue is no longer needed to release resources.
+
+#### `TrajectoryQueue.start_consuming(self, callback: callable) -> None`
+
+Starts consuming messages from the RabbitMQ queue.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `callback` | callable | A function to call with each message. A message in the TrajectoryQueue message schema would be passed to this function. |
+
+
+### Base64 Encoding/Decoding Functions
+
+#### `lsutils.encode_float64_to_base64(value: float) -> str`
+Encodes a float64 value to a base64 string. This is useful for storing float values in a compact format.
+#### `lsutils.decode_base64_to_float64(value: str) -> float`
+Decodes a base64 string back to a float64 value. This is useful for retrieving float values from a base64-encoded format.
+
+#### `class lsutils.Float64Base64`
+
+A Pydantic model that validates base64-encoded float64 strings.
+
+### `Class lsutils.GateToken(literals, *, type: str)`
 
 The `GateToken` class represents a token that indicates an operation (adding or deleting a gate) in the formula game. It contains information about the type of operation and the literals involved.
 
-##### Constructor Parameters
+#### Constructor Parameters
 
 | Parameter       | Type   | Description                                   |
 | --------------- | :-----: | --------------------------------------------- |
@@ -911,7 +993,7 @@ Converts the `GateToken` instance to a PyTorch tensor representation. The tensor
 Converts a PyTorch tensor back to a `GateToken` instance. The tensor should have a shape of `(dim_token,)`. This is a class method. 
 
 
-### Formula Game
+## Local Modules: Formula Game
 
 #### `Class FormulaGame(init_formula_def: list[GateToken], **config)`
 
@@ -932,18 +1014,19 @@ Resets the internal variables of the formula game. This method is called at the 
 
 Simulates a step in the formula game by applying the given token (which indicates adding or deleting a gate) to the formula. It returns the reward for this step, which is based on the average-case deterministic query complexity of the resulting formula.
 
-##### Parameters
+#### Parameters
 
 | Parameter | Type     | Description                                   |
 | --------- | :-------: | --------------------------------------------- |
 | `token`   | GateToken | The token representing the gate operation     |
 
-##### Returns
+#### Returns
 
 | Type    | Description                                   |
 | :------: | --------------------------------------------- |
 | `float` | The reward received after applying the token, based on the average-case deterministic query complexity of the formula. |
 
+## Local Modules: Environment Agent
 
 ### `Class EnvironmentAgent(num_env: int, num_vars: int, width: int, size: int, device: torch.device = None, **config)`
 
@@ -994,61 +1077,7 @@ Executes a step of the formula games by applying the tensor of the given token. 
 
 ---
 
-### Trajectory Queue
-
-Here are the methods that wrapper the RabbitMQ interface for the Trajectory Queue microservice. These methods allow for pushing and popping serialized trajectory data for downstream processing.
-
-#### Class `TrajectoryQueue(host: str, port: int, **config)`
-
-##### Constructor Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `host`  | str    | The IP address of the RabbitMQ server |
-| `port`  | int    | The port number of the RabbitMQ server        |
-| `config`  | dict   | Configuration parameters for the queue        |
-
-##### Exceptions
-
-| Exception | Description                                   |
-| :--------: | --------------------------------------------- |
-| `pika.exceptions.AMQPConnectionError` | Raised when the connection to the RabbitMQ server fails |
-
-#### `TrajectoryQueue.push(self, trajectory: dict) -> None`
-
-Pushes a serialized trajectory to the RabbitMQ queue for downstream processing.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `trajectory` | dict | The serialized trajectory data to push to the queue |
-
-#### `TrajectoryQueue.pop(self) -> dict | None`
-
-Pops a serialized trajectory from the RabbitMQ queue for processing.
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| `dict`  | The serialized trajectory data popped from the queue. Returns `None` if the queue is empty. |
-
-#### `TrajectoryQueue.close(self) -> None`
-
-Closes the connection to the RabbitMQ server. This method should be called when the queue is no longer needed to release resources.
-
-#### `TrajectoryQueue.start_consuming(self, callback: callable) -> None`
-
-Starts consuming messages from the RabbitMQ queue.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `callback` | callable | A function to call with each message. A message in the TrajectoryQueue message schema would be passed to this function. |
-
-### Arm Filter
+## Local Modules: Arm Filter
 
 The internal components of the Arm Filter microservice are responsible for processing trajectories, managing the evolution graph, and ranking arms (formulas). These components work together to maintain the evolution graph of formulas and implement policies for arm selection.
 

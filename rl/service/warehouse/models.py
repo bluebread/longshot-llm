@@ -23,7 +23,7 @@ class FormulaInfo(BaseModel):
     node_id: str
 
     class Config:
-        allow_population_by_field_name = True
+        validate_by_name = True
         allow_population_by_alias = True
         
 class CreateFormulaRequest(BaseModel):
@@ -68,7 +68,7 @@ class LikelyIsomorphicRequest(BaseModel):
     formula_id: str
 
     class Config:
-        allow_population_by_field_name = True
+        validate_by_name = True
 
 
 # Trajectory-related models

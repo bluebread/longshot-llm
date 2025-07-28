@@ -9,7 +9,6 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
-from lsutils import encode_float64_to_base64
 
 from models import (
     FormulaInfo,
@@ -52,8 +51,10 @@ mongodb = mongo_client["LongshotWarehouse"]
 async def lifespan(app: FastAPI):
     # Initialize resources
     try:
-       mongodb.create_collection("FormulaTable", check_exists=True) # TODO: add validator 
-    except Exception as e:
+        # TODO: add validator
+       mongodb.create_collection("FormulaTable", check_exists=True) 
+       mongodb.create_collection("TrajectoryTable", check_exists=True)
+    except Exception:
         pass
     yield
     # Cleanup resources
@@ -64,6 +65,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 formula_table = mongodb["FormulaTable"]
+trajectory_table = mongodb["TrajectoryTable"]
 
 # Formula endpoints
 @app.get("/formula/info", response_model=FormulaInfo)
@@ -71,7 +73,6 @@ async def get_formula_info(id: str = Query(..., description="Formula UUID")):
     """Retrieve information about a formula by its ID."""
     formula_doc = formula_table.find_one({"_id": id})
     if formula_doc:
-        formula_doc["avgQ"] = encode_float64_to_base64(formula_doc["avgQ"])
         return FormulaInfo(**formula_doc)
     raise HTTPException(status_code=404, detail="Formula not found")
 
@@ -80,12 +81,12 @@ async def create_formula_info(request: CreateFormulaRequest):
     """Add a new formula entry to the formula table."""
     new_id = str(uuid.uuid4())
     formula_doc = request.model_dump()
-    formula_doc["_id"] = formula_doc.pop("id", new_id)
-    formula_doc["timestamp"] = formula_doc.get('timestamp', datetime.now().astimezone())
-    
+    formula_doc["_id"] = new_id
+    formula_doc["timestamp"] = datetime.now().astimezone()
+
     formula_table.insert_one(formula_doc)
     
-    return FormulaResponse(id=new_id)
+    return FormulaResponse(id=formula_doc["_id"])
 
 
 @app.put("/formula/info", response_model=SuccessResponse)
@@ -138,39 +139,66 @@ async def add_likely_isomorphic(request: LikelyIsomorphicRequest):
 @app.get("/trajectory", response_model=TrajectoryInfo)
 async def get_trajectory(id: str = Query(..., description="Trajectory UUID")):
     """Retrieve a trajectory by its ID."""
-    # Stub implementation
-    return TrajectoryInfo(
-        id=id,
-        steps=[
-            {
-                "order": 0,
-                "token_type": 0,
-                "token_literals": 5,
-                "reward": 0.1
-            }
-        ]
-    )
+    trajectory_doc = trajectory_table.find_one({"_id": id})
+    if trajectory_doc:
+        return TrajectoryInfo(**trajectory_doc)
+    raise HTTPException(status_code=404, detail="Trajectory not found")
 
 
 @app.post("/trajectory", response_model=TrajectoryResponse, status_code=201)
 async def create_trajectory(trajectory: CreateTrajectoryRequest):
     """Add a new trajectory."""
-    # Stub implementation
     new_id = str(uuid.uuid4())
-    return TrajectoryResponse(id=new_id)
+    trajectory_doc = trajectory.model_dump()
+    trajectory_doc["_id"] = new_id
+    trajectory_doc["timestamp"] = datetime.now().astimezone()
+    
+    trajectory_table.insert_one(trajectory_doc)
+    
+    return TrajectoryResponse(id=trajectory_doc["_id"])
 
 
 @app.put("/trajectory", response_model=SuccessResponse)
 async def update_trajectory(trajectory: UpdateTrajectoryRequest):
     """Update an existing trajectory."""
-    # Stub implementation
+    trajectory_id = trajectory.id
+    data = trajectory.model_dump(exclude_unset=True, exclude={"id"})
+    update_data = {}
+
+    if not data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+
+    if "steps" in data:
+        update_data = {
+            f"steps.{step['order']}": {
+                "token_type": step["token_type"],
+                "token_literals": step["token_literals"],
+                "reward": step["reward"],
+            }
+            for step in data["steps"]
+        }
+    if "base_formula_id" in data:
+        update_data["base_formula_id"] = data["base_formula_id"]
+        
+    result = trajectory_table.update_one(
+        {"_id": trajectory_id},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trajectory not found")
+    
     return SuccessResponse(message="Trajectory updated successfully")
 
 
 @app.delete("/trajectory", response_model=SuccessResponse)
 async def delete_trajectory(id: str = Query(..., description="Trajectory UUID")):
     """Delete a trajectory."""
-    # Stub implementation
+    result = trajectory_table.delete_one({"_id": id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Trajectory not found")
+        
     return SuccessResponse(message="Trajectory deleted successfully")
 
 

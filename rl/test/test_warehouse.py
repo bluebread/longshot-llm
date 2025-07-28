@@ -19,7 +19,7 @@ class TestFormulaInfo:
         formula_data = {
             "base_formula_id": "f010",
             "trajectory_id": "t786",
-            "avgQ": encode_float64_to_base64(3.7),
+            "avgQ": 3.7,
             "wl_hash": "xyz1234...",
             "num_vars": 5,
             "width": 3,
@@ -36,7 +36,7 @@ class TestFormulaInfo:
         # Test update
         update_data = {
             "id": formula_id,
-            "avgQ": encode_float64_to_base64(3.0),
+            "avgQ": 3.0,
             "size": 6
         }
         response = client.put("/formula/info", json=update_data)
@@ -79,7 +79,7 @@ class TestFormulaInfo:
         response = client.post("/formula/info", json=invalid_data)
         assert response.status_code == 422
         data = response.json()
-        assert data["detail"][0]["msg"] == "Value error, Invalid base64 string"
+        assert data["detail"][0]["msg"] == "Input should be a valid number, unable to parse string as a number"
         
         # Test update with invalid data
         invalid_update_data = {
@@ -89,7 +89,7 @@ class TestFormulaInfo:
         response = client.put("/formula/info", json=invalid_update_data)
         assert response.status_code == 422
         data = response.json()
-        assert data["detail"][0]["msg"] == "Value error, Invalid base64 string"
+        assert data["detail"][0]["msg"] == "Input should be a valid number, unable to parse string as a number"
 
 
 class TestLikelyIsomorphic:
@@ -120,36 +120,16 @@ class TestLikelyIsomorphic:
 class TestTrajectory:
     """Test trajectory endpoints."""
     
-    def test_get_trajectory(self, client: httpx.Client):
-        """Test GET /trajectory endpoint."""
-        response = client.get("/trajectory", params={"id": "t456"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == "t456"
-        assert "steps" in data
-        assert isinstance(data["steps"], list)
-        assert len(data["steps"]) == 1
-        step = data["steps"][0]
-        assert step["order"] == 0
-        assert step["token_type"] == 0
-        assert step["token_literals"] == 5
-        assert step["reward"] == 0.1
-    
-    def test_create_trajectory(self, client: httpx.Client):
-        """Test POST /trajectory endpoint."""
+    def test_crud_trajectory(self, client: httpx.Client):
+        """Test /trajectory endpoints."""
+        # Test post
         trajectory_data = {
+            "base_formula_id": "f123",
             "steps": [
                 {
-                    "order": 0,
-                    "token_type": 1,
-                    "token_literals": 3,
-                    "reward": 0.2
-                },
-                {
-                    "order": 1,
                     "token_type": 0,
-                    "token_literals": 7,
-                    "reward": 0.15
+                    "token_literals": 5,
+                    "reward": 7/3
                 }
             ]
         }
@@ -158,17 +138,17 @@ class TestTrajectory:
         data = response.json()
         assert "id" in data
         assert len(data["id"]) > 0
-    
-    def test_update_trajectory(self, client: httpx.Client):
-        """Test PUT /trajectory endpoint."""
+        trajectory_id = data["id"]
+        
+        # Test update
         update_data = {
-            "id": "t456",
+            "id": trajectory_id,
             "steps": [
                 {
                     "order": 0,
                     "token_type": 1,
-                    "token_literals": 4,
-                    "reward": 0.3
+                    "token_literals": 3,
+                    "reward": 9/7
                 }
             ]
         }
@@ -176,14 +156,48 @@ class TestTrajectory:
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Trajectory updated successfully"
-    
-    def test_delete_trajectory(self, client: httpx.Client):
-        """Test DELETE /trajectory endpoint."""
-        response = client.delete("/trajectory", params={"id": "t456"})
+        
+        # Test get
+        response = client.get("/trajectory", params={"id": trajectory_id})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == trajectory_id
+        assert len(data["steps"]) == 1
+        step = data["steps"][0]
+        assert step["token_type"] == 1
+        assert step["token_literals"] == 3
+        assert step["reward"] == 9/7
+
+        # Test delete
+        response = client.delete("/trajectory", params={"id": trajectory_id})
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Trajectory deleted successfully"
 
+    def test_code_422(self, client: httpx.Client):
+        """Test 422 error for invalid trajectory."""
+        # Test post with invalid data
+        invalid_data = {
+            "base_formula_id": "f123",
+            "steps": [
+                {
+                    "token_type": "not_an_int",  # Invalid type
+                    "token_literals": 5,
+                    "reward": 7/3
+                }
+            ]
+        }
+        response = client.post("/trajectory", json=invalid_data)
+        assert response.status_code == 422
+        data = response.json()
+        assert data["detail"][0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
+
+    def test_code_404(self, client: httpx.Client):
+        """Test 404 error for non-existent trajectory."""
+        response = client.get("/trajectory", params={"id": "non_existent_id"})
+        assert response.status_code == 404
+        data = response.json()
+        assert data["detail"] == "Trajectory not found"
 
 class TestEvolutionGraphNode:
     """Test evolution graph node endpoints."""

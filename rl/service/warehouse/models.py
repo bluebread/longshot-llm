@@ -4,8 +4,6 @@ Pydantic models for the Warehouse API.
 
 from datetime import datetime
 from pydantic import BaseModel, Field
-from lsutils import Float64Base64
-
 
 
 # Formula-related models
@@ -14,14 +12,14 @@ class FormulaInfo(BaseModel):
     id: str = Field(alias="_id", serialization_alias="id")
     base_formula_id: str
     trajectory_id: str
-    avgQ: Float64Base64
+    avgQ: float
     wl_hash: str
     num_vars: int
     width: int
     size: int
     timestamp: datetime
     node_id: str
-
+    
     class Config:
         validate_by_name = True
         allow_population_by_alias = True
@@ -30,7 +28,7 @@ class CreateFormulaRequest(BaseModel):
     """Request model for creating a formula."""
     base_formula_id: str 
     trajectory_id: str
-    avgQ: Float64Base64
+    avgQ: float
     wl_hash: str
     num_vars: int
     width: int
@@ -43,7 +41,7 @@ class UpdateFormulaRequest(BaseModel):
     id: str
     base_formula_id: str | None = None
     trajectory_id: str | None = None
-    avgQ: Float64Base64 | None = None
+    avgQ: float | None = None
     wl_hash: str | None = None
     num_vars: int | None = None
     width: int | None = None
@@ -74,7 +72,6 @@ class LikelyIsomorphicRequest(BaseModel):
 # Trajectory-related models
 class TrajectoryStep(BaseModel):
     """A single step in a trajectory."""
-    order: int
     token_type: int
     token_literals: int
     reward: float
@@ -82,19 +79,35 @@ class TrajectoryStep(BaseModel):
 
 class TrajectoryInfo(BaseModel):
     """Trajectory information model."""
-    id: str | None = None
+    id: str = Field(alias="_id", serialization_alias="id")
+    base_formula_id: str
+    timestamp: datetime
     steps: list[TrajectoryStep]
+    
+    class Config:
+        validate_by_name = True
+        allow_population_by_alias = True
 
 
 class CreateTrajectoryRequest(BaseModel):
     """Request model for creating a trajectory."""
+    base_formula_id: str
     steps: list[TrajectoryStep]
 
+
+# Trajectory-related models
+class UpdateTrajectoryStep(BaseModel):
+    """A single step in a trajectory."""
+    order: int
+    token_type: int
+    token_literals: int
+    reward: float
 
 class UpdateTrajectoryRequest(BaseModel):
     """Request model for updating a trajectory."""
     id: str
-    steps: list[TrajectoryStep]
+    base_formula_id: str | None = None
+    steps: list[UpdateTrajectoryStep] | None = None
 
 
 class TrajectoryResponse(BaseModel):

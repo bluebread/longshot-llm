@@ -30,5 +30,5 @@ class Float64Base64:
         yield cls.validate
 
     @classmethod
-    def validate(cls, v: str, *args, **kwargs) -> float:
-        return decode_base64_to_float64(v)
+    def validate(cls, v: float, *args, **kwargs) -> str:
+        return encode_float64_to_base64(v)

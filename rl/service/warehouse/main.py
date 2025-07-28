@@ -4,6 +4,7 @@ FastAPI application for the Warehouse microservice.
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from pymongo import MongoClient
+from redis import Redis
 from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
@@ -47,6 +48,15 @@ logger = logging.getLogger(__name__)
 mongo_client = MongoClient("mongodb://haowei:bread861122@mongo-bread:27017")
 mongodb = mongo_client["LongshotWarehouse"]
 
+redis_config = {
+    "host": "redis-bread",
+    "port": 6379,
+    "username": "default",
+    "password": "bread861122",
+    "decode_responses": True
+}
+iso_hash_table = Redis(db=0, **redis_config)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize resources
@@ -59,6 +69,7 @@ async def lifespan(app: FastAPI):
     yield
     # Cleanup resources
     mongo_client.close()
+    iso_hash_table.close()
     
 app = FastAPI(
     title="Warehouse API",
@@ -120,20 +131,25 @@ async def delete_formula_info(id: str = Query(..., description="Formula UUID")):
     return SuccessResponse(message="Formula deleted successfully")
 
 
+# Likely isomorphic formulas endpoints
 @app.get("/formula/likely_isomorphic", response_model=LikelyIsomorphicResponse)
 async def get_likely_isomorphic(wl_hash: str = Query(..., description="Weisfeiler-Lehman hash")):
     """Retrieve IDs of likely isomorphic formulas."""
-    # Stub implementation
-    logger.info(f"Retrieving likely isomorphic formulas for hash: {wl_hash}")
-    return LikelyIsomorphicResponse(isomorphic_ids=["f123", "f124"])
+    formula_ids = list(iso_hash_table.smembers(wl_hash))
+    return LikelyIsomorphicResponse(wl_hash=wl_hash, ids=formula_ids)
 
 
 @app.post("/formula/likely_isomorphic", response_model=SuccessResponse, status_code=201)
 async def add_likely_isomorphic(request: LikelyIsomorphicRequest):
     """Add a likely isomorphic formula."""
-    # Stub implementation
+    iso_hash_table.sadd(request.wl_hash, request.formula_id)
     return SuccessResponse(message="Likely isomorphic formula added successfully")
 
+@app.delete("/formula/likely_isomorphic", response_model=SuccessResponse)
+async def delete_likely_isomorphic(wl_hash: str = Query(..., description="Weisfeiler-Lehman hash")):
+    """Delete a likely isomorphic formula."""
+    iso_hash_table.delete(wl_hash)
+    return SuccessResponse(message="Likely isomorphic formula deleted successfully")
 
 # Trajectory endpoints
 @app.get("/trajectory", response_model=TrajectoryInfo)

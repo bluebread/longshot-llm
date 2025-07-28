@@ -426,7 +426,8 @@ Retrieve IDs of likely isomorphic formulas.
 
 
 #### `POST /formula/likely_isomorphic`
-Add a likely isomorphic formula.
+
+Add a likely isomorphic formula. If the WL hash already exists, the formula ID will be added to the existing list of isomorphic IDs. Otherwise, a new list will be created.
 
 - **Request Body:**  
     ```json
@@ -440,6 +441,20 @@ Add a likely isomorphic formula.
 - **Status Codes:**  
     - `201 Created`, `422 Unprocessable Entity`
 
+#### `DELETE /formula/likely_isomorphic`
+
+Delete the specified key.
+
+- **Request Body:**  
+    ```json
+    {
+        "wl_hash": "abcd1234..."
+    }
+    ```
+- **Response:**  
+    - Success message.
+- **Status Codes:**  
+    - `200 OK`, `404 Not Found`
 
 #### `GET /trajectory`
 Retrieve a trajectory by its ID.

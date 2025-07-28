@@ -95,28 +95,33 @@ class TestFormulaInfo:
 class TestLikelyIsomorphic:
     """Test likely isomorphic endpoints."""
     
-    def test_get_likely_isomorphic(self, client: httpx.Client):
-        """Test GET /formula/likely_isomorphic endpoint."""
-        response = client.get("/formula/likely_isomorphic", params={"wl_hash": "abcd1234"})
-        assert response.status_code == 200
-        data = response.json()
-        assert "isomorphic_ids" in data
-        assert isinstance(data["isomorphic_ids"], list)
-        assert "f123" in data["isomorphic_ids"]
-        assert "f124" in data["isomorphic_ids"]
-    
-    def test_add_likely_isomorphic(self, client: httpx.Client):
-        """Test POST /formula/likely_isomorphic endpoint."""
+    def test_crd_likely_isomorphic(self, client: httpx.Client):
+        """Test /formula/likely_isomorphic endpoints."""
+        # Test post
         isomorphic_data = {
             "wl_hash": "abcd1234...",
-            "formula_id": "f125"
+            "formula_id": "f123"
         }
         response = client.post("/formula/likely_isomorphic", json=isomorphic_data)
         assert response.status_code == 201
         data = response.json()
         assert data["message"] == "Likely isomorphic formula added successfully"
-
-
+        
+        # Test get
+        response = client.get("/formula/likely_isomorphic", params={"wl_hash": "abcd1234..."})
+        assert response.status_code == 200
+        data = response.json()
+        assert "isomorphic_ids" in data
+        assert isinstance(data["isomorphic_ids"], list)
+        assert "f123" in data["isomorphic_ids"]
+        
+        # Test delete
+        response = client.delete("/formula/likely_isomorphic", params={"wl_hash": "abcd1234..."})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Likely isomorphic formula deleted successfully"
+    
+    
 class TestTrajectory:
     """Test trajectory endpoints."""
     

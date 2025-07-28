@@ -3,11 +3,8 @@ Pydantic models for the Warehouse API.
 """
 
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
-from uuid import UUID
-import base64
-import struct
-from lsutils import decode_base64_float64
+from pydantic import BaseModel, Field
+from lsutils import decode_base64_to_float64
 
 class Float64Base64:
     @classmethod
@@ -16,7 +13,7 @@ class Float64Base64:
 
     @classmethod
     def validate(cls, v: str) -> float:
-        return decode_base64_float64(v)
+        return decode_base64_to_float64(v)
 
 
 # Formula-related models

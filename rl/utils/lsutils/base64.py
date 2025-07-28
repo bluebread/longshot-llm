@@ -1,7 +1,7 @@
 import base64
 import struct
 
-def decode_base64_float64(encoded_str: str) -> float:
+def decode_base64_to_float64(encoded_str: str) -> float:
     """Decode a base64 encoded float64 value."""
     try:
         raw = base64.b64decode(encoded_str, validate=True)

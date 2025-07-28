@@ -1,5 +1,6 @@
 import pytest
 import httpx
+from lsutils import encode_float64_to_base64
 
 host = "localhost"
 port = 8000
@@ -18,7 +19,7 @@ class TestFormulaInfo:
         formula_data = {
             "base_formula_id": "f010",
             "trajectory_id": "t786",
-            "avgQ": 3.7,
+            "avgQ": encode_float64_to_base64(3.7),
             "wl_hash": "xyz1234...",
             "num_vars": 5,
             "width": 3,
@@ -35,7 +36,7 @@ class TestFormulaInfo:
         # Test update
         update_data = {
             "id": formula_id,
-            "avgQ": 3.0,
+            "avgQ": encode_float64_to_base64(3.0),
             "size": 6
         }
         response = client.put("/formula/info", json=update_data)
@@ -78,7 +79,7 @@ class TestFormulaInfo:
         response = client.post("/formula/info", json=invalid_data)
         assert response.status_code == 422
         data = response.json()
-        assert data["detail"][0]["msg"] == "Input should be a valid number, unable to parse string as a number"
+        assert data["detail"][0]["msg"] == "Value error, Invalid base64 string"
         
         # Test update with invalid data
         invalid_update_data = {
@@ -88,7 +89,7 @@ class TestFormulaInfo:
         response = client.put("/formula/info", json=invalid_update_data)
         assert response.status_code == 422
         data = response.json()
-        assert data["detail"][0]["msg"] == "Input should be a valid number, unable to parse string as a number"
+        assert data["detail"][0]["msg"] == "Value error, Invalid base64 string"
 
 
 class TestLikelyIsomorphic:

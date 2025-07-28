@@ -23,3 +23,12 @@ def encode_float64_to_base64(value: float) -> str:
     # Pack the float into bytes
     raw = struct.pack(">d", value)  # Use big-endian float64
     return base64.b64encode(raw).decode('ascii')
+
+class Float64Base64:
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v: str, *args, **kwargs) -> float:
+        return decode_base64_to_float64(v)

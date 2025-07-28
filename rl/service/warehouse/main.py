@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
+from lsutils import encode_float64_to_base64
 
 from models import (
     FormulaInfo,
@@ -70,6 +71,7 @@ async def get_formula_info(id: str = Query(..., description="Formula UUID")):
     """Retrieve information about a formula by its ID."""
     formula_doc = formula_table.find_one({"_id": id})
     if formula_doc:
+        formula_doc["avgQ"] = encode_float64_to_base64(formula_doc["avgQ"])
         return FormulaInfo(**formula_doc)
     raise HTTPException(status_code=404, detail="Formula not found")
 

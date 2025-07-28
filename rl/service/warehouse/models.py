@@ -4,16 +4,8 @@ Pydantic models for the Warehouse API.
 
 from datetime import datetime
 from pydantic import BaseModel, Field
-from lsutils import decode_base64_to_float64
+from lsutils import Float64Base64
 
-class Float64Base64:
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v: str) -> float:
-        return decode_base64_to_float64(v)
 
 
 # Formula-related models
@@ -22,7 +14,7 @@ class FormulaInfo(BaseModel):
     id: str = Field(alias="_id", serialization_alias="id")
     base_formula_id: str
     trajectory_id: str
-    avgQ: float
+    avgQ: Float64Base64
     wl_hash: str
     num_vars: int
     width: int
@@ -38,7 +30,7 @@ class CreateFormulaRequest(BaseModel):
     """Request model for creating a formula."""
     base_formula_id: str 
     trajectory_id: str
-    avgQ: float
+    avgQ: Float64Base64
     wl_hash: str
     num_vars: int
     width: int
@@ -51,7 +43,7 @@ class UpdateFormulaRequest(BaseModel):
     id: str
     base_formula_id: str | None = None
     trajectory_id: str | None = None
-    avgQ: float | None = None
+    avgQ: Float64Base64 | None = None
     wl_hash: str | None = None
     num_vars: int | None = None
     width: int | None = None

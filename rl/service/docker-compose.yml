@@ -38,18 +38,16 @@ services:
     networks:
       - longshot-net
 
-  redis-commander:
-    container_name: redis-commander
-    hostname: redis-commander
-    image: rediscommander/redis-commander:latest
-    restart: always
-    environment:
-      - REDIS_HOSTS=local:redis-bread:6379
-      - REDIS_PASSWORD=bread861122
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight-bread
     ports:
-      - "8082:8081" # 8081 has been changed to 8082 to avoid conflict with mongo-express
+      - "5540:5540"
+    volumes:
+      - redisinsight_data:/data
     networks:
       - longshot-net
+    restart: unless-stopped
 
   mongodb:
     image: mongo:7.0.22-jammy
@@ -107,6 +105,7 @@ volumes:
   neo4j_import:
   neo4j_plugins:
   redis_data:
+  redisinsight_data:
   mongo-data:
 
 networks:

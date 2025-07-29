@@ -298,15 +298,81 @@ class TestHighLevelAPI:
     
     def test_get_formula_definition(self, client: httpx.Client):
         """Test GET /formula/definition endpoint."""
-        response = client.get("/formula/definition", params={"id": "f123"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == "f123"
-        assert "definition" in data
-        assert isinstance(data["definition"], list)
-        assert len(data["definition"]) == 2
-        assert data["definition"][0] == ["x1", "x2", "x3"]
-        assert data["definition"][1] == ["x4", "x5"]
+        formula_ids = []
+        trajectory_ids = []
+
+        try:
+            # Insert base formula (f0)
+            f0_data = {
+                # "base_formula_id": "base_formula",
+                # "trajectory_id": None,
+                "avgQ": 1.0, "wl_hash": "hash0", "num_vars": 2, "width": 2, "size": 2, "node_id": "n0"
+            }
+            response = client.post("/formula/info", json=f0_data)
+            assert response.status_code == 201
+            f0_id = response.json()["id"]
+            formula_ids.append(f0_id)
+
+            # Insert first trajectory (t1) from f0
+            t1_data = {
+                "base_formula_id": f0_id,
+                "steps": [
+                    {"token_type": 0, "token_literals": 1, "reward": 0.5},
+                    {"token_type": 0, "token_literals": 3, "reward": 0.5}
+                ]
+            }
+            response = client.post("/trajectory", json=t1_data)
+            assert response.status_code == 201
+            t1_id = response.json()["id"]
+            trajectory_ids.append(t1_id)
+
+            # Insert first derived formula (f1)
+            f1_data = {
+                "base_formula_id": f0_id, "trajectory_id": t1_id,
+                "avgQ": 1.5, "wl_hash": "hash1", "num_vars": 2, "width": 2, "size": 3, "node_id": "n1"
+            }
+            response = client.post("/formula/info", json=f1_data)
+            assert response.status_code == 201
+            f1_id = response.json()["id"]
+            formula_ids.append(f1_id)
+
+            # Insert second trajectory (t2) from f1
+            t2_data = {
+                "base_formula_id": f1_id,
+                "steps": [
+                    {"token_type": 0, "token_literals": 2, "reward": 0.6}, {"token_type": 1, "token_literals": 1, "reward": 0.6}
+                ]
+            }
+            response = client.post("/trajectory", json=t2_data)
+            assert response.status_code == 201
+            t2_id = response.json()["id"]
+            trajectory_ids.append(t2_id)
+
+            # Insert second derived formula (f2)
+            f2_data = {
+                "base_formula_id": f1_id, "trajectory_id": t2_id,
+                "avgQ": 2.1, "wl_hash": "hash2", "num_vars": 2, "width": 2, "size": 4, "node_id": "n2"
+            }
+            response = client.post("/formula/info", json=f2_data)
+            assert response.status_code == 201
+            f2_id = response.json()["id"]
+            formula_ids.append(f2_id)
+
+            # Get the full definition of the last formula (f2)
+            response = client.get("/formula/definition", params={"id": f2_id})
+            assert response.status_code == 200
+            definition = response.json()
+
+            # Verify the definition
+            assert definition["id"] == f2_id
+            assert set(definition["definition"]) == {2, 3} 
+
+        finally:
+            # Clean up all created test data
+            for fid in formula_ids:
+                client.delete("/formula/info", params={"id": fid})
+            for tid in trajectory_ids:
+                client.delete("/trajectory", params={"id": tid})
     
     # def test_get_evolution_subgraph(self, client: httpx.Client):
     #     """Test GET /evolution_graph/subgraph endpoint."""
@@ -318,22 +384,22 @@ class TestHighLevelAPI:
     #     assert isinstance(data["nodes"], list)
     #     assert isinstance(data["edges"], list)
     
-    def test_add_formula(self, client: httpx.Client):
-        """Test POST /formula/add endpoint."""
-        formula_data = {
-            "base_formula_id": "f122",
-            "trajectory_id": "t456",
-            "avgQ": 2.8,
-            "wl_hash": "xyz789...",
-            "num_vars": 4,
-            "width": 3,
-            "size": 7
-        }
-        response = client.post("/formula/add", json=formula_data)
-        assert response.status_code == 201
-        data = response.json()
-        assert "id" in data
-        assert len(data["id"]) > 0
+    # def test_add_formula(self, client: httpx.Client):
+    #     """Test POST /formula/add endpoint."""
+    #     formula_data = {
+    #         "base_formula_id": "f122",
+    #         "trajectory_id": "t456",
+    #         "avgQ": 2.8,
+    #         "wl_hash": "xyz789...",
+    #         "num_vars": 4,
+    #         "width": 3,
+    #         "size": 7
+    #     }
+    #     response = client.post("/formula/add", json=formula_data)
+    #     assert response.status_code == 201
+    #     data = response.json()
+    #     assert "id" in data
+    #     assert len(data["id"]) > 0
     
     # def test_add_subgraph(self, client: httpx.Client):
     #     """Test POST /evolution_graph/subgraph endpoint."""

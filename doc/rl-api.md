@@ -116,15 +116,17 @@ In the database, the formula table is labeled as `FormulaTable`. Each entry in t
 | Column Name       | Type        | Description                          |
 |:------------------|:-----------:|:--------------------------------------|
 | id                | UUID        | Primary key                                 |
-| base_formula_id   | UUID        | Parent formula ID                             |
-| trajectory_id     | UUID        | Associated trajectory table ID            |
-| avgQ        | float       | Average-case deterministic query complexity                             |
-| wl_hash              | string      | Weisfeiler-Lehman hash value              |
+| base_formula_id   | UUID         | Parent formula ID (can be NULL)                            |
+| trajectory_id     | UUID         | Associated trajectory table ID (can be NULL)           |
+| avgQ              | float       | Average-case deterministic query complexity                             |
+| wl_hash           | string      | Weisfeiler-Lehman hash value              |
 | num_vars          | int         | Number of variables                               |
 | width             | int         | Formula width                               |
 | size              | int         | Formula size (number of nodes)                     |
 | timestamp         | datetime    | Insertion time                               |
 | node_id         | UUID        | Node ID in the evolution graph  |
+
+A entry represents a empty formula if `base_formula_id` and `trajectory_id` are both NULL.
 
 <!-- ### Definition Cache Table (Redis)
 
@@ -675,7 +677,7 @@ Retrieve the full definition of a formula by its ID.
 - **Response:**  
     ```json
     {
-        "id": "f123",
+        "formula_id": "f123",
         "definition": [
             ["x1", "x2", "x3"],
             ["x4", "x5"]
@@ -711,7 +713,7 @@ Retrieve the evolution subgraph of active nodes.
     - `200 OK`, `422 Unprocessable Entity` -->
 
 
-#### `POST /formula/add`
+<!-- #### `POST /formula/add`
 Add a new formula to the warehouse, updating the isomorphism hash table and evolution graph.
 
 - **Request Body:**  
@@ -733,7 +735,7 @@ Add a new formula to the warehouse, updating the isomorphism hash table and evol
     }
     ```
 - **Status Codes:**  
-    - `201 Created`, `422 Unprocessable Entity`
+    - `201 Created`, `422 Unprocessable Entity` -->
 
 
 <!-- #### `POST /evolution_graph/subgraph`

@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
+from itertools import chain
 
 from models import (
     FormulaInfo,
@@ -33,7 +34,7 @@ from models import (
     FormulaDefinition,
     # SubgraphResponse,
     # SubgraphRequest,
-    AddFormulaRequest,
+    # AddFormulaRequest,
     # ContractEdgeRequest,
     SuccessResponse
 )
@@ -354,15 +355,67 @@ async def delete_trajectory(id: str = Query(..., description="Trajectory UUID"))
 @app.get("/formula/definition", response_model=FormulaDefinition)
 async def get_formula_definition(id: str = Query(..., description="Formula UUID")):
     """Retrieve the full definition of a formula by its ID."""
-    # Stub implementation
-    return FormulaDefinition(
-        id=id,
-        definition=[
-            ["x1", "x2", "x3"],
-            ["x4", "x5"]
-        ]
-    )
+    # Check if the formula exists first
+    formula_doc = formula_table.find_one({"_id": id})
+    if not formula_doc:
+        raise HTTPException(status_code=404, detail="Formula not found")
 
+    # Aggregation pipeline to trace back the formula's history
+    pipeline = [
+        {
+            "$match": {"_id": id}
+        },
+        {
+            "$graphLookup": {
+                "from": "FormulaTable",
+                "startWith": "$base_formula_id",
+                "connectFromField": "base_formula_id",
+                "connectToField": "_id",
+                "as": "ancestry",
+                "depthField": "depth"
+            }
+        },
+    ]
+
+    result = formula_table.aggregate(pipeline).to_list()[0]
+
+    if len(result) == 0:
+        # This case handles formulas with no base_formula_id and no corresponding trajectory
+        # (i.e., base formulas that were not created via a trajectory).
+        # It returns an empty list of steps.
+        return FormulaDefinition(id=id, definition=[])
+    
+    tid_s = 'trajectory_id'
+    dep_s = 'depth'
+    traj_ids = sorted([(t[dep_s], t[tid_s]) for t in result.get("ancestry", [])], reverse=True)
+    traj_ids = [t for _, t in traj_ids if t is not None]
+    
+    if tid_s in result and result[tid_s] is not None:
+        # If the current formula has a trajectory_id, include it in the list
+        traj_ids.append(result[tid_s])
+        
+    
+    # Retrieve the full trajectory information
+    trajectory_docs = list(trajectory_table.find({"_id": {"$in": traj_ids}}))
+    traj_lookup = {t["_id"]: t["steps"] for t in trajectory_docs}
+
+    definition = set()
+    
+    for tid in traj_ids:
+        steps = traj_lookup.get(tid, [])
+        
+        for step in steps:
+            ttype = step["token_type"]
+            literals = step["token_literals"]
+
+            if ttype == 0:
+                definition.add(literals)
+            elif ttype == 1:
+                definition.discard(literals)
+            else:
+                raise HTTPException(status_code=500, detail=f"Unknown token type: {ttype}")
+
+    return FormulaDefinition(id=id, definition=list(definition))
 
 # @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
 # async def get_evolution_subgraph(
@@ -377,12 +430,12 @@ async def get_formula_definition(id: str = Query(..., description="Formula UUID"
 #     )
 
 
-@app.post("/formula/add", response_model=FormulaResponse, status_code=201)
-async def add_formula(formula: AddFormulaRequest):
-    """Add a new formula to the warehouse, updating the isomorphism hash table and evolution graph."""
-    # Stub implementation
-    new_id = str(uuid.uuid4())
-    return FormulaResponse(id=new_id)
+# @app.post("/formula/add", response_model=FormulaResponse, status_code=201)
+# async def add_formula(formula: AddFormulaRequest):
+#     """Add a new formula to the warehouse, updating the isomorphism hash table and evolution graph."""
+#     # Stub implementation
+#     new_id = str(uuid.uuid4())
+#     return FormulaResponse(id=new_id)
 
 
 # @app.post("/evolution_graph/subgraph", response_model=SuccessResponse, status_code=201)

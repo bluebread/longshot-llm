@@ -26,8 +26,8 @@ class FormulaInfo(BaseModel):
         
 class CreateFormulaRequest(BaseModel):
     """Request model for creating a formula."""
-    base_formula_id: str 
-    trajectory_id: str
+    base_formula_id: str | None = None
+    trajectory_id: str | None = None
     avgQ: float
     wl_hash: str
     num_vars: int
@@ -169,7 +169,7 @@ class TrajectoryResponse(BaseModel):
 class FormulaDefinition(BaseModel):
     """Formula definition model."""
     id: str
-    definition: list[list[str]]
+    definition: list[int]
 
 
 # # Subgraph models
@@ -186,18 +186,18 @@ class FormulaDefinition(BaseModel):
 
 
 # High-level API models
-class AddFormulaRequest(BaseModel):
-    """Request model for high-level formula addition."""
-    base_formula_id: str | None = None
-    trajectory_id: str | None = None
-    avgQ: float
-    wl_hash: str
-    num_vars: int
-    width: int
-    size: int
+# class AddFormulaRequest(BaseModel):
+#     """Request model for high-level formula addition."""
+#     base_formula_id: str | None = None
+#     trajectory_id: str | None = None
+#     avgQ: float
+#     wl_hash: str
+#     num_vars: int
+#     width: int
+#     size: int
 
-    class Config:
-        allow_population_by_field_name = True
+#     class Config:
+#         allow_population_by_field_name = True
 
 
 # class ContractEdgeRequest(BaseModel):

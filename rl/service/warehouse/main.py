@@ -9,9 +9,7 @@ from neo4j import GraphDatabase
 from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo
 import logging
-from itertools import chain
 
 from models import (
     FormulaInfo,

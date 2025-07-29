@@ -89,7 +89,7 @@ This document outlines the structure and content of the API documentation for th
     - High-level API:
         - `GET /formula/definition`: Retrieves the full definition of a formula by its ID.
         <!-- - `GET /evolution_graph/subgraph`: Retrieves the evolution subgraph of active nodes.  -->
-        - `POST /formula/add`: Adds a new formula to the warehouse, including updating the isomorphism hash table and the evolution graph.
+        <!-- - `POST /formula/add`: Adds a new formula to the warehouse, including updating the isomorphism hash table and the evolution graph. -->
         <!-- - `POST /evolution_graph/subgraph`: Adds a new subgraph to the evolution graph of a formula.
         - `POST /evolution_graph/contract_edge`: Contracts an edge in the evolution graph of a formula. One of the nodes will be deactivated. -->
 
@@ -808,15 +808,13 @@ GET /topk_arms
     {
       "formula_id": "f123",
       "definition": [
-        ["x1", "x2", "x3"],
-        ["x4", "x5"]
+        246, 123, 456
       ]
     },
     {
       "formula_id": "f124",
       "definition": [
-        ["x6", "x7"],
-        ["x8", "x9", "x10"]
+        683, 234, 567
       ],
     }
   ]
@@ -829,14 +827,13 @@ GET /topk_arms
 | -------------- | :-----: | --------------------------------------------- |
 | `top_k_arms`   | array  | List of top-K arms                             |
 | `arm.formula_id`   | string | The unique ID of the formula                   |
-| `arm.definition`   | array  | The definition of the formula, represented as a list of lists of literals |
+| `arm.definition`   | list[int]  | The definition of the formula, represented as a list of lists of literals (represented by integers) |
 
 
 ##### Status Codes
 
 * `200 OK`: Successfully returned top-K arms
 * `422 Unprocessable Entity`: Missing required parameters or invalid values
-* `500 Internal Server Error`: Failed to retrieve data
 
 
 

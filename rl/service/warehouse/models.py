@@ -116,51 +116,53 @@ class TrajectoryResponse(BaseModel):
     id: str
 
 
-# Evolution graph node models
-class EvolutionGraphNode(BaseModel):
-    """Evolution graph node model."""
-    formula_id: str
-    avgQ: float
-    visited_counter: int
-    inactive: bool
-    in_degree: int
-    out_degree: int
+# # Evolution graph node models
+# class EvolutionGraphNode(BaseModel):
+#     """Evolution graph node model."""
+#     formula_id: str
+#     avgQ: float
+#     visited_counter: int
+#     inactive: bool
+#     in_degree: int
+#     out_degree: int
 
 
-class CreateNodeRequest(BaseModel):
-    """Request model for creating a node."""
-    formula_id: str
-    avgQ: float
+# class CreateNodeRequest(BaseModel):
+#     """Request model for creating a node."""
+#     num_vars: int
+#     width: int
+#     formula_id: str
+#     avgQ: float
 
 
-class UpdateNodeRequest(BaseModel):
-    """Request model for updating a node."""
-    node_id: str
-    inc_visited_counter: int | None = None
-    inactive: bool | None = None
+# class UpdateNodeRequest(BaseModel):
+#     """Request model for updating a node."""
+#     node_id: str
+#     inc_visited_counter: int | None = None
+#     inactive: bool | None = None
 
 
-class NodeResponse(BaseModel):
-    """Response model for node creation."""
-    node_id: str
+# class NodeResponse(BaseModel):
+#     """Response model for node creation."""
+#     node_id: str
 
 
-# Evolution graph edge models
-class EvolutionGraphEdge(BaseModel):
-    """Evolution graph edge model."""
-    base_formula_id: str
-    new_formula_id: str
+# # Evolution graph edge models
+# class EvolutionGraphEdge(BaseModel):
+#     """Evolution graph edge model."""
+#     base_formula_id: str
+#     new_formula_id: str
 
 
-class CreateEdgeRequest(BaseModel):
-    """Request model for creating an edge."""
-    base_formula_id: str
-    new_formula_id: str
+# class CreateEdgeRequest(BaseModel):
+#     """Request model for creating an edge."""
+#     base_formula_id: str
+#     new_formula_id: str
 
 
-class EdgeResponse(BaseModel):
-    """Response model for edge creation."""
-    edge_id: str
+# class EdgeResponse(BaseModel):
+#     """Response model for edge creation."""
+#     edge_id: str
 
 
 # Formula definition models
@@ -170,17 +172,17 @@ class FormulaDefinition(BaseModel):
     definition: list[list[str]]
 
 
-# Subgraph models
-class SubgraphResponse(BaseModel):
-    """Response model for subgraph."""
-    nodes: list
-    edges: list
+# # Subgraph models
+# class SubgraphResponse(BaseModel):
+#     """Response model for subgraph."""
+#     nodes: list
+#     edges: list
 
 
-class SubgraphRequest(BaseModel):
-    """Request model for adding subgraph."""
-    nodes: list
-    edges: list
+# class SubgraphRequest(BaseModel):
+#     """Request model for adding subgraph."""
+#     nodes: list
+#     edges: list
 
 
 # High-level API models
@@ -198,9 +200,9 @@ class AddFormulaRequest(BaseModel):
         allow_population_by_field_name = True
 
 
-class ContractEdgeRequest(BaseModel):
-    """Request model for contracting an edge."""
-    edge_id: str
+# class ContractEdgeRequest(BaseModel):
+#     """Request model for contracting an edge."""
+#     edge_id: str
 
 
 # Generic response models

@@ -5,6 +5,7 @@ FastAPI application for the Warehouse microservice.
 from fastapi import FastAPI, HTTPException, Query, Response
 from pymongo import MongoClient
 from redis import Redis
+from neo4j import GraphDatabase
 from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
@@ -22,18 +23,18 @@ from models import (
     CreateTrajectoryRequest,
     UpdateTrajectoryRequest,
     TrajectoryResponse,
-    EvolutionGraphNode,
-    CreateNodeRequest,
-    UpdateNodeRequest,
-    NodeResponse,
-    EvolutionGraphEdge,
-    CreateEdgeRequest,
-    EdgeResponse,
+    # EvolutionGraphNode,
+    # CreateNodeRequest,
+    # UpdateNodeRequest,
+    # NodeResponse,
+    # EvolutionGraphEdge,
+    # CreateEdgeRequest,
+    # EdgeResponse,
     FormulaDefinition,
-    SubgraphResponse,
-    SubgraphRequest,
+    # SubgraphResponse,
+    # SubgraphRequest,
     AddFormulaRequest,
-    ContractEdgeRequest,
+    # ContractEdgeRequest,
     SuccessResponse
 )
 
@@ -57,8 +58,24 @@ redis_config = {
 }
 iso_hash_table = Redis(db=0, **redis_config)
 
+neo4j_config = {
+    "uri": "neo4j://neo4j-bread:7687",
+    "auth": ("neo4j", "bread861122"),
+}
+neo4j_driver = GraphDatabase.driver(**neo4j_config)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Check availability of external services
+    try:
+        # Test MongoDB connection
+        mongodb.command("ping")
+        # Test Redis connection
+        iso_hash_table.ping()
+        # Test Neo4j connection
+        neo4j_driver.verify_connectivity()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="MongoDB connection failed")
     # Initialize resources
     try:
         # TODO: add validator
@@ -70,6 +87,7 @@ async def lifespan(app: FastAPI):
     # Cleanup resources
     mongo_client.close()
     iso_hash_table.close()
+    neo4j_driver.close()
     
 app = FastAPI(
     title="Warehouse API",
@@ -218,67 +236,118 @@ async def delete_trajectory(id: str = Query(..., description="Trajectory UUID"))
     return SuccessResponse(message="Trajectory deleted successfully")
 
 
-# Evolution graph node endpoints
-@app.get("/evolution_graph/node", response_model=EvolutionGraphNode)
-async def get_evolution_graph_node(id: str = Query(..., description="Node UUID")):
-    """Retrieve a node in the evolution graph by its ID."""
-    # Stub implementation
-    return EvolutionGraphNode(
-        formula_id="f123",
-        avgQ=2.5,
-        visited_counter=10,
-        inactive=False,
-        in_degree=2,
-        out_degree=3
-    )
+# # Evolution graph node endpoints
+# @app.get("/evolution_graph/node", response_model=EvolutionGraphNode)
+# async def get_evolution_graph_node(id: str = Query(..., description="Node UUID")):
+#     """Retrieve a node in the evolution graph by its ID."""
+#     query = """
+#     MATCH (n:EvolutionNode {formula_id: $id})
+#     RETURN n.formula_id AS formula_id,
+#            n.avgQ AS avgQ,
+#            n.visited_counter AS visited_counter,
+#            n.inactive AS inactive,
+#            size((n)<--()) AS in_degree,
+#            size((n)-->()) AS out_degree
+#     """
+#     with neo4j_driver.session() as session:
+#         result = session.run(query, id=id).single()
+    
+#     if not result:
+#         raise HTTPException(status_code=404, detail="Node not found")
+    
+#     return EvolutionGraphNode(**result.data())
 
 
-@app.post("/evolution_graph/node", response_model=NodeResponse, status_code=201)
-async def create_evolution_graph_node(node: CreateNodeRequest):
-    """Add a new node to the evolution graph."""
-    # Stub implementation
-    new_id = str(uuid.uuid4())
-    return NodeResponse(node_id=new_id)
+# @app.post("/evolution_graph/node", response_model=NodeResponse, status_code=201)
+# async def create_evolution_graph_node(node: CreateNodeRequest):
+#     """Add a new node to the evolution graph."""
+#     query = """
+#     MERGE (n:EvolutionNode {formula_id: $formula_id})
+#     ON CREATE SET n.avgQ = $avgQ,
+#                   n.visited_counter = $visited_counter,
+#                   n.inactive = coalesce($inactive, false),
+#                   n.timestamp = timestamp()
+#     RETURN n.formula_id AS node_id
+#     """
+#     node_data = node.model_dump()
+#     with neo4j_driver.session() as session:
+#         result = session.run(query, **node_data).single()
+
+#     if not result:
+#         raise HTTPException(status_code=500, detail="Failed to create node")
+
+#     return NodeResponse(node_id=result["node_id"])
 
 
-@app.put("/evolution_graph/node", response_model=SuccessResponse)
-async def update_evolution_graph_node(node: UpdateNodeRequest):
-    """Update an existing node."""
-    # Stub implementation
-    return SuccessResponse(message="Node updated successfully")
+# @app.put("/evolution_graph/node", response_model=SuccessResponse)
+# async def update_evolution_graph_node(node: UpdateNodeRequest):
+#     """Update an existing node."""
+#     node_id = node.node_id
+#     update_data = node.model_dump(exclude_unset=True, exclude={"node_id"})
+
+#     if not update_data:
+#         raise HTTPException(status_code=400, detail="No update data provided")
+
+#     set_clauses = [f"n.{key} = ${key}" for key in update_data.keys()]
+#     query = f"""
+#     MATCH (n:EvolutionNode {{formula_id: $node_id}})
+#     SET {', '.join(set_clauses)}
+#     RETURN n
+#     """
+    
+#     params = {"node_id": node_id, **update_data}
+
+#     with neo4j_driver.session() as session:
+#         result = session.run(query, params).single()
+
+#     if not result:
+#         raise HTTPException(status_code=404, detail="Node not found")
+
+#     return SuccessResponse(message="Node updated successfully")
 
 
-@app.delete("/evolution_graph/node", response_model=SuccessResponse)
-async def delete_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
-    """Delete a node."""
-    # Stub implementation
-    return SuccessResponse(message="Node deleted successfully")
+# @app.delete("/evolution_graph/node", response_model=SuccessResponse)
+# async def delete_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
+#     """Delete a node and its relationships."""
+#     query = """
+#     MATCH (n:EvolutionNode {formula_id: $node_id})
+#     WITH count(n) AS deleted_count
+#     DETACH DELETE n
+#     RETURN deleted_count
+#     """
+#     with neo4j_driver.session() as session:
+#         result = session.run(query, node_id=node_id).single()
+
+#     if not result or result["deleted_count"] == 0:
+#         raise HTTPException(status_code=404, detail="Node not found")
+
+#     return SuccessResponse(message="Node deleted successfully")
 
 
-# Evolution graph edge endpoints
-@app.get("/evolution_graph/edge", response_model=EvolutionGraphEdge)
-async def get_evolution_graph_edge(edge_id: str = Query(..., description="Edge UUID")):
-    """Retrieve an edge in the evolution graph by its ID."""
-    # Stub implementation
-    return EvolutionGraphEdge(
-        base_formula_id="f123",
-        new_formula_id="f124"
-    )
+# # Evolution graph edge endpoints
+# @app.get("/evolution_graph/edge", response_model=EvolutionGraphEdge)
+# async def get_evolution_graph_edge(edge_id: str = Query(..., description="Edge UUID")):
+#     """Retrieve an edge in the evolution graph by its ID."""
+#     # Stub implementation
+#     return EvolutionGraphEdge(
+#         base_formula_id="f123",
+#         new_formula_id="f124"
+#     )
 
 
-@app.post("/evolution_graph/edge", response_model=EdgeResponse, status_code=201)
-async def create_evolution_graph_edge(edge: CreateEdgeRequest):
-    """Add a new edge."""
-    # Stub implementation
-    new_id = str(uuid.uuid4())
-    return EdgeResponse(edge_id=new_id)
+# @app.post("/evolution_graph/edge", response_model=EdgeResponse, status_code=201)
+# async def create_evolution_graph_edge(edge: CreateEdgeRequest):
+#     """Add a new edge."""
+#     # Stub implementation
+#     new_id = str(uuid.uuid4())
+#     return EdgeResponse(edge_id=new_id)
 
 
-@app.delete("/evolution_graph/edge", response_model=SuccessResponse)
-async def delete_evolution_graph_edge(edge_id: str = Query(..., description="Edge UUID")):
-    """Delete an edge."""
-    # Stub implementation
-    return SuccessResponse(message="Edge deleted successfully")
+# @app.delete("/evolution_graph/edge", response_model=SuccessResponse)
+# async def delete_evolution_graph_edge(edge_id: str = Query(..., description="Edge UUID")):
+#     """Delete an edge."""
+#     # Stub implementation
+#     return SuccessResponse(message="Edge deleted successfully")
 
 
 # High-level API endpoints
@@ -295,17 +364,17 @@ async def get_formula_definition(id: str = Query(..., description="Formula UUID"
     )
 
 
-@app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
-async def get_evolution_subgraph(
-    num_vars: int = Query(..., description="Number of variables"),
-    width: int = Query(..., description="Width of the formula")
-):
-    """Retrieve the evolution subgraph of active nodes."""
-    # Stub implementation
-    return SubgraphResponse(
-        nodes=[],
-        edges=[]
-    )
+# @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
+# async def get_evolution_subgraph(
+#     num_vars: int = Query(..., description="Number of variables"),
+#     width: int = Query(..., description="Width of the formula")
+# ):
+#     """Retrieve the evolution subgraph of active nodes."""
+#     # Stub implementation
+#     return SubgraphResponse(
+#         nodes=[],
+#         edges=[]
+#     )
 
 
 @app.post("/formula/add", response_model=FormulaResponse, status_code=201)
@@ -316,18 +385,18 @@ async def add_formula(formula: AddFormulaRequest):
     return FormulaResponse(id=new_id)
 
 
-@app.post("/evolution_graph/subgraph", response_model=SuccessResponse, status_code=201)
-async def add_subgraph(subgraph: SubgraphRequest):
-    """Add a new subgraph to the evolution graph of a formula."""
-    # Stub implementation
-    return SuccessResponse(message="Subgraph added successfully")
+# @app.post("/evolution_graph/subgraph", response_model=SuccessResponse, status_code=201)
+# async def add_subgraph(subgraph: SubgraphRequest):
+#     """Add a new subgraph to the evolution graph of a formula."""
+#     # Stub implementation
+#     return SuccessResponse(message="Subgraph added successfully")
 
 
-@app.post("/evolution_graph/contract_edge", response_model=SuccessResponse)
-async def contract_edge(request: ContractEdgeRequest):
-    """Contract an edge in the evolution graph; one node will be deactivated."""
-    # Stub implementation
-    return SuccessResponse(message="Edge contracted successfully")
+# @app.post("/evolution_graph/contract_edge", response_model=SuccessResponse)
+# async def contract_edge(request: ContractEdgeRequest):
+#     """Contract an edge in the evolution graph; one node will be deactivated."""
+#     # Stub implementation
+#     return SuccessResponse(message="Edge contracted successfully")
 
 
 # Health check endpoint

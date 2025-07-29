@@ -34,7 +34,7 @@ services:
       - "6379:6379"   # Redis port
     volumes:
       - redis_data:/data
-    command: ["redis-server", "--requirepass", "bread861122"] 
+    command: ["redis-server", "--requirepass", "bread861122"] # TODO: Add user name
     networks:
       - longshot-net
 

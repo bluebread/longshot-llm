@@ -63,10 +63,10 @@ This document outlines the structure and content of the API documentation for th
         1. *Isomorphism Hash Table*: Maps a WL hash to IDs of all isomorphic formuals in the formula table. 
         2. *Formula Table*: Each entry records (ID, timestamp, BaseFormulaID, TrajectoryID, complexity, hash, #vars, width, size, NodeID, FullTrajectoryID). 
         3. *Trajectory Tables*: Each tables contains entries of (order, token_type, token_literals, reward). 
-        4. *Evolution Graph Database*:
+        <!-- 4. *Evolution Graph Database*:
             - graph label: (#vars, width)
             - nodes: (FormulaTableID, visited_counter)
-            - edges: (BaseFormulaID, NewFormulaID, distance)
+            - edges: (BaseFormulaID, NewFormulaID, distance) -->
     - Low-level API:
         - `GET /formula/info`: Retrieves information about a formula by its ID.
         - `POST /formula/info`: Adds a new formula entry to the formula table.
@@ -78,20 +78,20 @@ This document outlines the structure and content of the API documentation for th
         - `POST /trajectory`: Adds a new trajectory to the warehouse.
         - `PUT /trajectory`: Updates an existing trajectory in the warehouse.
         - `DELETE /trajectory`: Deletes a trajectory from the warehouse.
-        - `GET /evolution_graph/node`: Retrieves a node in the evolution graph by its ID.
+        <!-- - `GET /evolution_graph/node`: Retrieves a node in the evolution graph by its ID.
         - `POST /evolution_graph/node`: Adds a new node to the evolution graph.
         - `PUT /evolution_graph/node`: Updates an existing node in the evolution graph.
         - `DELETE /evolution_graph/node`: Deletes a node from the evolution graph.
         - `GET /evolution_graph/edge`: Retrieves an edge in the evolution graph by its ID.
         - `POST /evolution_graph/edge`: Adds a new edge to the evolution graph.
         - `PUT /evolution_graph/edge (unused)`: Updates an existing edge in the evolution graph.
-        - `DELETE /evolution_graph/edge`: Deletes an edge from the evolution graph.
+        - `DELETE /evolution_graph/edge`: Deletes an edge from the evolution graph. -->
     - High-level API:
         - `GET /formula/definition`: Retrieves the full definition of a formula by its ID.
-        - `GET /evolution_graph/subgraph`: Retrieves the evolution subgraph of active nodes. 
+        <!-- - `GET /evolution_graph/subgraph`: Retrieves the evolution subgraph of active nodes.  -->
         - `POST /formula/add`: Adds a new formula to the warehouse, including updating the isomorphism hash table and the evolution graph.
-        - `POST /evolution_graph/subgraph`: Adds a new subgraph to the evolution graph of a formula.
-        - `POST /evolution_graph/contract_edge`: Contracts an edge in the evolution graph of a formula. One of the nodes will be deactivated.
+        <!-- - `POST /evolution_graph/subgraph`: Adds a new subgraph to the evolution graph of a formula.
+        - `POST /evolution_graph/contract_edge`: Contracts an edge in the evolution graph of a formula. One of the nodes will be deactivated. -->
 
 3. Arm Filter
     - Filters and selects the best arms (formulas) based on the trajectories and the evolution graph.
@@ -126,10 +126,10 @@ In the database, the formula table is labeled as `FormulaTable`. Each entry in t
 | timestamp         | datetime    | Insertion time                               |
 | node_id         | UUID        | Node ID in the evolution graph  |
 
-### Definition Cache Table (Redis)
+<!-- ### Definition Cache Table (Redis)
 
 - Key (*UUID*): the ID of the formula.
-- Value (*List[UUID]*): the indices of trajectories that can be used to reconstruct the full definition of the formula.
+- Value (*List[UUID]*): the indices of trajectories that can be used to reconstruct the full definition of the formula. -->
 
 ### Trajectory Table (MongoDB)
 
@@ -151,7 +151,7 @@ Each trajectory is either a partial trajectory or the full definition of a formu
 - Key (*string*): WL hash value of a formula.
 - Value (*List[UUID]*): the indices of probably isomorphic formulas with the same WL hash value.
 
-### Evolution Graph (Neo4j)
+<!-- ### Evolution Graph (Neo4j)
 
 Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number of variables and `width` is the width of the formula.
 
@@ -171,7 +171,7 @@ Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number
 | Attribute   | Type   | Description                   |
 | ---------------- | :----: | ----------------------------- |
 | base_formula_id | UUID   | The ID of the base formula, corresponding to the primary key of FormulaTable |
-| new_formula_id  | UUID   | The ID of the new formula, corresponding to the primary key of FormulaTable    |
+| new_formula_id  | UUID   | The ID of the new formula, corresponding to the primary key of FormulaTable    | -->
 
 ## Microservice
 
@@ -543,7 +543,7 @@ Delete a trajectory.
     - `200 OK`, `404 Not Found`
 
 
-#### `GET /evolution_graph/node`
+<!-- #### `GET /evolution_graph/node`
 Retrieve a node in the evolution graph by its ID.
 
 - **Query Parameters:**  
@@ -663,7 +663,7 @@ Delete an edge.
 - **Response:**  
     - Success message.
 - **Status Codes:**  
-    - `200 OK`, `404 Not Found`
+    - `200 OK`, `404 Not Found` -->
 
 
 #### `GET /formula/definition`
@@ -693,7 +693,7 @@ Retrieve the full definition of a formula by its ID.
 - Periodic or opportunistic checkpointing can be applied to avoid long chains of reconstruction.
 - How frequently to reconstruct and cache is a design choice that can be tuned based on performance needs.
 
-#### `GET /evolution_graph/subgraph`
+<!-- #### `GET /evolution_graph/subgraph`
 Retrieve the evolution subgraph of active nodes.
 
 - **Query Parameters:**  
@@ -708,7 +708,7 @@ Retrieve the evolution subgraph of active nodes.
     }
     ```
 - **Status Codes:**  
-    - `200 OK`, `422 Unprocessable Entity`
+    - `200 OK`, `422 Unprocessable Entity` -->
 
 
 #### `POST /formula/add`
@@ -736,7 +736,7 @@ Add a new formula to the warehouse, updating the isomorphism hash table and evol
     - `201 Created`, `422 Unprocessable Entity`
 
 
-#### `POST /evolution_graph/subgraph`
+<!-- #### `POST /evolution_graph/subgraph`
 Add a new subgraph to the evolution graph of a formula.
 
 - **Request Body:**  
@@ -764,7 +764,7 @@ Contract an edge in the evolution graph; one node will be deactivated.
 - **Response:**  
     - Success message.
 - **Status Codes:**  
-    - `200 OK`, `422 Unprocessable Entity`, `404 Not Found`
+    - `200 OK`, `422 Unprocessable Entity`, `404 Not Found` -->
 
 
 

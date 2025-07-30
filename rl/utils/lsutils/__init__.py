@@ -1,2 +1,2 @@
-from .trajectory_queue import TrajectoryQueueAgent
+from .trajectory_queue import *
 from .base64 import *

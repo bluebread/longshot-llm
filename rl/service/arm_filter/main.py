@@ -6,12 +6,15 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from contextlib import asynccontextmanager
 import httpx
 import logging
+import threading
+from schedule import every, repeat, run_pending
 from models import TopKArmsResponse
+from lsutils import TrajectoryQueueAgent
 
 
 logging.basicConfig(
     level=logging.INFO, 
-    filename="warehouse.log", 
+    filename="armfilter.log", 
     format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="a",
 )
@@ -20,10 +23,36 @@ logger = logging.getLogger(__name__)
 warehouse_url = "http://localhost:8000"  # URL of the warehouse service
 warehouse = httpx.Client(base_url=warehouse_url)
 
+trajectory_queue = TrajectoryQueueAgent(host="rabbitmq-bread", port=5672)
+
+@repeat(every(30).seconds)
+def scheduled_task():
+    """
+    A scheduled task that runs every 30 seconds.
+    It can be used to perform periodic operations, such as cleaning up resources or logging.
+    """
+    try:
+        logger.info("Running scheduled task...")
+        # Here you can add any periodic operations, like fetching data from the warehouse
+    except Exception as e:
+        logger.error(f"Error in scheduled task: {e}")
+        
+
+def scheduled_thread():
+    """
+    A function that runs in a separate thread.
+    It can be used to perform operations that should not block the main thread.
+    """
+    while True:
+        run_pending()  # Run any scheduled tasks
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    threading.Thread(target=scheduled_thread, daemon=True).start()
     yield
     warehouse.close()
+    trajectory_queue.close()
 
 app = FastAPI(
     title="Arm Filter API",

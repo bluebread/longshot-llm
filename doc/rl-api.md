@@ -206,6 +206,7 @@ It provides a reliable mechanism for pushing and popping serialized trajectory d
 {
   "num_vars": 3,
   "width": 2,
+  "size": 5,
   "timestamp": "2025-07-21T12:00:00Z",
   "trajectory": {
     "base_formula_id": "f123",
@@ -213,14 +214,14 @@ It provides a reliable mechanism for pushing and popping serialized trajectory d
       {
         "order": 0,
         "token_type": "ADD",
-        "token_literals": ["x1", "x2"],
+        "token_literals": 53456,
         "reward": 0.1,
         "avgQ": 2.5
       },
       {
         "order": 1,
         "token_type": "DEL",
-        "token_literals": ["x2"],
+        "token_literals": 358768,
         "reward": -0.05,
         "avgQ": 3.0
       }
@@ -236,13 +237,14 @@ It provides a reliable mechanism for pushing and popping serialized trajectory d
 | --------------------- | :------: | ----------------------------------------------------------- |
 | `num_vars`            | int    | Number of variables in the formula                          |
 | `width`               | int    | Width of the formula                                        |
+| `size`               | int    | Size of the formula (number of nodes)                       |
 | `timestamp`           | string | ISO 8601 timestamp of when the trajectory was generated   |
 | `trajectory`        | object | Contains the trajectory data                                |
 | `base_formula_id`    | string | The unique ID of the base formula that the trajectory applies to |
 | `steps`               | array  | List of step objects in the trajectory                      |
 | `step.order`          | int    | The position of the action in the sequence                  |
 | `step.token_type`     | string | One of `"ADD"`, `"DEL"`, `"EOS"`                                     |
-| `step.token_literals` | array  | The binary representation for literals involved in the operation                          |
+| `step.token_literals` | int  | The binary representation for literals involved in the operation                          |
 | `step.reward`         | float  | The reward received at this step                            |
 | `step.avgQ`           | float  | The average-case deterministic query complexity of the formula after this step |
 
@@ -1153,7 +1155,7 @@ Checks if a given formula's graph is isomorphic to any existing formula in the w
 | `bool`  | `True` if the formula is isomorphic to any existing formula
 
 
-#### `TrajectoryProcessor.process_trajectory(self, data: dict) -> list[dict]`
+#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> list[dict]`
 
 Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
 

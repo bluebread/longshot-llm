@@ -1,5 +1,41 @@
 import json
 import pika
+from pydantic import BaseModel, Field
+from typing import Dict, Any
+
+class TrajectoryStep(BaseModel):
+    """
+    Model representing a single step in a trajectory.
+    It includes the arm ID and the reward received for that step.
+    """
+
+    order: int = Field(..., description="Order of the step in the trajectory")
+    token_type: str = Field(..., description="Type of the token (e.g., 'arm')")
+    token_literals: list[int] = Field(..., description="List of literals associated with the token")
+    reward: float = Field(..., description="Reward received for this step")
+    avgQ: float = Field(..., description="Average Q-value for this step")
+
+class Trajectory(BaseModel):
+    """
+    Model representing a trajectory in the context of reinforcement learning.
+    It includes the trajectory ID, the arm ID, and the trajectory data.
+    """
+    
+    base_formula_id: str = Field(..., description="ID of the base formula for the trajectory")
+    steps: list[TrajectoryStep] = Field(..., description="List of steps in the trajectory")
+
+class TrajectoryMessage(BaseModel):
+    """
+    Model representing a trajectory message.
+    It includes the trajectory ID, the arm ID, and the trajectory data.
+    """
+    
+    num_vars: int = Field(..., description="Number of variables in the trajectory")
+    width: int = Field(..., description="Width of the trajectory")
+    size: int = Field(..., description="Size of the trajectory (number of nodes)")
+    timestamp: str = Field(..., description="Timestamp of the trajectory")
+    trajectory: Trajectory = Field(..., description="The trajectory data itself")
+
 
 class TrajectoryQueueAgent:
     """
@@ -39,18 +75,13 @@ class TrajectoryQueueAgent:
             routing_key=self.routing_key
         )
 
-    def push(self, trajectory: dict) -> None:
+    def push(self, trajectory: TrajectoryMessage) -> None:
         """
         Pushes a trajectory to the RabbitMQ queue.
 
         :param trajectory: The trajectory to be pushed.
         """
-        if not isinstance(trajectory, dict):
-            raise ValueError("Trajectory must be a dictionary.")
-        
-        # TODO: Validate trajectory structure by Pydantic model 
-        
-        message = json.dumps(trajectory)  # Convert dict to JSON string
+        message = json.dumps(trajectory.model_dump())  # Convert dict to JSON string
         self.channel.basic_publish(
             exchange=self.exchange_name,
             routing_key=self.routing_key,
@@ -61,7 +92,7 @@ class TrajectoryQueueAgent:
             ) 
         )
 
-    def pop(self) -> dict | None:
+    def pop(self) -> TrajectoryMessage | None:
         """
         Pops a trajectory from the RabbitMQ queue.
 
@@ -70,7 +101,7 @@ class TrajectoryQueueAgent:
         method_frame, _, body = self.channel.basic_get(self.queue_name)
         if method_frame:
             self.channel.basic_ack(method_frame.delivery_tag)
-            return json.loads(body)  # Convert string back to dict
+            return TrajectoryMessage(**json.loads(body))  # Convert string back to dict
         return None
 
     def start_consuming(self, callback: callable):

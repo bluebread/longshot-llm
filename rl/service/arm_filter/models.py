@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
+from lsutils import TrajectoryMessage, TrajectoryStep, TrajectoryStep
 
 class ArmInfo(BaseModel):
     """

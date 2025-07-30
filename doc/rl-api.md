@@ -1103,6 +1103,27 @@ Executes a step of the formula games by applying the tensor of the given token. 
 
 The internal components of the Arm Filter microservice are responsible for processing trajectories, managing the evolution graph, and ranking arms (formulas). These components work together to maintain the evolution graph of formulas and implement policies for arm selection.
 
+### Main Program Flow
+
+The main program flow of the Arm Filter microservice involves the following components:
+
+- Scheduled Tasks: These tasks periodically process the trajectories from the queue, check/update the evolution graph, perform necessary updates (such as graph contraction), rank arms, and save the ranking to a file with timestamp. 
+- API Endpoint: The /topk_arms endpoint allows users to retrieve the current best top-K arms based on the latest trajectories and evolution graph. The only thing that the API does is to read the latest ranking file and return the top-K arms' definition (obained from the warehouse). The ranking file is updated by the scheduled tasks.
+
+#### `Class Arm(pydantic.BaseModel)`
+
+The `Arm` class represents a formula in the evolution graph. It contains the formula ID and its definition, which is a list of literals.
+
+##### Fields
+
+| Field          | Type   | Description                                   |
+| -------------- | :-----: | --------------------------------------------- |
+| `formula_id`     | str    | The ID of the formula in the warehouse |
+| `avgQ`       | float  | The average Q-value of the formula            |
+| `visited_counter` | int | The number of times the formula has been visited |
+| `in_degree`  | int    | The in-degree of the formula in the evolution graph |
+| `out_degree` | int    | The out-degree of the formula in the evolution graph |
+
 #### `Class TrajectoryProcessor(**config)`
 
 
@@ -1114,15 +1135,16 @@ The `TrajectoryProcessor` class processes trajectories and updates the evolution
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the processor    |
 
-#### `TrajectoryProcessor.check_if_duplicate(self, formula: NormalFormFormula) -> bool`
 
-Checks if a given formula is isomorphic to any existing formula in the warehouse. This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate.
+#### `TrajectoryProcessor.check_if_duplicate(self, formula_graph: networkx.Graph) -> bool`
+
+Checks if a given formula's graph is isomorphic to any existing formula in the warehouse. This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate.
 
 ##### Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
-| `formula` | NormalFormFormula | The formula to check for isomorphism         |
+| `formula_graph` | networkx.Graph | The graph representation of the formula to check for isomorphism |
 
 ##### Returns
 
@@ -1131,15 +1153,39 @@ Checks if a given formula is isomorphic to any existing formula in the warehouse
 | `bool`  | `True` if the formula is isomorphic to any existing formula
 
 
-#### `TrajectoryProcessor.process_trajectory(self, data: dict) -> None`
+#### `TrajectoryProcessor.process_trajectory(self, data: dict) -> list[dict]`
 
-Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse.
+Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
 
 ##### Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
 | `data`    | dict   | The trajectory data to process in the message schema (JSON) defined in Trajectory Queue.                  |
+
+##### Returns
+
+```JSON
+{
+  "new_formulas": [
+    {
+      "id": "f123",
+      "base_formula_id": "f122",
+      "trajectory_id": "t456",
+      "avgQ": 1.5,
+      "num_vars": 3,
+      "width": 2,
+      "size": 5,
+      "wl_hash": "abcd1234...",
+    },
+    ...
+  ]
+}
+```
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |
 
 #### `Class EvolutionGraphManager(**config)`
 
@@ -1150,6 +1196,16 @@ The `EvolutionGraphManager` class manages the evolution graph and its updates. I
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the manager      |
+
+#### `EvolutionGraphManager.update_graph(self, new_formulas: list[dict]) -> None`
+
+Updates the evolution graph with new formulas. This method adds new nodes and edges to the graph based on the provided list of new formulas. It also checks if the graph exceeds size constraints and contracts it if necessary.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `new_formulas` | list[dict] | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value. |
 
 #### `EvolutionGraphManager.check(self) -> bool`
 
@@ -1165,9 +1221,20 @@ Checks if the evolution graph satisfies the size constraints defined in the conf
 
 Contracts the evolution graph by merging nodes and edges based on the provided data. This method is called when the graph exceeds the size constraints. The result is then saved to the warehouse.
 
+#### `EvolutionGraphManager.get_arms(self) -> list[Arm]`
+
+Returns a list of active nodes in the evolution graph. Active nodes are those that have been visited or are part of the current trajectory.
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| `list[dict]`  | A list of dictionaries representing the active nodes in the graph. |
+
+
 #### `Class ArmRanker(**config)`
 
-The `ArmRanker` class ranks the arms (formulas) based on their performance and potential. It uses the evolution graph and trajectories to determine the best arms.
+The `ArmRanker` class ranks the arms (formulas) based on their performance and potential. It uses the evolution graph and formulas' information to determine the best arms. This class is stateless and just provides a method to rank arms.
 
 ##### Constructor Parameters
 
@@ -1175,15 +1242,15 @@ The `ArmRanker` class ranks the arms (formulas) based on their performance and p
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the ranker       |
 
-#### `ArmRanker.rank_arms(self, arms: list[int]) -> list[int]`
+#### `ArmRanker.rank_arms(self, arms: list[Arm]) -> list[int]`
 
-Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms.
+Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms. In the case that the UCB algorithm is adopted, the current time step is the sum of visited counters of all arms.
 
 ##### Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
-| `arms`    | list[int] | A list of indices representing the arms to be ranked |
+| `arms`    | list[Arm] | A list of Arm objects representing the arms to be ranked |
 
 ##### Returns
 

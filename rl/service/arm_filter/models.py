@@ -17,3 +17,16 @@ class TopKArmsResponse(BaseModel):
     """
 
     top_k_arms: List[ArmInfo] 
+    
+class Arm(BaseModel):
+    """
+    Model representing an arm in the context of reinforcement learning.
+    It includes the arm's ID, its value, and any additional metadata.
+    """
+
+    node_id: str = Field(..., description="Unique identifier for the arm node")
+    definition: set[int] = Field(..., description="Set of integers representing the arm's definition")
+    avgQ: float = Field(..., description="Average Q-value of the arm")
+    visited_counter: int = Field(..., description="Counter for the number of times the arm has been visited")
+    in_degree: int = Field(..., description="In-degree of the arm node in the evolution graph")
+    out_degree: int = Field(..., description="Out-degree of the arm node in the evolution graph")

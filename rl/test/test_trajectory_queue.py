@@ -1,7 +1,7 @@
 import pytest
 import threading
 import queue
-from lsutils import TrajectoryQueueAgent
+from lsutils import TrajectoryQueueAgent, TrajectoryMessage
 
 host = 'rabbitmq-bread'
 port = 5672
@@ -20,6 +20,7 @@ def test_pingpong(que: TrajectoryQueueAgent):
     msg = {
         "num_vars": 3,
         "width": 2,
+        "size": 5,
         "timestamp": "2025-07-21T12:00:00Z",
         "trajectory": {
             "base_formula_id": "f123",
@@ -27,14 +28,14 @@ def test_pingpong(que: TrajectoryQueueAgent):
                 {
                     "order": 0,
                     "token_type": "ADD",
-                    "token_literals": ["x1", "x2"],
+                    "token_literals": 5343,
                     "reward": 0.1,
                     "avgQ": 2.5
                 },
                 {
                     "order": 1,
                     "token_type": "DEL",
-                    "token_literals": ["x2"],
+                    "token_literals": 616,
                     "reward": -0.05,
                     "avgQ": 3.0
                 }
@@ -42,6 +43,7 @@ def test_pingpong(que: TrajectoryQueueAgent):
         }
     }
     
+    msg = TrajectoryMessage(**msg)
     que.push(msg)
     timer = threading.Timer(10, time_is_up)
     timer.start()
@@ -79,7 +81,17 @@ def test_consuming_multiple(que: TrajectoryQueueAgent):
 
     # Push 10 test messages
     for i in range(msg_count):
-        que.push({'n': i})
+        msg = TrajectoryMessage(
+            num_vars=i,
+            width=2,
+            size=5,
+            timestamp="2025-07-21T12:00:00Z",
+            trajectory={
+                "base_formula_id": f"f{i}",
+                "steps": []
+            }
+        )
+        que.push(msg)
 
     # # Wait for consumer thread to finish (with a timeout safety)
     consumer_thread.join(timeout=10)
@@ -90,8 +102,9 @@ def test_consuming_multiple(que: TrajectoryQueueAgent):
         received.append(result_queue.get())
 
     assert len(received) == msg_count, f"Expected {msg_count} messages, got {len(received)}"
-    expected = [{'n': i} for i in range(msg_count)]
-    assert sorted(received, key=lambda x: x['n']) == expected, "Messages mismatch or out of order"
+    received = sorted([msg['num_vars'] for msg in received])
+    expected = list(range(msg_count))
+    assert received == expected, "Messages mismatch or out of order"
     
 if __name__ == "__main__":
     pytest.main([__file__])

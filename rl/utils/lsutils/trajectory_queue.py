@@ -2,6 +2,7 @@ import json
 import pika
 from pydantic import BaseModel, Field
 from typing import Dict, Any
+from datetime import datetime
 
 class TrajectoryStep(BaseModel):
     """
@@ -11,7 +12,7 @@ class TrajectoryStep(BaseModel):
 
     order: int = Field(..., description="Order of the step in the trajectory")
     token_type: str = Field(..., description="Type of the token (e.g., 'arm')")
-    token_literals: list[int] = Field(..., description="List of literals associated with the token")
+    token_literals: int = Field(..., description="Literal associated with the token")
     reward: float = Field(..., description="Reward received for this step")
     avgQ: float = Field(..., description="Average Q-value for this step")
 
@@ -33,7 +34,7 @@ class TrajectoryMessage(BaseModel):
     num_vars: int = Field(..., description="Number of variables in the trajectory")
     width: int = Field(..., description="Width of the trajectory")
     size: int = Field(..., description="Size of the trajectory (number of nodes)")
-    timestamp: str = Field(..., description="Timestamp of the trajectory")
+    timestamp: datetime = Field(..., description="Timestamp of the trajectory")
     trajectory: Trajectory = Field(..., description="The trajectory data itself")
 
 
@@ -81,7 +82,7 @@ class TrajectoryQueueAgent:
 
         :param trajectory: The trajectory to be pushed.
         """
-        message = json.dumps(trajectory.model_dump())  # Convert dict to JSON string
+        message = trajectory.model_dump_json()  # Convert dict to JSON string
         self.channel.basic_publish(
             exchange=self.exchange_name,
             routing_key=self.routing_key,

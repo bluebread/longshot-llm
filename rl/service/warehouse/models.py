@@ -92,7 +92,7 @@ class TrajectoryInfo(BaseModel):
 
 class CreateTrajectoryRequest(BaseModel):
     """Request model for creating a trajectory."""
-    base_formula_id: str
+    base_formula_id: str | None = None
     steps: list[TrajectoryStep]
 
 

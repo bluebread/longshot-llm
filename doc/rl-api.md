@@ -449,12 +449,8 @@ Add a likely isomorphic formula. If the WL hash already exists, the formula ID w
 
 Delete the specified key.
 
-- **Request Body:**  
-    ```json
-    {
-        "wl_hash": "abcd1234..."
-    }
-    ```
+- **Query Parameters:**  
+    - `wl_hash` (string, required): Weisfeiler-Lehman hash.
 - **Response:**  
     - Success message.
 - **Status Codes:**  

@@ -1,13 +1,11 @@
 from functools import reduce
-import itertools
 import httpx
 import networkx as nx
 import numpy as np
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
 
-from longshot.circuit import DNF
-from models import TrajectoryMessage
+from models import TrajectoryMessage, TrajectoryStep
 
 class TrajectoryProcessor:
     def __init__(self, warehouse: httpx.Client, **config):
@@ -21,16 +19,15 @@ class TrajectoryProcessor:
         # `traj_num_summits` should be no more than `traj_granularity`
         self.traj_num_summits: int = config.get("num_summits", 5)  
 
-    def retrieve_definition(self, formula_id: str) -> dict:
+    def retrieve_definition(self, formula_id: str) -> list:
         """
         Retrieves the formula definition from the warehouse.
         
         Parameters:
-            warehouse (httpx.Client): The HTTP client to interact with the warehouse.
             formula_id (str): The identifier of the formula to retrieve.
         
         Returns:
-            dict: The formula definition.
+            list: The formula definition.
         """
         response = self.warehouse.get(f"/formula/definition", params={"id": formula_id})
         
@@ -52,8 +49,8 @@ class TrajectoryProcessor:
         pl = gate & 0xFFFFFFFF
         nl = (gate >> 32) & 0xFFFFFFFF
         
-        edges = [(f"+x{i}", gate) for i in range(32) if (i & pl) != 0]
-        edges += [(f"-x{i}", gate) for i in range(32) if (i & nl) != 0]
+        edges = [(f"+x{i}", gate) for i in range(32) if ((1 << i) & pl) != 0]
+        edges += [(f"-x{i}", gate) for i in range(32) if ((1 << i) & nl) != 0]
         
         graph.add_edges_from(edges)
 
@@ -72,17 +69,17 @@ class TrajectoryProcessor:
         
 
     @staticmethod
-    def definition_to_graph(definition: dict) -> nx.Graph:
+    def definition_to_graph(definition: list) -> nx.Graph:
         """
         Converts a formula definition to a networkx graph.
         
         Parameters:
-            definition (dict): The formula definition containing variables and their connections.
+            definition (list): The formula definition containing variables and their connections.
         
         Returns:
             nx.Graph: A graph representation of the formula.
         """
-        vars: int = reduce(lambda x, y: x | y, definition, initial=0)
+        vars: int = reduce(lambda x, y: x | y, definition, 0)
         pos_vars = vars & 0xFFFFFFFF
         neg_vars = (vars >> 32) & 0xFFFFFFFF
         vars = pos_vars | neg_vars
@@ -90,12 +87,12 @@ class TrajectoryProcessor:
         if vars == 0:
             return nx.Graph()
         
-        num_vars = vars.bit_length() - 1
+        num_vars = vars.bit_length()
         formula_graph = nx.Graph()
         
-        vars = [(1 << i) for i in range(num_vars) if (vars & (1 << i)) != 0]
-        pos_vars = [(1 << i) for i in range(num_vars) if (pos_vars & (1 << i)) != 0]
-        neg_vars = [(1 << i) for i in range(num_vars) if (neg_vars & (1 << i)) != 0]
+        vars = [i for i in range(num_vars) if (vars & (1 << i)) != 0]
+        pos_vars = [i for i in range(num_vars) if (pos_vars & (1 << i)) != 0]
+        neg_vars = [i for i in range(num_vars) if (neg_vars & (1 << i)) != 0]
         
         var_nodes = [f"x{i}" for i in vars]
         pos_nodes = [f"+x{i}" for i in pos_vars]
@@ -111,20 +108,21 @@ class TrajectoryProcessor:
 
         return formula_graph
 
-    def check_if_duplicate(self, formula_graph: nx.Graph) -> bool:
+    def isomorphic_to(self, formula_graph: nx.Graph, wl_hash: str | None = None) -> str | None:
         """
-        Checks if a given formula's graph is isomorphic to any existing formula in the warehouse.
-        This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate.
+        Returns the ID of an isomorphic formula if it exists in the warehouse.
 
         Parameters:
             formula_graph (networkx.Graph): The graph representation of the formula to check for isomorphism.
+            wl_hash (str | None): The precomputed Weisfeiler-Lehman hash of the formula graph. If None, it will be computed.
 
         Returns:
-            bool: True if the formula is a duplicate, False otherwise.
+            str | None: The ID of the isomorphic formula if found, otherwise None.
         """
         # Implementation of the duplicate check using Weisfeiler-Lehman hash
-        formula_hash = weisfeiler_lehman_graph_hash(formula_graph, iterations=self.hash_iterations, node_attr="label")
-        response = self.warehouse.get("/formula/likely_isomorphic", params={"wl_hash": formula_hash})
+        if wl_hash is None:
+            wl_hash = weisfeiler_lehman_graph_hash(formula_graph, iterations=self.hash_iterations, node_attr="label")
+        response = self.warehouse.get("/formula/likely_isomorphic", params={"wl_hash": wl_hash})
         
         if response.status_code == 404:
             return False  # No existing formula with this hash, so it's not a duplicate
@@ -138,9 +136,9 @@ class TrajectoryProcessor:
             fg = self.definition_to_graph(fdef)
             
             if vf2pp_is_isomorphic(formula_graph, fg, node_label="label"):
-                return True
+                return fid
             
-        return False
+        return None
     
     def process_trajectory(self, msg: TrajectoryMessage) -> None:
         avgQs = [step.avgQ for step in msg.trajectory.steps]
@@ -171,28 +169,17 @@ class TrajectoryProcessor:
         base_fdef = self.retrieve_definition(msg.trajectory.base_formula_id)
         fg = self.definition_to_graph(base_fdef)
         prev_formula_id: str = msg.trajectory.base_formula_id
-        
-        for s, t in pieces:
+        new_formulas: list[dict] = []
+        steps_buffer: list[TrajectoryStep] = []
+        evo_path: list[str] = []
+
+        for i, piece in enumerate(pieces):
             # Process each piece of the trajectory
+            s, t = piece
             # Each piece is [s, t) and represents a segment of the trajectory,
             # where `s` is the start index and `t` is the end index.
-            response = self.warehouse.post("/trajectory", json={
-                "base_formula_id": prev_formula_id,
-                "steps": [
-                    {
-                        "token_type": step.token_type,
-                        "token_literal": step.token_literals,
-                        "reward": step.reward,
-                    }
-                    for step in msg.trajectory.steps[s:t]
-                ]
-            })
             
-            if response.status_code != 200:
-                raise ValueError(f"Failed to process trajectory piece {s}:{t}: {response.text}")
-            
-            traj_id = response.json().get("id")
-            
+            # In turn add or delete gates in the formula graph based on the trajectory steps
             for step in msg.trajectory.steps[s:t]:
                 if step.token_type == 'ADD':
                     self.add_gate_to_graph(fg, step.token_literals)
@@ -203,9 +190,35 @@ class TrajectoryProcessor:
                 else:
                     raise ValueError(f"Unknown token type: {step.token_type}")
                 
+            # Check if the formula graph is a duplicate
             wl_hash = weisfeiler_lehman_graph_hash(fg, iterations=self.hash_iterations, node_attr="label")
             
-            response = self.warehouse.post("/formula", json={
+            if (fid := self.isomorphic_to(fg, wl_hash)) is not None:
+                steps_buffer.extend(msg.trajectory.steps[s:t])
+                evo_path.append(fid)
+
+                continue  # Skip storing if it's a duplicate
+            
+            # If not a duplicate, store the trajectory and formula
+            response = self.warehouse.post("/trajectory", json={
+                "base_formula_id": prev_formula_id,
+                "steps": [
+                    {
+                        "token_type": step.token_type,
+                        "token_literal": step.token_literals,
+                        "reward": step.reward,
+                    }
+                    for step in steps_buffer + msg.trajectory.steps[s:t]
+                ]
+            })
+            steps_buffer.clear()  # Clear the buffer after processing
+            
+            if response.status_code != 201:
+                raise ValueError(f"Failed to process trajectory piece {s}:{t}: {response.text}")
+            
+            traj_id = response.json().get("id")
+            
+            formula_data = {
                 "base_formula_id": prev_formula_id,
                 "trajectory_id": traj_id,
                 "avgQ": msg.trajectory.steps[t-1].avgQ,
@@ -214,10 +227,27 @@ class TrajectoryProcessor:
                 "width": msg.width,
                 "size": msg.size,
                 "node_id": "" # Unused in this context, but required by the API
-            })
-            
-            if response.status_code != 200:
+            }
+            response = self.warehouse.post("/formula", json=formula_data)
+
+            if response.status_code != 201:
                 raise ValueError(f"Failed to store formula for trajectory piece {s}:{t}: {response.text}")
             
-            prev_formula_id = response.json().get("id")
+            # Store the formula ID in the isomorphism hash table
+            formula_data["id"] = response.json().get("id")
+            response = self.warehouse.post("/formula/likely_isomorphic", json={
+                "wl_hash": wl_hash,
+                "formula_id": formula_data["id"],
+            })
+            
+            if response.status_code != 201:
+                raise ValueError(f"Failed to check for isomorphic formulas after storing: {response.text}")
+            
+            # Prepare for the next iteration
+            evo_path.append(formula_data["id"])
+            prev_formula_id = formula_data["id"]
+            del formula_data["node_id"]
+            new_formulas.append(formula_data)
+            
+        return new_formulas
         

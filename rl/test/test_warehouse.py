@@ -111,9 +111,9 @@ class TestLikelyIsomorphic:
         response = client.get("/formula/likely_isomorphic", params={"wl_hash": "abcd1234..."})
         assert response.status_code == 200
         data = response.json()
-        assert "ids" in data
-        assert isinstance(data["ids"], list)
-        assert "f123" in data["ids"]
+        assert "isomorphic_ids" in data
+        assert isinstance(data["isomorphic_ids"], list)
+        assert "f123" in data["isomorphic_ids"]
         
         # Test delete
         response = client.delete("/formula/likely_isomorphic", params={"wl_hash": "abcd1234..."})

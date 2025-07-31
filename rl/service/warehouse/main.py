@@ -153,7 +153,7 @@ async def delete_formula_info(id: str = Query(..., description="Formula UUID")):
 async def get_likely_isomorphic(wl_hash: str = Query(..., description="Weisfeiler-Lehman hash")):
     """Retrieve IDs of likely isomorphic formulas."""
     formula_ids = list(iso_hash_table.smembers(wl_hash))
-    return LikelyIsomorphicResponse(wl_hash=wl_hash, ids=formula_ids)
+    return LikelyIsomorphicResponse(wl_hash=wl_hash, isomorphic_ids=formula_ids)
 
 
 @app.post("/formula/likely_isomorphic", response_model=SuccessResponse, status_code=201)

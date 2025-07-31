@@ -58,7 +58,7 @@ class FormulaResponse(BaseModel):
 class LikelyIsomorphicResponse(BaseModel):
     """Response model for likely isomorphic formulas."""
     wl_hash: str
-    ids: list[str]
+    isomorphic_ids: list[str]
 
 
 class LikelyIsomorphicRequest(BaseModel):

@@ -31,8 +31,15 @@ This document outlines the structure and content of the API documentation for th
                 3. `start_consuming()`: Starts consuming messages from the RabbitMQ queue.
                 4. `close()`: Closes the connection to RabbitMQ.
             - This class is a local module, which is accessible for any other components in the RL system.
-        2. `class Deduplicator`: 
-            - Identifies and removes duplicate trajectories from the queue.
+        2. `class WarehouseAgent`:
+            - Manages the warehouse microservice.
+            - Provides methods to interact with the warehouse API.
+            - Main functions:
+                1. `get_X()`: Retrieves data from the warehouse.
+                2. `post_X()`: Posts data to the warehouse.
+                3. `put_X()`: Updates data in the warehouse.
+                4. `delete_X()`: Deletes data from the warehouse.
+            - This class is a local module, which is accessible for any other components in the RL system.
         3. `class GateToken`: 
             - Represents a token indicating an operation in the formula game.
         4. base64 encoding/decoding functions:
@@ -976,6 +983,134 @@ Starts consuming messages from the RabbitMQ queue.
 | --------- | :-----: | --------------------------------------------- |
 | `callback` | callable | A function to call with each message. A message in the TrajectoryQueue message schema would be passed to this function. |
 
+
+### `Class WarehouseAgent(host: str, port: int = 5672, **config)`
+
+The `WarehouseAgent` class provides a high-level interface for interacting with the Warehouse microservice, which manages the storage and retrieval of formulas, trajectories, and the evolution graph.
+
+#### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `host`    | str    | The RabbitMQ server host address             |
+| `port`    | int    | The RabbitMQ server port (default: 5672)     |
+| `config`  | dict   | Configuration parameters for the agent        |
+
+#### `WarehouseAgent.close(self) -> None`
+
+Closes the connection to the Warehouse microservice. This method should be called to properly clean up resources when the WarehouseAgent is no longer needed.
+
+#### `WarehouseAgent.get_formula_info(formula_id: str) -> None`
+
+- Arguments:
+    - `formula_id` (str): The ID of the formula to retrieve information for.
+- Returns:
+    - A dictionary containing the formula information return by the `GET /formula/info` endpoint.
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given ID does not exist in the warehouse.
+
+#### `WarehouseAgent.post_formula_info(**body) -> str`
+
+- Arguments:
+    - `body` (dict): The formula information to create or update.
+- Returns:
+    - The ID of the created or updated formula in the formula table.
+- Raises:
+    - HTTPException(status_code=422): If the request body is not in the correct format or missing required fields.
+
+#### `WarehouseAgent.put_formula_info(**body) -> None`
+
+- Arguments:
+    - `body` (dict): The formula information to update.
+- Returns:
+    - None
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given ID does not exist in the warehouse.
+    - HTTPException(status_code=422): If the request body is not in the correct format or missing required fields.
+
+#### `WarehouseAgent.delete_formula_info(formula_id: str) -> None`
+
+- Arguments:
+    - `formula_id` (str): The ID of the formula to delete.
+- Returns:
+    - None
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given ID does not exist in the warehouse.
+
+#### `WarehouseAgent.get_likely_isomorphic(wl_hash: str) -> list[str]`
+
+- Arguments:
+    - `wl_hash` (str): The hash of the formula to retrieve likely isomorphic formulas for.
+- Returns:
+    - A list of formula IDs that are likely isomorphic to the given formula.
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given hash does not exist in the warehouse.
+
+#### `WarehouseAgent.post_likely_isomorphic(wl_hash: str, formula_id: str) -> None`
+
+- Arguments:
+    - `wl_hash` (str): The hash of the formula.
+    - `formula_id` (str): The ID of the formula to add to the list of likely isomorphic formulas.
+- Returns:
+    - None
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given hash does not exist in the warehouse.
+    - HTTPException(status_code=422): If the request body is not in the correct format or missing required fields.
+
+#### `WarehouseAgent.delete_likely_isomorphic(wl_hash: str) -> None`
+
+- Arguments:
+    - `wl_hash` (str): The hash of the formula to delete.
+- Returns:
+    - None
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given hash does not exist in the warehouse.
+
+#### `WarehouseAgent.get_trajectory(traj_id: str) -> dict`
+
+- Arguments:
+    - `traj_id` (str): The ID of the trajectory to retrieve.
+- Returns:
+    - A dictionary containing the trajectory information.
+- Raises:
+    - HTTPException(status_code=404): If the trajectory with the given ID does not exist in the warehouse.
+
+#### `WarehouseAgent.post_trajectory(**body) -> str`
+
+- Arguments:
+    - `body` (dict): The trajectory information to create.
+- Returns:
+    - The ID of the created trajectory.
+- Raises:
+    - HTTPException(status_code=422): If the request body is not in the correct format or missing required fields.
+
+#### `WarehouseAgent.put_trajectory(**body) -> None`
+
+- Arguments:
+    - `body` (dict): The trajectory information to update.
+- Returns:
+    - None
+- Raises:
+    - HTTPException(status_code=404): If the trajectory with the given ID does not exist in the warehouse.
+    - HTTPException(status_code=422): If the request body is not in the correct format or missing required fields.
+
+#### `WarehouseAgent.delete_trajectory(traj_id: str) -> None`
+
+- Arguments:
+    - `traj_id` (str): The ID of the trajectory to delete.
+- Returns:
+    - None
+- Raises:
+    - HTTPException(status_code=404): If the trajectory with the given ID does not exist in the warehouse.
+
+#### `WarehouseAgent.get_formula_definition(formula_id: str) -> list[int]`
+
+- Arguments:
+    - `formula_id` (str): The ID of the formula to retrieve the definition for.
+- Returns:
+    - A list of integers representing the formula's definition.
+- Raises:
+    - HTTPException(status_code=404): If the formula with the given ID does not exist in the warehouse.
 
 ### Base64 Encoding/Decoding Functions
 

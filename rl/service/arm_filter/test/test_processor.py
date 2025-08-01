@@ -1,9 +1,13 @@
 import pytest
 import httpx
 import functools
+import pprint
+from datetime import datetime
 from networkx import weisfeiler_lehman_graph_hash
 
 from processor import TrajectoryProcessor
+from lsutils import TrajectoryMessage, Trajectory, TrajectoryStep
+from lsutils import WarehouseAgent
 
 host = "localhost"
 port = 8000
@@ -135,3 +139,73 @@ class TestTrajectoryProcessor:
         self.del_formula_example(processor.warehouse, fid2, tid2)
         response = processor.warehouse.delete("/formula/likely_isomorphic", params={"wl_hash": wl2})
         assert response.status_code == 200, f"Failed to delete isomorphic formula: {response.text}"
+        
+    def test_process_trajectory(self, processor: TrajectoryProcessor):
+        """
+        Test the process_trajectory method with a valid trajectory.
+        """
+        processor.traj_granularity = 2
+        processor.traj_num_summits = 2
+        
+        ls = [((0,2),()), ((1,),()), ((2,),(1,)), ((0,1),()), ((),(1,2)), ((2,),())]
+        ls = [self.encode_literals(p, n) for p, n in ls]
+        qs = [0, 1, 2, 0, 0, 3]
+        rs = [0] * len(ls)
+        assert len(ls) == len(qs) and len(qs) == len(rs), "Lists must be of the same length"
+        
+        base_info = {
+            "num_vars": 4,
+            "width": 2,
+            "base_size": 2,
+            "timestamp": datetime.now(),
+        }
+        
+        msg1 = TrajectoryMessage(
+            **base_info,
+            trajectory=Trajectory(
+                steps=[
+                    TrajectoryStep(
+                        order=i,
+                        token_type='ADD',
+                        token_literals=l,
+                        avgQ=q,
+                        reward=r,
+                    )
+                    for i, l, q, r in zip(range(len(ls)), ls[:3], qs[:3], rs[:3])
+                ]
+            )
+        )
+        
+        msg2 = TrajectoryMessage(
+            **base_info,
+            trajectory=Trajectory(
+                steps=[
+                    TrajectoryStep(
+                        order=i,
+                        token_type='ADD',
+                        token_literals=l,
+                        avgQ=q,
+                        reward=r,
+                    )
+                    for i, l, q, r in zip(range(len(ls)), ls, qs, rs)
+                ]
+            )
+        )
+        
+        r1 = processor.process_trajectory(msg1)
+        nf1 = r1["new_formulas"]
+        ep1 = r1["evo_path"]
+        
+        r2 = processor.process_trajectory(msg2)
+        nf2 = r2["new_formulas"]
+        ep2 = r2["evo_path"]
+
+        assert len(nf1) == 2, "Should have created two new formulas"
+        assert len(nf2) == 2, "Should have created two new formulas"
+        assert ep1 == ep2[:3], "Evolution paths should match for the first two steps"
+
+        with WarehouseAgent(host, port) as warehouse:
+            for nf in nf1 + nf2:
+                warehouse.delete_formula_info(nf["id"])
+                warehouse.delete_trajectory(nf["trajectory_id"])
+                warehouse.delete_likely_isomorphic(nf["wl_hash"])

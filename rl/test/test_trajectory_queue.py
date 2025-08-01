@@ -20,7 +20,7 @@ def test_pingpong(que: TrajectoryQueueAgent):
     msg = {
         "num_vars": 3,
         "width": 2,
-        "size": 5,
+        "base_size": 5,
         "timestamp": "2025-07-21T12:00:00Z",
         "trajectory": {
             "base_formula_id": "f123",
@@ -84,7 +84,7 @@ def test_consuming_multiple(que: TrajectoryQueueAgent):
         msg = TrajectoryMessage(
             num_vars=i,
             width=2,
-            size=5,
+            base_size=5,
             timestamp="2025-07-21T12:00:00Z",
             trajectory={
                 "base_formula_id": f"f{i}",

@@ -186,7 +186,7 @@ class WarehouseAgent:
         response = self._client.delete("/trajectory", params={"id": traj_id})
         response.raise_for_status()
 
-    def get_formula_definition(self, formula_id: str) -> list[int]:
+    def get_formula_definition(self, formula_id: str | None) -> list[int]:
         """
         Retrieves the full definition of a formula by its ID.
 
@@ -194,11 +194,14 @@ class WarehouseAgent:
             formula_id (str): The ID of the formula.
 
         Returns:
-            The definition of the formula.
+            The definition of the formula. Return a empty list if the ID is None.
 
         Raises:
             httpx.HTTPStatusError: If the request fails.
         """
+        if formula_id is None:
+            return []
+        
         response = self._client.get("/formula/definition", params={"id": formula_id})
         response.raise_for_status()
         return response.json()['definition']

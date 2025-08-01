@@ -244,7 +244,7 @@ It provides a reliable mechanism for pushing and popping serialized trajectory d
 | --------------------- | :------: | ----------------------------------------------------------- |
 | `num_vars`            | int    | Number of variables in the formula                          |
 | `width`               | int    | Width of the formula                                        |
-| `size`               | int    | Size of the formula (number of nodes)                       |
+| `base_size`               | int    | Size of the base formula (number of nodes)                       |
 | `timestamp`           | string | ISO 8601 timestamp of when the trajectory was generated   |
 | `trajectory`        | object | Contains the trajectory data                                |
 | `base_formula_id`    | string | The unique ID of the base formula that the trajectory applies to |
@@ -1288,7 +1288,7 @@ This method uses the Weisfeiler-Lehman hash to determine if the formula is a dup
 | str  | The ID of the isomorphic formula if found, otherwise `None` |
 
 
-#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> list[dict]`
+#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) ->dict[str, Any]`
 
 Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
 

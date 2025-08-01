@@ -22,7 +22,7 @@ class Trajectory(BaseModel):
     It includes the trajectory ID, the arm ID, and the trajectory data.
     """
     
-    base_formula_id: str = Field(..., description="ID of the base formula for the trajectory")
+    base_formula_id: str | None = Field(None, description="ID of the base formula for the trajectory")
     steps: list[TrajectoryStep] = Field(..., description="List of steps in the trajectory")
 
 class TrajectoryMessage(BaseModel):
@@ -33,7 +33,7 @@ class TrajectoryMessage(BaseModel):
     
     num_vars: int = Field(..., description="Number of variables in the trajectory")
     width: int = Field(..., description="Width of the trajectory")
-    size: int = Field(..., description="Size of the trajectory (number of nodes)")
+    base_size: int = Field(..., description="Size of the base formula")
     timestamp: datetime = Field(..., description="Timestamp of the trajectory")
     trajectory: Trajectory = Field(..., description="The trajectory data itself")
 

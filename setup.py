@@ -14,7 +14,8 @@ __version__ = "0.1.6"
 #   reproducible builds (https://github.com/pybind/python_example/pull/53)
 
 ext_modules = [
-    Pybind11Extension("longshot._core",
+    Pybind11Extension(
+        "longshot._core",
         ["longshot/core/core.cpp"],
         # Example: passing in the version to the compiled code
         define_macros = [
@@ -25,7 +26,7 @@ ext_modules = [
         extra_compile_args = [
             "-Ofast", "-fopenmp"
         ]
-        ),
+    ),
 ]
 
 setup(

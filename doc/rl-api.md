@@ -907,83 +907,6 @@ The callback function should accept a single parameter of type `dict` containing
 
 Closes the connection to the RabbitMQ server. This method should be called to properly clean up resources when the TrajectoryQueue is no longer needed.
 
-### `Class lsutils.Deduplicator()`
-
-The `Deduplicator` class is responsible for identifying and removing duplicate trajectories from the queue. It ensures that only unique trajectories are processed, improving the efficiency of the RL system.
-
-#### `Deduplicator.__init__(self) -> None`
-
-Initializes the Deduplicator with an empty set to keep track of seen trajectories.
-
-#### `Deduplicator.is_duplicate(self, trajectory: dict) -> bool`
-
-Checks if the given trajectory is a duplicate. If it is unique, it adds it to the set of seen trajectories.
-
-##### Parameters
-
-| Parameter    | Type | Description                                   |
-| ------------ | :--: | --------------------------------------------- |
-| `trajectory` | dict | The trajectory data to check for duplicates   |
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| `bool` | True if the trajectory is a duplicate, False otherwise |
-
-### Class `TrajectoryQueue(host: str, port: int, **config)`
-
-Here are the methods that wrapper the RabbitMQ interface for the Trajectory Queue microservice. These methods allow for pushing and popping serialized trajectory data for downstream processing.
-
-#### Constructor Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `host`  | str    | The IP address of the RabbitMQ server |
-| `port`  | int    | The port number of the RabbitMQ server        |
-| `config`  | dict   | Configuration parameters for the queue        |
-
-#### Exceptions
-
-| Exception | Description                                   |
-| :--------: | --------------------------------------------- |
-| `pika.exceptions.AMQPConnectionError` | Raised when the connection to the RabbitMQ server fails |
-
-#### `TrajectoryQueue.push(self, trajectory: dict) -> None`
-
-Pushes a serialized trajectory to the RabbitMQ queue for downstream processing.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `trajectory` | dict | The serialized trajectory data to push to the queue |
-
-#### `TrajectoryQueue.pop(self) -> dict | None`
-
-Pops a serialized trajectory from the RabbitMQ queue for processing.
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| `dict`  | The serialized trajectory data popped from the queue. Returns `None` if the queue is empty. |
-
-#### `TrajectoryQueue.close(self) -> None`
-
-Closes the connection to the RabbitMQ server. This method should be called when the queue is no longer needed to release resources.
-
-#### `TrajectoryQueue.start_consuming(self, callback: callable) -> None`
-
-Starts consuming messages from the RabbitMQ queue.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `callback` | callable | A function to call with each message. A message in the TrajectoryQueue message schema would be passed to this function. |
-
-
 ### `Class WarehouseAgent(host: str, port: int = 5672, **config)`
 
 The `WarehouseAgent` class provides a high-level interface for interacting with the Warehouse microservice, which manages the storage and retrieval of formulas, trajectories, and the evolution graph.
@@ -1340,7 +1263,7 @@ The `EvolutionGraphManager` class manages the evolution graph and its updates. I
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the manager      |
 
-#### `EvolutionGraphManager.update_graph(self, new_formulas: list[dict]) -> None`
+#### `EvolutionGraphManager.update_graph(self, new_formulas: list[dict], evo_path: list[str]) -> None`
 
 Updates the evolution graph with new formulas. This method adds new nodes and edges to the graph based on the provided list of new formulas. It also checks if the graph exceeds size constraints and contracts it if necessary.
 
@@ -1349,26 +1272,26 @@ Updates the evolution graph with new formulas. This method adds new nodes and ed
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
 | `new_formulas` | list[dict] | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value. |
+| `evo_path` | list[str] | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. |
 
-#### `EvolutionGraphManager.check(self) -> bool`
-
-Checks if the evolution graph satisfies the size constraints defined in the configuration. If the graph is too large, it will trigger a contraction process.
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| `bool`  | `True` if the graph is within size constraints, `False` otherwise. |
-
-#### `EvolutionGraphManager.contract_graph(self) -> None`
-
-Contracts the evolution graph by merging nodes and edges based on the provided data. This method is called when the graph exceeds the size constraints. The result is then saved to the warehouse.
-
-#### `EvolutionGraphManager.get_arms(self) -> list[Arm]`
+#### `EvolutionGraphManager.get_active_nodes(self) -> list[Arm]`
 
 Returns a list of active nodes in the evolution graph. Active nodes are those that have been visited or are part of the current trajectory.
 
 ##### Returns
+
+```JSON
+[
+    {
+        "id": "f123",
+        "avgQ": 1.5,
+        "num_vars": 3,
+        "width": 2,
+        "size": 5,
+    },
+    ...
+]
+```
 
 | Type    | Description                                   |
 | :------: | --------------------------------------------- |

@@ -30,7 +30,7 @@ ext_modules = [
 ]
 
 setup(
-    name="gym-longshot",
+    name="longshot",
     version=__version__,
     author="bluebread",
     author_email="hotbread70127@gmail.com",

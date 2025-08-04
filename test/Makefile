@@ -2,7 +2,7 @@
 
 SRC_DIR := .
 BUILD_DIR := .
-INC_DIRS := ../longshot/core
+INC_DIRS := ../library/longshot/core
 
 PIP_CACHE_FILES := $(shell find .. -name '*.so' -o -wholename '*/__pycache__' -o -wholename '*.egg-info' -o -wholename '../build')
 

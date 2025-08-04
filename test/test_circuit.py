@@ -7,7 +7,7 @@ from longshot.circuit import (
     Term, 
     NormalFormFormula, 
     FormulaType
-    )
+)
 from longshot.circuit import CNF, DNF
 
 def test_literals():

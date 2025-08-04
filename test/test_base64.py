@@ -1,6 +1,6 @@
 import pytest
 import random
-from lsutils import encode_float64_to_base64, decode_base64_to_float64
+from longshot.utils import encode_float64_to_base64, decode_base64_to_float64
 
 def test_encode_decode_roundtrip():
     """Test that encoding and then decoding a float returns the original value."""

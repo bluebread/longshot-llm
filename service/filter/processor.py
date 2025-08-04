@@ -5,7 +5,7 @@ import numpy as np
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
 from typing import Any
-from models import TrajectoryMessage, TrajectoryStep
+from models import TrajectoryQueueMessage, TrajectoryInfoStep
 
 class TrajectoryProcessor:
     def __init__(self, warehouse: httpx.Client, **config):
@@ -158,7 +158,7 @@ class TrajectoryProcessor:
             
         return None
     
-    def process_trajectory(self, msg: TrajectoryMessage) -> dict[str, Any]:
+    def process_trajectory(self, msg: TrajectoryQueueMessage) -> dict[str, Any]:
         avgQs = [step.avgQ for step in msg.trajectory.steps]
         
         if len(avgQs) == 0:
@@ -191,7 +191,7 @@ class TrajectoryProcessor:
         fg = self.definition_to_graph(base_fdef)
         prev_formula_id: str = msg.trajectory.base_formula_id
         new_formulas: list[dict] = []
-        steps_buffer: list[TrajectoryStep] = []
+        steps_buffer: list[TrajectoryInfoStep] = []
         evo_path: list[str] = [msg.trajectory.base_formula_id]
         cur_size = msg.base_size
 

@@ -1,7 +1,8 @@
 import pytest
 import threading
 import queue
-from lsutils import TrajectoryQueueAgent, TrajectoryMessage
+from longshot.agent import TrajectoryQueueAgent
+from longshot.models import TrajectoryQueueMessage
 
 host = 'rabbitmq-bread'
 port = 5672
@@ -43,7 +44,7 @@ def test_pingpong(que: TrajectoryQueueAgent):
         }
     }
     
-    msg = TrajectoryMessage(**msg)
+    msg = TrajectoryQueueMessage(**msg)
     que.push(msg)
     timer = threading.Timer(10, time_is_up)
     timer.start()
@@ -81,7 +82,7 @@ def test_consuming_multiple(que: TrajectoryQueueAgent):
 
     # Push 10 test messages
     for i in range(msg_count):
-        msg = TrajectoryMessage(
+        msg = TrajectoryQueueMessage(
             num_vars=i,
             width=2,
             base_size=5,

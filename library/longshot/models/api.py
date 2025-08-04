@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 # Formula-related models
-class FormulaInfo(BaseModel):
+class QueryFormulaInfoResponse(BaseModel):
     """Formula information model."""
     id: str = Field(alias="_id", serialization_alias="id")
     base_formula_id: str
@@ -71,19 +71,19 @@ class LikelyIsomorphicRequest(BaseModel):
 
 
 # Trajectory-related models
-class TrajectoryStep(BaseModel):
+class TrajectoryInfoStep(BaseModel):
     """A single step in a trajectory."""
     token_type: int
     token_literals: int
     reward: float
 
 
-class TrajectoryInfo(BaseModel):
+class QueryTrajectoryInfoResponse(BaseModel):
     """Trajectory information model."""
     id: str = Field(alias="_id", serialization_alias="id")
     base_formula_id: str
     timestamp: datetime
-    steps: list[TrajectoryStep]
+    steps: list[TrajectoryInfoStep]
     
     class Config:
         validate_by_name = True
@@ -93,7 +93,7 @@ class TrajectoryInfo(BaseModel):
 class CreateTrajectoryRequest(BaseModel):
     """Request model for creating a trajectory."""
     base_formula_id: str | None = None
-    steps: list[TrajectoryStep]
+    steps: list[TrajectoryInfoStep]
 
 
 # Trajectory-related models
@@ -116,7 +116,7 @@ class TrajectoryResponse(BaseModel):
     id: str
     
 # Formula definition models
-class FormulaDefinition(BaseModel):
+class QueryFormulaDefinitionResponse(BaseModel):
     """Formula definition model."""
     id: str
     definition: list[int]
@@ -126,3 +126,22 @@ class FormulaDefinition(BaseModel):
 class SuccessResponse(BaseModel):
     """Generic success response."""
     message: str = "Success"
+    
+
+# Arm-related models
+class ArmInfo(BaseModel):
+    """
+    Model representing information about an arm.
+    It includes the arm's ID, its value, and any additional metadata.
+    """
+
+    formula_id: str
+    definition: list[int]
+
+class TopKArmsResponse(BaseModel):
+    """
+    Response model for the /topk_arms endpoint.
+    It defines the structure of the output data.
+    """
+
+    top_k_arms: list[ArmInfo] 

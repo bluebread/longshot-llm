@@ -6,8 +6,8 @@ from datetime import datetime
 from networkx import weisfeiler_lehman_graph_hash
 
 from processor import TrajectoryProcessor
-from lsutils import TrajectoryMessage, Trajectory, TrajectoryStep
-from lsutils import WarehouseAgent
+from longshot.models import TrajectoryQueueMessage
+from longshot.agent import WarehouseAgent
 
 host = "localhost"
 port = 8000
@@ -160,36 +160,36 @@ class TestTrajectoryProcessor:
             "timestamp": datetime.now(),
         }
         
-        msg1 = TrajectoryMessage(
+        msg1 = TrajectoryQueueMessage(
             **base_info,
-            trajectory=Trajectory(
-                steps=[
-                    TrajectoryStep(
-                        order=i,
-                        token_type='ADD',
-                        token_literals=l,
-                        avgQ=q,
-                        reward=r,
-                    )
-                    for i, l, q, r in zip(range(len(ls)), ls[:3], qs[:3], rs[:3])
+            trajectory={
+                "steps": [
+                    {
+                        "order": i,
+                        "token_type": "ADD",
+                        "token_literals": l,
+                        "avgQ": q,
+                        "reward": r,
+                    }
+                    for i, l, q, r in zip(range(len(ls[:3])), ls[:3], qs[:3], rs[:3])
                 ]
-            )
+            }
         )
         
-        msg2 = TrajectoryMessage(
+        msg2 = TrajectoryQueueMessage(
             **base_info,
-            trajectory=Trajectory(
-                steps=[
-                    TrajectoryStep(
-                        order=i,
-                        token_type='ADD',
-                        token_literals=l,
-                        avgQ=q,
-                        reward=r,
-                    )
+            trajectory={
+                "steps": [
+                    {
+                        "order": i,
+                        "token_type": "ADD",
+                        "token_literals": l,
+                        "avgQ": q,
+                        "reward": r,
+                    }
                     for i, l, q, r in zip(range(len(ls)), ls, qs, rs)
                 ]
-            )
+            }
         )
         
         r1 = processor.process_trajectory(msg1)

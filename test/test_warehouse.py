@@ -1,6 +1,6 @@
 import pytest
 import httpx
-from lsutils import encode_float64_to_base64
+from longshot.utils import encode_float64_to_base64
 
 host = "localhost"
 port = 8000

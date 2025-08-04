@@ -9,7 +9,7 @@ import logging
 import threading
 from schedule import every, repeat, run_pending
 from models import TopKArmsResponse
-from lsutils import TrajectoryQueueAgent
+from longshot.agent import TrajectoryQueueAgent
 
 
 logging.basicConfig(

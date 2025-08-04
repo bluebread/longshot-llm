@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-class TrajectoryStep(BaseModel):
+class TrajectoryMessageStep(BaseModel):
     """
     Model representing a single step in a trajectory.
     It includes the arm ID and the reward received for that step.
@@ -13,16 +13,16 @@ class TrajectoryStep(BaseModel):
     reward: float = Field(..., description="Reward received for this step")
     avgQ: float = Field(..., description="Average Q-value for this step")
 
-class Trajectory(BaseModel):
+class TrajectoryMessageMultipleSteps(BaseModel):
     """
     Model representing a trajectory in the context of reinforcement learning.
     It includes the trajectory ID, the arm ID, and the trajectory data.
     """
     
     base_formula_id: str | None = Field(None, description="ID of the base formula for the trajectory")
-    steps: list[TrajectoryStep] = Field(..., description="List of steps in the trajectory")
+    steps: list[TrajectoryMessageStep] = Field(..., description="List of steps in the trajectory")
 
-class TrajectoryMessage(BaseModel):
+class TrajectoryQueueMessage(BaseModel):
     """
     Model representing a trajectory message.
     It includes the trajectory ID, the arm ID, and the trajectory data.
@@ -32,4 +32,4 @@ class TrajectoryMessage(BaseModel):
     width: int = Field(..., description="Width of the trajectory")
     base_size: int = Field(..., description="Size of the base formula")
     timestamp: datetime = Field(..., description="Timestamp of the trajectory")
-    trajectory: Trajectory = Field(..., description="The trajectory data itself")
+    trajectory: TrajectoryMessageMultipleSteps = Field(..., description="The trajectory data itself")

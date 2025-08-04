@@ -11,29 +11,18 @@ import uuid
 from datetime import datetime
 import logging
 
-from models import (
-    FormulaInfo,
+from longshot.models import (
+    QueryFormulaInfoResponse,
     CreateFormulaRequest,
     UpdateFormulaRequest,
     FormulaResponse,
     LikelyIsomorphicResponse,
     LikelyIsomorphicRequest,
-    TrajectoryInfo,
+    QueryTrajectoryInfoResponse,
     CreateTrajectoryRequest,
     UpdateTrajectoryRequest,
     TrajectoryResponse,
-    # EvolutionGraphNode,
-    # CreateNodeRequest,
-    # UpdateNodeRequest,
-    # NodeResponse,
-    # EvolutionGraphEdge,
-    # CreateEdgeRequest,
-    # EdgeResponse,
-    FormulaDefinition,
-    # SubgraphResponse,
-    # SubgraphRequest,
-    # AddFormulaRequest,
-    # ContractEdgeRequest,
+    QueryFormulaDefinitionResponse,
     SuccessResponse
 )
 
@@ -96,12 +85,12 @@ formula_table = mongodb["FormulaTable"]
 trajectory_table = mongodb["TrajectoryTable"]
 
 # Formula endpoints
-@app.get("/formula/info", response_model=FormulaInfo)
+@app.get("/formula/info", response_model=QueryFormulaInfoResponse)
 async def get_formula_info(id: str = Query(..., description="Formula UUID")):
     """Retrieve information about a formula by its ID."""
     formula_doc = formula_table.find_one({"_id": id})
     if formula_doc:
-        return FormulaInfo(**formula_doc)
+        return QueryFormulaInfoResponse(**formula_doc)
     raise HTTPException(status_code=404, detail="Formula not found")
 
 @app.post("/formula/info", response_model=FormulaResponse, status_code=201)
@@ -169,12 +158,12 @@ async def delete_likely_isomorphic(wl_hash: str = Query(..., description="Weisfe
     return SuccessResponse(message="Likely isomorphic formula deleted successfully")
 
 # Trajectory endpoints
-@app.get("/trajectory", response_model=TrajectoryInfo)
+@app.get("/trajectory", response_model=QueryTrajectoryInfoResponse)
 async def get_trajectory(id: str = Query(..., description="Trajectory UUID")):
     """Retrieve a trajectory by its ID."""
     trajectory_doc = trajectory_table.find_one({"_id": id})
     if trajectory_doc:
-        return TrajectoryInfo(**trajectory_doc)
+        return QueryTrajectoryInfoResponse(**trajectory_doc)
     raise HTTPException(status_code=404, detail="Trajectory not found")
 
 
@@ -350,7 +339,7 @@ async def delete_trajectory(id: str = Query(..., description="Trajectory UUID"))
 
 
 # High-level API endpoints
-@app.get("/formula/definition", response_model=FormulaDefinition)
+@app.get("/formula/definition", response_model=QueryFormulaDefinitionResponse)
 async def get_formula_definition(id: str = Query(..., description="Formula UUID")):
     """Retrieve the full definition of a formula by its ID."""
     # Check if the formula exists first
@@ -381,7 +370,7 @@ async def get_formula_definition(id: str = Query(..., description="Formula UUID"
         # This case handles formulas with no base_formula_id and no corresponding trajectory
         # (i.e., base formulas that were not created via a trajectory).
         # It returns an empty list of steps.
-        return FormulaDefinition(id=id, definition=[])
+        return QueryFormulaDefinitionResponse(id=id, definition=[])
     
     tid_s = 'trajectory_id'
     dep_s = 'depth'
@@ -413,7 +402,7 @@ async def get_formula_definition(id: str = Query(..., description="Formula UUID"
             else:
                 raise HTTPException(status_code=500, detail=f"Unknown token type: {ttype}")
 
-    return FormulaDefinition(id=id, definition=list(definition))
+    return QueryFormulaDefinitionResponse(id=id, definition=list(definition))
 
 # @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
 # async def get_evolution_subgraph(

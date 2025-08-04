@@ -1073,11 +1073,11 @@ Converts a PyTorch tensor back to a `GateToken` instance. The tensor should have
 
 ## Local Modules: Formula Game
 
-#### `Class FormulaGame(init_formula_def: list[GateToken], **config)`
+### `Class FormulaGame(init_formula_def: list[GateToken], **config)`
 
 The `FormulaGame` class implements the RL environment that simulates the process of adding or deleting gates in a normal form formula. It calculates the average-case deterministic query complexity, which is the optimization target.
 
-##### Constructor Parameters
+#### Constructor Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
@@ -1240,10 +1240,9 @@ The current implementation processes the trajectory by extracting the formulas w
             "size": 5,
             "wl_hash": "abcd1234...",
         },
-        ...
     ],
     "evo_path": [
-        "f46", "f27", "f68", "f16", ...
+        "f46", "f27", "f68", "f16"
     ]
 }
 ```
@@ -1289,7 +1288,6 @@ Returns a list of active nodes in the evolution graph. Active nodes are those th
         "width": 2,
         "size": 5,
     },
-    ...
 ]
 ```
 

@@ -14,7 +14,7 @@ from longshot.agent import TrajectoryQueueAgent
 
 logging.basicConfig(
     level=logging.INFO, 
-    filename="armfilter.log", 
+    filename="filter.log", 
     format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="a",
 )

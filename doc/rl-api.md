@@ -1211,7 +1211,7 @@ This method uses the Weisfeiler-Lehman hash to determine if the formula is a dup
 | str  | The ID of the isomorphic formula if found, otherwise `None` |
 
 
-#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) ->dict[str, Any]`
+#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> dict[str, Any]`
 
 Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
 
@@ -1274,7 +1274,7 @@ Updates the evolution graph with new formulas. This method adds new nodes and ed
 | `new_formulas` | list[dict] | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value. |
 | `evo_path` | list[str] | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. |
 
-#### `EvolutionGraphManager.get_active_nodes(self) -> list[Arm]`
+#### `EvolutionGraphManager.get_active_nodes(self) -> list[dict]`
 
 Returns a list of active nodes in the evolution graph. Active nodes are those that have been visited or are part of the current trajectory.
 

@@ -5,7 +5,7 @@ import numpy as np
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
 from typing import Any
-from models import TrajectoryQueueMessage, TrajectoryInfoStep
+from longshot.models import TrajectoryQueueMessage, TrajectoryInfoStep
 
 class TrajectoryProcessor:
     def __init__(self, warehouse: httpx.Client, **config):

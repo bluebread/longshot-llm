@@ -1,11 +1,11 @@
-Python Module Reference
+Local Module Reference
 =======================
 
-This is the Python module documentation for the `longshot` project, containing automatically generated documentation for the main classes and functions.
+This is the local module documentation for the `longshot` project, containing automatically generated documentation for the main classes and functions.
 
 .. toctree::
-    :maxdepth: 2
-    :caption: Modules
+   :maxdepth: 3
 
-    library
+   _generated/longshot
+
 

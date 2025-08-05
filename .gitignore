@@ -135,7 +135,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-!src/longshot/gym/env
 
 # Spyder project settings
 .spyderproject
@@ -289,3 +288,5 @@ node_modules/
 *.txt
 !requirements.txt
 !rl/env
+doc/*/_generated
+!library/longshot/env/

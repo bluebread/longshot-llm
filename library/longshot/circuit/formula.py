@@ -18,7 +18,7 @@ MAX_NUM_VARS = 24
 
 class Literals(_Literals):
     """
-    A class representing a set of _literals.
+    Represents a set of literals (e.g., `x1`, `¬x2`). It serves as a base class for `Clause` and `Term`.
     """
     def __init__(
         self, 
@@ -27,7 +27,7 @@ class Literals(_Literals):
         d_literals: dict[int, bool] | None = None,
         ):
         """
-        Initializes a Literals object.
+        Initializes a `Literals` object. Can be initialized with positive and negative variable indices or a dictionary.
         :param pos: Positive variables.
         :param neg: Negative variables.
         :param d_literals: Dictionary of literals.
@@ -88,7 +88,7 @@ class Literals(_Literals):
     
     def __str__(self) -> str:
         """
-        Returns the string representation of the Clause object.
+        Returns a string representation of the literals, joined by `.` (e.g., `x0.¬x1`).
         """
         return '.'.join(self._get_literals_str())
 
@@ -108,7 +108,7 @@ class Literals(_Literals):
 
     def to_dict(self) -> dict[str, list[int]]:
         """
-        Returns a dictionary representation of the Literals object.
+        Returns a dictionary representation of the literals, with keys `"pos"` and `"neg"`.
         """
         return {
             "pos": [i for i in range(MAX_NUM_VARS) if (self.pos & (1 << i)) > 0],
@@ -123,7 +123,7 @@ class Literals(_Literals):
 
     def __eq__(self, other: object) -> bool:
         """
-        Checks if two Literals objects are equal.
+        Checks for equality with another `Literals` object.
         """
         if not isinstance(other, Literals):
             return False
@@ -131,7 +131,7 @@ class Literals(_Literals):
     
     def __lt__(self, other: object) -> bool:
         """
-        Checks if this Literals object is less than another.
+        Compares with another `Literals` object for sorting.
         """
         if not isinstance(other, Literals):
             raise LongshotError("the argument `other` is not a Literals object.")   
@@ -139,26 +139,32 @@ class Literals(_Literals):
 
 class Clause(Literals):
     """
-    A class representing a clause.
+    Inherits from `Literals`. Represents a clause, which is a disjunction (OR) of literals.
     """
     def __str__(self) -> str:
         """
-        Returns the string representation of the Clause object.
+        Overrides the base class method to return a string representation of the clause with literals joined by `∨` (OR symbol).
         """
         return '∨'.join(self._get_literals_str())
     
 class Term(Literals):
+    """
+    Inherits from `Literals`. Represents a term, which is a conjunction (AND) of literals.
+    """
     def __str__(self) -> str:
         """
-        Returns the string representation of the Term object.
+        Overrides the base class method to return a string representation of the term with literals joined by `∧` (AND symbol).
         """
         return '∧'.join(self._get_literals_str())
 
 class DecisionTree:
     """
-    A class representing a decision tree.
+    Represents a binary decision tree for a boolean formula.
     """
     def __init__(self, ctree: _CppDecisionTree | None = None, root: Node | None = None):
+        """
+        Initializes a `DecisionTree`. It can be built from a C++ decision tree object (`_CppDecisionTree`) or a given root `Node`.
+        """
         if not isinstance(ctree, _CppDecisionTree):
             raise LongshotError("the argument `ctree` is not a DecisionTree object.")
         
@@ -183,7 +189,7 @@ class DecisionTree:
         
     def decide(self, x: Iterable[int | bool]) -> bool:
         """
-        Decides the value of the decision tree.
+        Evaluates the decision tree for a given input assignment `x` and returns the boolean result.
         """
         if not isinstance(x, (int, Iterable)):
             raise LongshotError("the argument `x` is neither an integer nor an iterable.")
@@ -211,14 +217,14 @@ class DecisionTree:
 
 class FormulaType(enum.IntEnum):
     """
-    An enumeration representing the type of formula.
+    An enumeration for the type of a `NormalFormFormula`.
     """
     Conjunctive = 0
     Disjunctive = 1
 
 class NormalFormFormula:
     """
-    A class representing a normal form formula.
+    Represents a boolean formula in either Conjunctive Normal Form (CNF) or Disjunctive Normal Form (DNF).
     """
     def __init__(
         self, 
@@ -226,6 +232,9 @@ class NormalFormFormula:
         ftype: FormulaType | None = FormulaType.Conjunctive,
         **kwargs
         ):
+        """
+        Initializes a formula with a given number of variables and a formula type.
+        """
         if not isinstance(num_vars, int):
             raise LongshotError("the argument `num_vars` is not an integer.")
         if num_vars < 0 or num_vars > MAX_NUM_VARS:
@@ -259,7 +268,7 @@ class NormalFormFormula:
     
     def copy(self):
         """
-        Deep copies the formula.
+        Creates a deep copy of the formula object.
         :return: A new NormalFormFormula object with the same properties.
         """
         cpy = NormalFormFormula(self._num_vars, self._ftype)
@@ -272,7 +281,7 @@ class NormalFormFormula:
     
     def __contains__(self, ls: Literals | dict) -> bool:
         """
-        Checks if the formula contains a clause.
+        Checks if a given `Literals` object (clause or term) is part of the formula.
         """
         if not isinstance(ls, Literals) and not isinstance(ls, dict):
             raise LongshotError("the argument `clause` is not a Clause or a dictionary.") 
@@ -291,7 +300,7 @@ class NormalFormFormula:
     
     def toggle(self, ls: Literals | dict) -> None:
         """
-        Toggles a clause in the formula.
+        Adds a clause/term to the formula if it's not present, or removes it if it is.
         """
         if not isinstance(ls, Literals) and not isinstance(ls, dict):
             raise LongshotError("the argument `clause` is not a Clause or a dictionary.") 
@@ -340,7 +349,7 @@ class NormalFormFormula:
     
     def eval(self, x: int | tuple[int | bool, ...]) -> bool:
         """
-        Evaluates the formula.
+        Evaluates the formula for a given input assignment `x` and returns the boolean result.
         """
         if not isinstance(x, (int, tuple)):
             raise LongshotError("the argument `x` is not an integer.")
@@ -357,7 +366,7 @@ class NormalFormFormula:
     
     def avgQ(self, build_tree: bool = False) -> float | tuple[float, DecisionTree]:
         """
-        Returns the average-case deterministic query complexity of the formula.
+        Calculates the average-case deterministic query complexity (AvgQ). If `build_tree` is `True`, it also returns the corresponding `DecisionTree`.
         """
         ctree = _CppDecisionTree() if build_tree else None
         qv = self._bf.avgQ(ctree)
@@ -369,7 +378,7 @@ class NormalFormFormula:
     
     def wl_graph_hash(self, iterations: int = None) -> int:
         """
-        Computes the Weisfeiler-Lehman graph hash of the formula.
+        Computes the Weisfeiler-Lehman graph hash for the formula's graph representation.
         :param iterations: Number of iterations for the WL algorithm.
         :return: The hash value of the formula.
         """
@@ -383,7 +392,7 @@ class NormalFormFormula:
     
     def __str__(self) -> str:
         """
-        Returns the string representation of the formula.
+        Returns a human-readable string representation of the formula.
         """
         ls_list = [Literals(ls.pos, ls.neg) for ls in self._literals]
         
@@ -404,49 +413,49 @@ class NormalFormFormula:
     @property
     def num_vars(self) -> int:
         """
-        Returns the number of variables in the formula.
+        The number of variables in the formula.
         """
         return self._num_vars
         
     @property
     def num_gates(self) -> int:
         """
-        Returns the number of gates in the formula.
+        The number of gates (clauses or terms) in the formula.
         """
         return len(self._literals)
 
     @property
     def width(self) -> int:
         """
-        Returns the width of the formula.
+        The maximum width (number of literals) of any gate in the formula.
         """
         return max([ls.width for ls in self._literals], default=0)
 
     @property
     def ftype(self) -> FormulaType:
         """
-        Returns the type of the formula.
+        The `FormulaType` of the formula (CNF or DNF).
         """
         return self._ftype
 
     @property
     def gates(self) -> SortedSet[Literals]:
         """
-        Returns the set of literals in the formula.
+        The set of gates (`Literals` objects) in the formula.
         """
         return self._literals.copy()
     
     @property
     def graph(self) -> nx.Graph:
         """
-        Returns the graph representation of the formula.
+        A `networkx.Graph` representation of the formula.
         """
         return self._graph.copy()
         
     @classmethod
     def is_isomorphic(cls, F1, F2) -> bool:
         """
-        Checks if two formulas are isomorphic.
+        A class method to check if two formulas `F1` and `F2` are isomorphic (structurally identical).
         :param F1: The first formula.
         :param F2: The second formula.
         :return: True if the formulas are isomorphic, False otherwise.
@@ -455,14 +464,20 @@ class NormalFormFormula:
         
 class ConjunctiveNormalFormFormula(NormalFormFormula):
     """
-    A class representing a conjunctive normal form formula.
+    A convenience class that inherits from `NormalFormFormula` and is specialized for CNF formulas.
     """
     def __init__(self, n: int, **config):
+        """
+        Initializes a `ConjunctiveNormalFormFormula` with the specified number of variables.
+        """
         super().__init__(n, ftype=FormulaType.Conjunctive, **config)
 
 class DisjunctiveNormalFormFormula(NormalFormFormula):
     """
-    A class representing a disjunctive normal form formula.
+    A convenience class that inherits from `NormalFormFormula` and is specialized for DNF formulas.
     """
     def __init__(self, n: int, **config):
+        """
+        Initializes a DNF formula with `n` variables.
+        """
         super().__init__(n, ftype=FormulaType.Disjunctive, **config)

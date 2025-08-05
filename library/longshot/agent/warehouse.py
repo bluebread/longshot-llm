@@ -10,12 +10,11 @@ class WarehouseAgent:
 
     def __init__(self, host: str, port: int, **config: Any):
         """
-        Initializes the WarehouseAgent.
-
-        Args:
-            host (str): The hostname or IP address of the Warehouse service.
-            port (int): The port of the Warehouse service.
-            config (Any): Additional configuration parameters.
+        Initializes the WarehouseAgent with the given host and port.
+        
+        :param host: The RabbitMQ server host address.
+        :param port: The RabbitMQ server port (default: 5672).
+        :param config: Additional configuration parameters for the agent.
         """
         base_url = f"http://{host}:{port}"
         self._client = httpx.Client(base_url=base_url)
@@ -24,15 +23,10 @@ class WarehouseAgent:
     def get_formula_info(self, formula_id: str) -> Dict[str, Any]:
         """
         Retrieves information about a formula by its ID.
-
-        Args:
-            formula_id (str): The ID of the formula to retrieve.
-
-        Returns:
-            A dictionary containing the formula information.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails (e.g., 404 Not Found).
+        
+        :param formula_id: The ID of the formula to retrieve information for.
+        :return: A dictionary containing the formula information.
+        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse.
         """
         response = self._client.get("/formula/info", params={"id": formula_id})
         response.raise_for_status()
@@ -40,16 +34,11 @@ class WarehouseAgent:
 
     def post_formula_info(self, **body: Any) -> str:
         """
-        Adds a new formula entry to the formula table.
-
-        Args:
-            body (Any): The formula information to create.
-
-        Returns:
-            The ID of the created formula.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails (e.g., 422 Unprocessable Entity).
+        Creates or updates formula information in the warehouse.
+        
+        :param body: The formula information to create or update.
+        :return: The ID of the created or updated formula.
+        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
         """
         response = self._client.post("/formula/info", json=body)
         response.raise_for_status()
@@ -57,42 +46,31 @@ class WarehouseAgent:
 
     def put_formula_info(self, **body: Any) -> None:
         """
-        Updates an existing formula entry.
-
-        Args:
-            body (Any): The formula information to update.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Updates formula information in the warehouse.
+        
+        :param body: The formula information to update.
+        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse or if the request body is not in the correct format.
         """
         response = self._client.put("/formula/info", json=body)
         response.raise_for_status()
 
     def delete_formula_info(self, formula_id: str) -> None:
         """
-        Deletes a formula entry.
-
-        Args:
-            formula_id (str): The ID of the formula to delete.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Deletes a formula from the warehouse by its ID.
+        
+        :param formula_id: The ID of the formula to delete.
+        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse.
         """
         response = self._client.delete("/formula/info", params={"id": formula_id})
         response.raise_for_status()
 
     def get_likely_isomorphic(self, wl_hash: str) -> list[str]:
         """
-        Retrieves IDs of likely isomorphic formulas.
-
-        Args:
-            wl_hash (str): The Weisfeiler-Lehman hash.
-
-        Returns:
-            A list of formula IDs.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Retrieves a list of formula IDs that are likely isomorphic to the given formula hash.
+        
+        :param wl_hash: The hash of the formula to retrieve likely isomorphic formulas for.
+        :return: A list of formula IDs that are likely isomorphic to the given formula.
+        :raises httpx.HTTPException: If the formula with the given hash does not exist in the warehouse.
         """
         response = self._client.get("/formula/likely_isomorphic", params={"wl_hash": wl_hash})
         response.raise_for_status()
@@ -100,14 +78,11 @@ class WarehouseAgent:
 
     def post_likely_isomorphic(self, wl_hash: str, formula_id: str) -> None:
         """
-        Adds a likely isomorphic formula.
-
-        Args:
-            wl_hash (str): The hash of the formula.
-            formula_id (str): The ID of the formula.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Adds a formula to the list of likely isomorphic formulas for a given formula hash.
+        
+        :param wl_hash: The hash of the formula.
+        :param formula_id: The ID of the formula to add to the list of likely isomorphic formulas.
+        :raises httpx.HTTPException: If the formula with the given hash does not exist in the warehouse or if the request body is not in the correct format.
         """
         body = {"wl_hash": wl_hash, "formula_id": formula_id}
         response = self._client.post("/formula/likely_isomorphic", json=body)
@@ -115,13 +90,10 @@ class WarehouseAgent:
 
     def delete_likely_isomorphic(self, wl_hash: str) -> None:
         """
-        Deletes a likely isomorphic entry by its hash.
-
-        Args:
-            wl_hash (str): The hash of the formula to delete.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Deletes the list of likely isomorphic formulas for a given formula hash.
+        
+        :param wl_hash: The hash of the formula to delete likely isomorphic formulas for.
+        :raises httpx.HTTPException: If the formula with the given hash does not exist in the warehouse.
         """
         response = self._client.delete("/formula/likely_isomorphic", params={"wl_hash": wl_hash})
         response.raise_for_status()
@@ -129,15 +101,10 @@ class WarehouseAgent:
     def get_trajectory(self, traj_id: str) -> Dict[str, Any]:
         """
         Retrieves a trajectory by its ID.
-
-        Args:
-            traj_id (str): The ID of the trajectory to retrieve.
-
-        Returns:
-            A dictionary containing the trajectory information.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        
+        :param traj_id: The ID of the trajectory to retrieve.
+        :return: A dictionary containing the trajectory information.
+        :raises httpx.HTTPException: If the trajectory with the given ID does not exist in the warehouse.
         """
         response = self._client.get("/trajectory", params={"id": traj_id})
         response.raise_for_status()
@@ -145,16 +112,11 @@ class WarehouseAgent:
 
     def post_trajectory(self, **body: Any) -> str:
         """
-        Adds a new trajectory.
-
-        Args:
-            body (Any): The trajectory information to create.
-
-        Returns:
-            The ID of the created trajectory.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Creates a new trajectory in the warehouse.
+        
+        :param body: The trajectory information to create.
+        :return: The ID of the created trajectory.
+        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
         """
         response = self._client.post("/trajectory", json=body)
         response.raise_for_status()
@@ -162,42 +124,31 @@ class WarehouseAgent:
 
     def put_trajectory(self, **body: Any) -> None:
         """
-        Updates an existing trajectory.
-
-        Args:
-            body (Any): The trajectory information to update.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Updates an existing trajectory in the warehouse.
+        
+        :param body: The trajectory information to update.
+        :raises httpx.HTTPException: If the trajectory with the given ID does not exist in the warehouse or if the request body is not in the correct format.
         """
         response = self._client.put("/trajectory", json=body)
         response.raise_for_status()
 
     def delete_trajectory(self, traj_id: str) -> None:
         """
-        Deletes a trajectory.
-
-        Args:
-            traj_id (str): The ID of the trajectory to delete.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Deletes a trajectory from the warehouse by its ID.
+        
+        :param traj_id: The ID of the trajectory to delete.
+        :raises httpx.HTTPException: If the trajectory with the given ID does not exist in the warehouse.
         """
         response = self._client.delete("/trajectory", params={"id": traj_id})
         response.raise_for_status()
 
     def get_formula_definition(self, formula_id: str | None) -> list[int]:
         """
-        Retrieves the full definition of a formula by its ID.
-
-        Args:
-            formula_id (str): The ID of the formula.
-
-        Returns:
-            The definition of the formula. Return a empty list if the ID is None.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
+        Retrieves the definition of a formula by its ID.
+        
+        :param formula_id: The ID of the formula to retrieve the definition for.
+        :return: A list of integers representing the formula's definition.
+        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse.
         """
         if formula_id is None:
             return []
@@ -208,12 +159,21 @@ class WarehouseAgent:
 
     def close(self) -> None:
         """
-        Closes the underlying HTTP client.
+        Closes the connection to the Warehouse microservice.
+        This method should be called to properly clean up resources when the WarehouseAgent is no longer needed.
         """
         self._client.close()
 
     def __enter__(self) -> "WarehouseAgent":
+        """
+        Enters the runtime context related to this object.
+        This method is called when the object is used in a `with` statement.
+        It returns the WarehouseAgent instance itself."""
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """
+        Exits the runtime context related to this object.
+        This method is called when the `with` statement is exited, regardless of whether an exception occurred.
+        """
         self.close()

@@ -31,10 +31,13 @@ source_suffix = {
 
 import os
 import sys
+
 sys.path.insert(0, os.path.abspath('../library'))
+print("sys.path[0] = ", sys.path[0])
+print("import longshot: ", __import__("longshot"))
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
+html_theme = 'furo'
 html_static_path = ['_static']

@@ -10,5 +10,6 @@ Longshot RL Documentation
 .. toctree::
    :maxdepth: 1
 
-   rl-api.md
+   microservice.md
+   library.md
    reference/index.rst

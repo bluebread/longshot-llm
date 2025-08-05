@@ -1,65 +1,8 @@
-# RL-API Documentation
+# Microservice Documentation
 
-This document outlines the structure and content of the API documentation for the RL part of this project. It serves as a guide for developers to understand how to use the API effectively.
+This document outlines the structure and content of the API documentation for the microservices of this project. It serves as a guide for developers to understand how to use the API effectively.
 
 ## Overview
-
-### Local Modules
-
-1. **Formula Game**
-    - Implements the RL environment that simulates the process of adding/deleting gates in a normal formed formula. 
-    - Calculates *average-case deterministic query complexity*, the optimization target.
-    - Main functions:
-        1. `reset()`: Resets internal variables. 
-        2. `step()`: Given the passed token (which indicates adding or deleting a gate), simulates a step and returns the reward. 
-2. **Environment Agent**
-    - Manages environments. 
-    - Transforms data in Tensor/TensorDict format. 
-    - Main functions:
-        1. `replace_arms()`: Replaces all arms/environments using the arm filter. 
-        2. `reset()`: Resets formula games and saves trajectories to the trajectory queue (except the first time calling `reset()`). 
-        3. `step()`: Executes a step of formula games. 
-3. **Longshot Utilities (lsutils)**
-    - Contains utility functions and classes for the RL system.
-    - Includes:
-        1. `class TrajectoryQueueAgent`:
-            - Manages the trajectory queue using RabbitMQ.
-            - Provides methods to push and pop trajectories.
-            - Main functions:
-                1. `push()`: Pushes a trajectory to the RabbitMQ queue.
-                2. `pop()`: Pops a trajectory from the RabbitMQ queue.
-                3. `start_consuming()`: Starts consuming messages from the RabbitMQ queue.
-                4. `close()`: Closes the connection to RabbitMQ.
-            - This class is a local module, which is accessible for any other components in the RL system.
-        2. `class WarehouseAgent`:
-            - Manages the warehouse microservice.
-            - Provides methods to interact with the warehouse API.
-            - Main functions:
-                1. `get_X()`: Retrieves data from the warehouse.
-                2. `post_X()`: Posts data to the warehouse.
-                3. `put_X()`: Updates data in the warehouse.
-                4. `delete_X()`: Deletes data from the warehouse.
-            - This class is a local module, which is accessible for any other components in the RL system.
-        3. `class GateToken`: 
-            - Represents a token indicating an operation in the formula game.
-        4. base64 encoding/decoding functions:
-            1. `encode_float64_to_base64(value: float) -> str`: Encodes a float64 value to a base64 string.
-            2. `decode_base64_to_float64(value: str) -> float`: Decodes a base64 string to a float64 value.
-            3. `class Float64Base64`: A Pydantic model that validates base64-encoded float64 strings.
-4. **Trainer**
-    - Trains a RL policy that learns how to build a CNF/DNF formula with the largest average-case deterministic query complexity.
-    - Retrieves dataset (trajectories) from the environment (wrapper). 
-    - Includes but not limited to the following modules:
-        1. Replay Buffer (able to handle both Markovian and non-Markovian sequences)
-        2. General Advantage Estimation（optional）
-        3. Optimizer
-        4. Scheduler
-        5. Loss Function
-        6. Gumbel-Topk Distribution
-        7. Policy Network
-        8. Critic Network
-
-### Microservices
 
 1. **Trajectory Queue**
     - RabbitMQ interface.
@@ -100,7 +43,7 @@ This document outlines the structure and content of the API documentation for th
         <!-- - `POST /evolution_graph/subgraph`: Adds a new subgraph to the evolution graph of a formula.
         - `POST /evolution_graph/contract_edge`: Contracts an edge in the evolution graph of a formula. One of the nodes will be deactivated. -->
 
-3. Arm Filter
+3. **Arm Filter**
     - Filters and selects the best arms (formulas) based on the trajectories and the evolution graph.
     - Maintains the evolution graph of formulas.
     - Implements policies for arm selection (e.g., UCB algorithm).
@@ -111,7 +54,20 @@ This document outlines the structure and content of the API documentation for th
     - Main API:
         - `GET /topk_arms`: Return the current best top-K arms.
 
+4. **Trainer**
+    - Trains a RL policy that learns how to build a CNF/DNF formula with the largest average-case deterministic query complexity.
+    - Retrieves dataset (trajectories) from the environment (wrapper). 
+    - Includes but not limited to the following modules:
+        1. Replay Buffer (able to handle both Markovian and non-Markovian sequences)
+        2. General Advantage Estimation（optional）
+        3. Optimizer
+        4. Scheduler
+        5. Loss Function
+        6. Gumbel-Topk Distribution
+        7. Policy Network
+        8. Critic Network
 
+        
 ## Database Schema
 
 Because MongoDB does not have a native UUID type, we use UUIDs as strings in the database. 

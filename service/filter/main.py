@@ -8,7 +8,7 @@ import httpx
 import logging
 import threading
 from schedule import every, repeat, run_pending
-from models import TopKArmsResponse
+from longshot.models import TopKArmsResponse
 from longshot.agent import TrajectoryQueueAgent
 
 

@@ -453,9 +453,10 @@ class NormalFormFormula:
         return self._graph.copy()
         
     @classmethod
-    def is_isomorphic(cls, F1, F2) -> bool:
+    def is_isomorphic(cls, F1: "NormalFormFormula", F2: "NormalFormFormula") -> bool:
         """
         A class method to check if two formulas `F1` and `F2` are isomorphic (structurally identical).
+        
         :param F1: The first formula.
         :param F2: The second formula.
         :return: True if the formulas are isomorphic, False otherwise.

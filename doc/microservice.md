@@ -13,10 +13,9 @@ This document outlines the structure and content of the API documentation for th
         1. *Isomorphism Hash Table*: Maps a WL hash to IDs of all isomorphic formuals in the formula table. 
         2. *Formula Table*: Each entry records (ID, timestamp, BaseFormulaID, TrajectoryID, complexity, hash, #vars, width, size, NodeID, FullTrajectoryID). 
         3. *Trajectory Tables*: Each tables contains entries of (order, token_type, token_literals, reward). 
-        <!-- 4. *Evolution Graph Database*:
-            - graph label: (#vars, width)
-            - nodes: (FormulaTableID, visited_counter)
-            - edges: (BaseFormulaID, NewFormulaID, distance) -->
+        4. *Evolution Graph Database*:
+            - nodes: (FormulaTableID, visited_counter, ...)
+            - edges: (BaseFormulaID, NewFormulaID)
     - Low-level API:
         - `GET /formula/info`: Retrieves information about a formula by its ID.
         - `POST /formula/info`: Adds a new formula entry to the formula table.
@@ -28,20 +27,14 @@ This document outlines the structure and content of the API documentation for th
         - `POST /trajectory`: Adds a new trajectory to the warehouse.
         - `PUT /trajectory`: Updates an existing trajectory in the warehouse.
         - `DELETE /trajectory`: Deletes a trajectory from the warehouse.
-        <!-- - `GET /evolution_graph/node`: Retrieves a node in the evolution graph by its ID.
+        - `GET /evolution_graph/node`: Retrieves a node in the evolution graph by its ID.
         - `POST /evolution_graph/node`: Adds a new node to the evolution graph.
         - `PUT /evolution_graph/node`: Updates an existing node in the evolution graph.
         - `DELETE /evolution_graph/node`: Deletes a node from the evolution graph.
-        - `GET /evolution_graph/edge`: Retrieves an edge in the evolution graph by its ID.
-        - `POST /evolution_graph/edge`: Adds a new edge to the evolution graph.
-        - `PUT /evolution_graph/edge (unused)`: Updates an existing edge in the evolution graph.
-        - `DELETE /evolution_graph/edge`: Deletes an edge from the evolution graph. -->
     - High-level API:
         - `GET /formula/definition`: Retrieves the full definition of a formula by its ID.
-        <!-- - `GET /evolution_graph/subgraph`: Retrieves the evolution subgraph of active nodes.  -->
-        <!-- - `POST /formula/add`: Adds a new formula to the warehouse, including updating the isomorphism hash table and the evolution graph. -->
-        <!-- - `POST /evolution_graph/subgraph`: Adds a new subgraph to the evolution graph of a formula.
-        - `POST /evolution_graph/contract_edge`: Contracts an edge in the evolution graph of a formula. One of the nodes will be deactivated. -->
+        - `POST /evolution_graph/path`: Adds a new path to the evolution graph.
+        - `GET /evolution_graph/download_nodes`: Retrieves the evolution subgraph of nodes satisfying the given conditions.
 
 3. **Arm Filter**
     - Filters and selects the best arms (formulas) based on the trajectories and the evolution graph.
@@ -124,9 +117,10 @@ Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number
 
 | Attribute   | Type   | Description                   |
 | ---------------- | :----: | ----------------------------- |
-| formula\_id      | UUID   | The node's ID, corresponding to the primary key of the FormulaTable    |
-| num_vars      | int    | The number of variables in the formula represented by this node |
+| formula\_id      | UUID   | The node's ID, corresponding to the primary key of the FormulaTable (used as unique index)    |
+| num\_vars      | int    | The number of variables in the formula represented by this node |
 | width         | int    | The width of the formula represented by this node |
+| size        | int    | The size of the formula represented by this node (number of nodes) |
 | avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
 | visited\_counter | int    | The number of times this node has been touched by a trajectory                   |
 
@@ -281,7 +275,7 @@ channel.start_consuming()
 
 The Warehouse is a microservice that manages the storage and retrieval of data related to formulas, trajectories, and the evolution graph. It abstracts the complexity of data management and provides a simple interface for data access. 
 
-### Data Format
+#### Data Format
 
 When request is not passed in a correct format, the server will return a `422 Unprocessable Entity` error.
 
@@ -616,6 +610,34 @@ Add a new path to the evolution graph. The path is a list of formula IDs that re
     - `201 Created`, `422 Unprocessable Entity`
 
 
+#### `GET /evolution_graph/download_nodes`
+
+Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_vars`, `width`, etc.). The subgraph is a list of nodes and edges that represent the evolution of formulas over time.
+
+
+- **Query Parameters:**  
+    - `num_vars` (int): The number of variables in the formula.
+    - `width` (int): The width of the formula.
+- **Response:**  
+    ```json
+    {
+        "nodes": [
+            {
+                "formula_id": "f123",
+                "avgQ": "QAkh+1RBF0Q=",
+                "visited_counter": 10,
+                "num_vars": 3,
+                "width": 2,
+                "in_degree": 2,
+                "out_degree": 3
+            },
+        ]
+    }
+    ```
+- **Status Codes:**
+    - `200 OK`, `422 Unprocessable Entity`
+
+
 ---
 
 ### Arm Filter
@@ -688,29 +710,15 @@ The internal components of the Arm Filter microservice are responsible for proce
 
 The main program flow of the Arm Filter microservice involves the following components:
 
-- Scheduled Tasks: These tasks periodically process the trajectories from the queue, check/update the evolution graph, perform necessary updates (such as graph contraction), rank arms, and save the ranking to a file with timestamp. 
-- API Endpoint: The /topk_arms endpoint allows users to retrieve the current best top-K arms based on the latest trajectories and evolution graph. The only thing that the API does is to read the latest ranking file and return the top-K arms' definition (obained from the warehouse). The ranking file is updated by the scheduled tasks.
+- Scheduled Tasks (TrajectoryProcessor): These tasks periodically process the trajectories from the queue, check/update the evolution graph, perform necessary updates (such as graph contraction), rank arms, and save the ranking to a file with timestamp. 
+- API Endpoint (Arm Ranker): The /topk_arms endpoint allows users to retrieve the current best top-K arms based on the latest trajectories and evolution graph. The only thing that the API does is to read the latest ranking file and return the top-K arms' definition (obained from the warehouse). The ranking file is updated by the scheduled tasks.
 
-#### `Class Arm(pydantic.BaseModel)`
-
-The `Arm` class represents a formula in the evolution graph. It contains the formula ID and its definition, which is a list of literals.
-
-##### Fields
-
-| Field          | Type   | Description                                   |
-| -------------- | :-----: | --------------------------------------------- |
-| `formula_id`     | str    | The ID of the formula in the warehouse |
-| `avgQ`       | float  | The average Q-value of the formula            |
-| `visited_counter` | int | The number of times the formula has been visited |
-| `in_degree`  | int    | The in-degree of the formula in the evolution graph |
-| `out_degree` | int    | The out-degree of the formula in the evolution graph |
-
-#### `Class TrajectoryProcessor(**config)`
+### `Class TrajectoryProcessor(**config)`
 
 
 The `TrajectoryProcessor` class processes trajectories and updates the evolution graph. It is responsible for managing the data flow between the trajectory queue and the evolution graph.
 
-##### Constructor Parameters
+#### Constructor Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
@@ -777,54 +785,16 @@ The current implementation processes the trajectory by extracting the formulas w
 | new_formulas | `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |
 | evo_path | `list[str]` | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. |
 
-#### `Class EvolutionGraphManager(**config)`
 
-The `EvolutionGraphManager` class manages the evolution graph and its updates. It is responsible for keeping the graph's size manageable using graph contraction techniques, which adds skipping edges to the graph. 
-
-##### Constructor Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `config`  | dict   | Configuration parameters for the manager      |
-
-#### `EvolutionGraphManager.update_graph(self, new_formulas: list[dict], evo_path: list[str]) -> None`
-
-Updates the evolution graph with new formulas. This method adds new nodes and edges to the graph based on the provided list of new formulas. It also checks if the graph exceeds size constraints and contracts it if necessary.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `new_formulas` | list[dict] | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value. |
-| `evo_path` | list[str] | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. |
-
-#### `EvolutionGraphManager.get_active_nodes(self) -> list[dict]`
-
-Returns a list of active nodes in the evolution graph. Active nodes are those that have been visited or are part of the current trajectory.
-
-##### Returns
-
-```JSON
-[
-    {
-        "id": "f123",
-        "in_degree": 6,
-        "out_degree": 3,
-        "avgQ": 1.5,
-        "visited_counter": 10,
-    },
-]
-```
-
-
-#### `Class ArmRanker(**config)`
+### `Class ArmRanker(max_num_arms: int, **config)`
 
 The `ArmRanker` class ranks the arms (formulas) based on their performance and potential. It uses the evolution graph and formulas' information to determine the best arms. This class is stateless and just provides a method to rank arms.
 
-##### Constructor Parameters
+#### Constructor Parameters
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
+| `max_num_arms` | int | The maximum number of arms to return in the ranking. |
 | `config`  | dict   | Configuration parameters for the ranker       |
 
 #### `ArmRanker.score(self, arm: dict, total_visited: int) -> float`
@@ -838,7 +808,7 @@ Scores a single arm (formula) based on its properties such as average-case deter
 | `arm`     | dict   | A dictionary representing the arm (formula) to be scored, containing fields like `avgQ`, `visited_counter`, `in_degree`, and `out_degree`. |
 | `total_visited` | int | The total number of visited counters across all arms, used to normalize the score. |
 
-#### `ArmRanker.rank_arms(self, arms: list[dict]) -> list[tuple[int, float]]`
+#### `ArmRanker.rank_arms(self, arms: list[dict], total_visited: int) -> list[tuple[int, float]]`
 
 Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms. In the case that the UCB algorithm is adopted, the current time step is the sum of visited counters of all arms.
 
@@ -847,6 +817,7 @@ Ranks the provided arms based on their performance and potential. This method us
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
 | `arms`    | list[dict] | A list of dict objects representing the arms to be ranked from EvolutionGraphManager.get_active_nodes method |
+| `total_visited` | int | The total number of visited counters across all arms, used to normalize the scores. |
 
 ##### Returns
 

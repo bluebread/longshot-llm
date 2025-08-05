@@ -116,27 +116,19 @@ Each trajectory is either a partial trajectory or the full definition of a formu
 - Key (*string*): WL hash value of a formula.
 - Value (*List[UUID]*): the indices of probably isomorphic formulas with the same WL hash value.
 
-<!-- ### Evolution Graph (Neo4j)
+### Evolution Graph (Neo4j)
 
 Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number of variables and `width` is the width of the formula.
 
-#### Node Entity
+#### Node Attributes
 
 | Attribute   | Type   | Description                   |
 | ---------------- | :----: | ----------------------------- |
 | formula\_id      | UUID   | The node's ID, corresponding to the primary key of the FormulaTable    |
+| num_vars      | int    | The number of variables in the formula represented by this node |
+| width         | int    | The width of the formula represented by this node |
 | avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
 | visited\_counter | int    | The number of times this node has been touched by a trajectory                   |
-| inactive         | bool   | Whether this node is inactive. If inactive, it will not be collected while traversing the graph.                    |
-| in_degree        | int    | The in-degree of this node in the evolution graph  |
-| out_degree       | int    | The out-degree of this node in the evolution graph  |
-
-#### Edge Entity
-
-| Attribute   | Type   | Description                   |
-| ---------------- | :----: | ----------------------------- |
-| base_formula_id | UUID   | The ID of the base formula, corresponding to the primary key of FormulaTable |
-| new_formula_id  | UUID   | The ID of the new formula, corresponding to the primary key of FormulaTable    | -->
 
 ## Microservice
 
@@ -506,8 +498,8 @@ Delete a trajectory.
     - `200 OK`, `404 Not Found`
 
 
-<!-- #### `GET /evolution_graph/node`
-Retrieve a node in the evolution graph by its ID.
+#### `GET /evolution_graph/node`
+Retrieve a node in the evolution graph by its formula ID.
 
 - **Query Parameters:**  
     - `id` (string, required): Node UUID.
@@ -576,59 +568,6 @@ Delete a node.
     - `200 OK`, `404 Not Found`
 
 
-#### `GET /evolution_graph/edge`
-Retrieve an edge in the evolution graph by its ID.
-
-- **Query Parameters:**  
-    - `edge_id` (string, required): Edge UUID.
-
-- **Response:**  
-    ```json
-    {
-        "base_formula_id": "f123",
-        "new_formula_id": "f124"
-    }
-    ```
-- **Status Codes:**  
-    - `200 OK`, `404 Not Found`
-
-
-#### `POST /evolution_graph/edge`
-Add a new edge.
-
-- **Request Body:**  
-    ```json
-    {
-        "base_formula_id": "f123",
-        "new_formula_id": "f124"
-    }
-    ```
-- **Response:**  
-    ```json
-    {
-        "edge_id": "e456"
-    }
-    ```
-- **Status Codes:**  
-    - `201 Created`, `422 Unprocessable Entity`
-
-
-#### `PUT /evolution_graph/edge  (unused)`
-Update an existing edge. Unused for now since no attribute is stored in the edge entity.
-
-
-#### `DELETE /evolution_graph/edge`
-Delete an edge.
-
-- **Query Parameters:**  
-    - `edge_id` (string, required): Edge UUID.
-
-- **Response:**  
-    - Success message.
-- **Status Codes:**  
-    - `200 OK`, `404 Not Found` -->
-
-
 #### `GET /formula/definition`
 Retrieve the full definition of a formula by its ID.
 
@@ -656,81 +595,25 @@ Retrieve the full definition of a formula by its ID.
 - Periodic or opportunistic checkpointing can be applied to avoid long chains of reconstruction.
 - How frequently to reconstruct and cache is a design choice that can be tuned based on performance needs.
 
-<!-- #### `GET /evolution_graph/subgraph`
-Retrieve the evolution subgraph of active nodes.
 
-- **Query Parameters:**  
-    - `num_vars` (int, required)
-    - `width` (int, required)
+#### `POST /evolution_graph/path`
 
-- **Response:**  
-    ```json
-    {
-        "nodes": [ ... ],
-        "edges": [ ... ]
-    }
-    ```
-- **Status Codes:**  
-    - `200 OK`, `422 Unprocessable Entity` -->
-
-
-<!-- #### `POST /formula/add`
-Add a new formula to the warehouse, updating the isomorphism hash table and evolution graph.
+Add a new path to the evolution graph. The path is a list of formula IDs that represent the evolution path of the formulas in the trajectory.
 
 - **Request Body:**  
     ```json
     {
-        "base_formula_id": "f122",
-        "trajectory_id": "t456",
-        "avgQ": "QAkh+1RBF0Q=",
-        "wl_hash": "abcd1234...",
-        "num_vars": 3,
-        "width": 2,
-        "size": 5
-    }
-    ```
-- **Response:**  
-    ```json
-    {
-        "id": "f123"
-    }
-    ```
-- **Status Codes:**  
-    - `201 Created`, `422 Unprocessable Entity` -->
-
-
-<!-- #### `POST /evolution_graph/subgraph`
-Add a new subgraph to the evolution graph of a formula.
-
-- **Request Body:**  
-    ```json
-    {
-        "nodes": [ ... ],
-        "edges": [ ... ]
+        "path": [
+            "f123",
+            "f124",
+            "f125",
+        ]
     }
     ```
 - **Response:**  
     - Success message.
 - **Status Codes:**  
     - `201 Created`, `422 Unprocessable Entity`
-
-
-#### `POST /evolution_graph/contract_edge`
-Contract an edge in the evolution graph; one node will be deactivated.
-
-- **Request Body:**  
-    ```json
-    {
-        "edge_id": "e456"
-    }
-    ```
-- **Response:**  
-    - Success message.
-- **Status Codes:**  
-    - `200 OK`, `422 Unprocessable Entity`, `404 Not Found` -->
-
-
-
 
 
 ---
@@ -925,17 +808,13 @@ Returns a list of active nodes in the evolution graph. Active nodes are those th
 [
     {
         "id": "f123",
+        "in_degree": 6,
+        "out_degree": 3,
         "avgQ": 1.5,
-        "num_vars": 3,
-        "width": 2,
-        "size": 5,
+        "visited_counter": 10,
     },
 ]
 ```
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| `list[dict]`  | A list of dictionaries representing the active nodes in the graph. |
 
 
 #### `Class ArmRanker(**config)`
@@ -948,7 +827,18 @@ The `ArmRanker` class ranks the arms (formulas) based on their performance and p
 | --------- | :-----: | --------------------------------------------- |
 | `config`  | dict   | Configuration parameters for the ranker       |
 
-#### `ArmRanker.rank_arms(self, arms: list[Arm]) -> list[int]`
+#### `ArmRanker.score(self, arm: dict, total_visited: int) -> float`
+
+Scores a single arm (formula) based on its properties such as average-case deterministic query complexity, visited counter, in-degree, and out-degree. The score is calculated using a weighted formula that combines these properties.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `arm`     | dict   | A dictionary representing the arm (formula) to be scored, containing fields like `avgQ`, `visited_counter`, `in_degree`, and `out_degree`. |
+| `total_visited` | int | The total number of visited counters across all arms, used to normalize the score. |
+
+#### `ArmRanker.rank_arms(self, arms: list[dict]) -> list[tuple[int, float]]`
 
 Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms. In the case that the UCB algorithm is adopted, the current time step is the sum of visited counters of all arms.
 
@@ -956,10 +846,10 @@ Ranks the provided arms based on their performance and potential. This method us
 
 | Parameter | Type   | Description                                   |
 | --------- | :-----: | --------------------------------------------- |
-| `arms`    | list[Arm] | A list of Arm objects representing the arms to be ranked |
+| `arms`    | list[dict] | A list of dict objects representing the arms to be ranked from EvolutionGraphManager.get_active_nodes method |
 
 ##### Returns
 
 | Type    | Description                                   |
 | :------: | --------------------------------------------- |
-| `list[int]`  | A list of indices representing the ranked arms, sorted by their performance and potential. |
+| list[tuple[int, float]] | A list of tuples, each containing the arm's ID and its score, sorted in descending order of score. The first element is the arm's ID, and the second element is the score. |

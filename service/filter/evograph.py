@@ -16,6 +16,7 @@ class EvolutionGraphManager:
             (
                 formula['id'],
                 {
+                    'id': formula['id'],
                     'avgQ': formula['avgQ'],
                     'size': formula['size'],
                     'visited_counter': 0,

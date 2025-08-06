@@ -283,6 +283,7 @@ class TrajectoryProcessor:
             del formula_data["node_id"]
             new_formulas.append(formula_data)
 
+        #　TODO: Save th e evolution path to the warehouse 
         # | Attribute | Type    | Description                                   |
         # | :------: | :------: | --------------------------------------------- |
         # | new_formulas | `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |

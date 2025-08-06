@@ -128,14 +128,14 @@ class TrajectoryProcessor:
 
     def isomorphic_to(self, formula_graph: nx.Graph, wl_hash: str | None = None) -> str | None:
         """
-        Returns the ID of an isomorphic formula if it exists in the warehouse.
+        Returns the ID of an existing formula in the warehouse that is isomorphic to the given formula graph. If no isomorphic formula is found, it returns `None`. 
+        This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate. If the `wl_hash` is provided, it will be used to check for isomorphism; otherwise, the hash will be computed from the `formula_graph`.
 
-        Parameters:
+        :parameters:
             formula_graph (networkx.Graph): The graph representation of the formula to check for isomorphism.
-            wl_hash (str | None): The precomputed Weisfeiler-Lehman hash of the formula graph. If None, it will be computed.
-
-        Returns:
-            str | None: The ID of the isomorphic formula if found, otherwise None.
+            wl_hash (str | None): The precomputed Weisfeiler-Lehman hash of the formula graph. If `None`, it will be computed.
+        :returns:
+            str | None: The ID of the isomorphic formula if found, otherwise `None`.
         """
         # Implementation of the duplicate check using Weisfeiler-Lehman hash
         if wl_hash is None:
@@ -159,6 +159,12 @@ class TrajectoryProcessor:
         return None
     
     def process_trajectory(self, msg: TrajectoryQueueMessage) -> dict[str, Any]:
+        """
+        Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
+        
+        :param msg: The trajectory data to process in the message schema (JSON) defined in Trajectory Queue.
+        :return: A dictionary containing new formulas and the evolution path.
+        """
         avgQs = [step.avgQ for step in msg.trajectory.steps]
         
         if len(avgQs) == 0:
@@ -277,4 +283,8 @@ class TrajectoryProcessor:
             del formula_data["node_id"]
             new_formulas.append(formula_data)
 
+        # | Attribute | Type    | Description                                   |
+        # | :------: | :------: | --------------------------------------------- |
+        # | new_formulas | `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |
+        # | evo_path | `list[str]` | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. |
         return {"new_formulas": new_formulas, "evo_path": evo_path}

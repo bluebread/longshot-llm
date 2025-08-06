@@ -36,18 +36,18 @@ This document outlines the structure and content of the API documentation for th
         - `POST /evolution_graph/path`: Adds a new path to the evolution graph.
         - `GET /evolution_graph/download_nodes`: Retrieves the evolution subgraph of nodes satisfying the given conditions.
 
-3. **Arm Filter**
+3. **Trajectory Processor**
+    - Processes incoming trajectories and updates the warehouse with new data.
+    - Extracts relevant information from trajectories and stores it in the appropriate tables.
+
+4. **Arm Ranker**
     - Filters and selects the best arms (formulas) based on the trajectories and the evolution graph.
     - Maintains the evolution graph of formulas.
     - Implements policies for arm selection (e.g., UCB algorithm).
-    - Submodules:
-        1. *Trajectory Processor*: Processes trajectories and updates the evolution graph.
-        2. *Evolution Graph Manager*: Manages the evolution graph and its updates.
-        3. *Arm Ranker*: Ranks the arms (formulas) based on their performance and potential.
     - Main API:
         - `GET /topk_arms`: Return the current best top-K arms.
 
-4. **Trainer**
+5. **Trainer**
     - Trains a RL policy that learns how to build a CNF/DNF formula with the largest average-case deterministic query complexity.
     - Retrieves dataset (trajectories) from the environment (wrapper). 
     - Includes but not limited to the following modules:
@@ -268,6 +268,92 @@ channel.basic_consume(
 print(' [*] Waiting for messages. To exit press CTRL+C')
 channel.start_consuming()
 ```
+
+---
+
+### Trajectory Processor
+
+
+The `TrajectoryProcessor` class processes trajectories and updates the databases. It is responsible for managing the data flow between the trajectory queue and the warehouse. It is stateless and has no endpoints. 
+
+#### Current Implementation
+
+The current implementation processes the trajectory by extracting the formulas with top `traj_num_summits` avgQ values and breaking the trajectory into parts smaller than the number `granularity` defined in the configuration. If a formula is isomorphic to an existing formula in the warehouse, it will not be added to the evolution graph, and the corresponding trajectory piece would be merged into the next one. The final piece would be just discarded if the formula is duplicate.  
+
+<!-- 
+### `Class TrajectoryProcessor(**config)`
+
+
+The `TrajectoryProcessor` class processes trajectories and updates the evolution graph. It is responsible for managing the data flow between the trajectory queue and the evolution graph.
+
+#### Constructor Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `config`  | dict   | Configuration parameters for the processor    |
+
+
+#### `TrajectoryProcessor.isomorphic_to(self, formula_graph: networkx.Graph, wl_hash: str | None = None) -> str | None`
+
+Returns the ID of an existing formula in the warehouse that is isomorphic to the given formula graph. If no isomorphic formula is found, it returns `None`. 
+This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate. If the `wl_hash` is provided, it will be used to check for isomorphism; otherwise, the hash will be computed from the `formula_graph`.
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `formula_graph` | networkx.Graph | The graph representation of the formula to check for isomorphism |
+| `wl_hash` | str | The Weisfeiler-Lehman hash of the formula (optional) |
+
+##### Returns
+
+| Type    | Description                                   |
+| :------: | --------------------------------------------- |
+| str  | The ID of the isomorphic formula if found, otherwise `None` |
+
+
+#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> dict[str, Any]`
+
+Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
+
+##### Current Implementation
+
+The current implementation processes the trajectory by extracting the formulas with top `traj_num_summits` avgQ values and breaking the trajectory into parts smaller than the number `granularity` defined in the configuration. If a formula is isomorphic to an existing formula in the warehouse, it will not be added to the evolution graph, and the corresponding trajectory piece would be merged into the next one. The final piece would be just discarded if the formula is duplicate.  
+
+##### Parameters
+
+| Parameter | Type   | Description                                   |
+| --------- | :-----: | --------------------------------------------- |
+| `data`    | dict   | The trajectory data to process in the message schema (JSON) defined in Trajectory Queue.                  |
+
+##### Returns
+
+```JSON
+{
+    "new_formulas": [
+        {
+            "id": "f123",
+            "base_formula_id": "f122",
+            "trajectory_id": "t456",
+            "avgQ": 1.5,
+            "num_vars": 3,
+            "width": 2,
+            "size": 5,
+            "wl_hash": "abcd1234...",
+        },
+    ],
+    "evo_path": [
+        "f46", "f27", "f68", "f16"
+    ]
+}
+```
+
+| Attribute | Type    | Description                                   |
+| :------: | :------: | --------------------------------------------- |
+| new_formulas | `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |
+| evo_path | `list[str]` | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. | 
+-->
+
 
 ---
 
@@ -502,9 +588,11 @@ Retrieve a node in the evolution graph by its formula ID.
     ```json
     {
         "formula_id": "f123",
-        "avgQ": "QAkh+1RBF0Q=",
+        "avgQ": 6.3,
+        "num_vars": 3,
+        "width": 2,
+        "size": 5,
         "visited_counter": 10,
-        "inactive": false,
         "in_degree": 2,
         "out_degree": 3
     }
@@ -514,21 +602,20 @@ Retrieve a node in the evolution graph by its formula ID.
 
 
 #### `POST /evolution_graph/node`
-Add a new node to the evolution graph. The visited counter is set to 1, and the inactive flag is set to false by default.
+Add a new node to the evolution graph. The visited counter is set to 0, and the inactive flag is set to false by default.
 
 - **Request Body:**  
     ```json
     {
         "formula_id": "f123",
-        "avgQ": "QAkh+1RBF0Q="
+        "avgQ": 6.3,
+        "num_vars": 3,
+        "width": 2,
+        "size": 5
     }
     ```
 - **Response:**  
-    ```json
-    {
-        "node_id": "n789"
-    }
-    ```
+    - Success message.
 - **Status Codes:**  
     - `201 Created`, `422 Unprocessable Entity`
 
@@ -539,9 +626,9 @@ Update an existing node. The parameter ``inc_visited_counter`` is used to increm
 - **Request Body:**  
     ```json
     {
-        "node_id": "n789",
+        "formula_id": "f123",
         "inc_visited_counter": 11,
-        "inactive": true
+        "avgQ": 4.56
     }
     ```
 - **Response:**  
@@ -554,7 +641,7 @@ Update an existing node. The parameter ``inc_visited_counter`` is used to increm
 Delete a node.
 
 - **Query Parameters:**  
-    - `node_id` (string, required): Node UUID.
+    - `formula_id` (string, required): Node UUID.
 
 - **Response:**  
     - Success message.
@@ -640,10 +727,10 @@ Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_v
 
 ---
 
-### Arm Filter
+### Arm Ranker
 
 
-The Arm Filter is a microservice responsible for filtering and selecting the best arms (formulas) based on the trajectories and the evolution graph. It maintains the evolution graph of formulas and implements policies for arm selection, such as the Upper Confidence Bound (UCB) algorithm.
+The Arm Ranker is a microservice responsible for filtering and selecting the best arms (formulas) based on the trajectories and the evolution graph. It maintains the evolution graph of formulas and implements policies for arm selection, such as the Upper Confidence Bound (UCB) algorithm.
 
 #### `GET /topk_arms`
 
@@ -701,8 +788,7 @@ GET /topk_arms
 * `200 OK`: Successfully returned top-K arms
 * `422 Unprocessable Entity`: Missing required parameters or invalid values
 
-
-## Local Modules: Arm Filter
+<!-- ## Local Modules: Arm Filter
 
 The internal components of the Arm Filter microservice are responsible for processing trajectories, managing the evolution graph, and ranking arms (formulas). These components work together to maintain the evolution graph of formulas and implement policies for arm selection.
 
@@ -712,78 +798,6 @@ The main program flow of the Arm Filter microservice involves the following comp
 
 - Scheduled Tasks (TrajectoryProcessor): These tasks periodically process the trajectories from the queue, check/update the evolution graph, perform necessary updates (such as graph contraction), rank arms, and save the ranking to a file with timestamp. 
 - API Endpoint (Arm Ranker): The /topk_arms endpoint allows users to retrieve the current best top-K arms based on the latest trajectories and evolution graph. The only thing that the API does is to read the latest ranking file and return the top-K arms' definition (obained from the warehouse). The ranking file is updated by the scheduled tasks.
-
-### `Class TrajectoryProcessor(**config)`
-
-
-The `TrajectoryProcessor` class processes trajectories and updates the evolution graph. It is responsible for managing the data flow between the trajectory queue and the evolution graph.
-
-#### Constructor Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `config`  | dict   | Configuration parameters for the processor    |
-
-
-#### `TrajectoryProcessor.isomorphic_to(self, formula_graph: networkx.Graph, wl_hash: str | None = None) -> str | None`
-
-Returns the ID of an existing formula in the warehouse that is isomorphic to the given formula graph. If no isomorphic formula is found, it returns `None`. 
-This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate. If the `wl_hash` is provided, it will be used to check for isomorphism; otherwise, the hash will be computed from the `formula_graph`.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `formula_graph` | networkx.Graph | The graph representation of the formula to check for isomorphism |
-| `wl_hash` | str | The Weisfeiler-Lehman hash of the formula (optional) |
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| str  | The ID of the isomorphic formula if found, otherwise `None` |
-
-
-#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> dict[str, Any]`
-
-Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
-
-##### Current Implementation
-
-The current implementation processes the trajectory by extracting the formulas with top `traj_num_summits` avgQ values and breaking the trajectory into parts smaller than the number `granularity` defined in the configuration. If a formula is isomorphic to an existing formula in the warehouse, it will not be added to the evolution graph, and the corresponding trajectory piece would be merged into the next one. The final piece would be just discarded if the formula is duplicate.  
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `data`    | dict   | The trajectory data to process in the message schema (JSON) defined in Trajectory Queue.                  |
-
-##### Returns
-
-```JSON
-{
-    "new_formulas": [
-        {
-            "id": "f123",
-            "base_formula_id": "f122",
-            "trajectory_id": "t456",
-            "avgQ": 1.5,
-            "num_vars": 3,
-            "width": 2,
-            "size": 5,
-            "wl_hash": "abcd1234...",
-        },
-    ],
-    "evo_path": [
-        "f46", "f27", "f68", "f16"
-    ]
-}
-```
-
-| Attribute | Type    | Description                                   |
-| :------: | :------: | --------------------------------------------- |
-| new_formulas | `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |
-| evo_path | `list[str]` | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. |
 
 
 ### `Class ArmRanker(max_num_arms: int, **config)`
@@ -823,4 +837,5 @@ Ranks the provided arms based on their performance and potential. This method us
 
 | Type    | Description                                   |
 | :------: | --------------------------------------------- |
-| list[tuple[int, float]] | A list of tuples, each containing the arm's ID and its score, sorted in descending order of score. The first element is the arm's ID, and the second element is the score. |
+| list[tuple[int, float]] | A list of tuples, each containing the arm's ID and its score, sorted in descending order of score. The first element is the arm's ID, and the second element is the score. | 
+-->

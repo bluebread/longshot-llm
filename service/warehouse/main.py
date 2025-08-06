@@ -22,7 +22,12 @@ from longshot.models import (
     CreateTrajectoryRequest,
     UpdateTrajectoryRequest,
     TrajectoryResponse,
+    QueryEvolutionGraphNode,
+    CreateNodeRequest,
+    UpdateNodeRequest,
+    NodeResponse,
     QueryFormulaDefinitionResponse,
+    CreateNewPathRequest,
     SuccessResponse
 )
 
@@ -224,92 +229,105 @@ async def delete_trajectory(id: str = Query(..., description="Trajectory UUID"))
     return SuccessResponse(message="Trajectory deleted successfully")
 
 
-# # Evolution graph node endpoints
-# @app.get("/evolution_graph/node", response_model=EvolutionGraphNode)
-# async def get_evolution_graph_node(id: str = Query(..., description="Node UUID")):
-#     """Retrieve a node in the evolution graph by its ID."""
-#     query = """
-#     MATCH (n:EvolutionNode {formula_id: $id})
-#     RETURN n.formula_id AS formula_id,
-#            n.avgQ AS avgQ,
-#            n.visited_counter AS visited_counter,
-#            n.inactive AS inactive,
-#            size((n)<--()) AS in_degree,
-#            size((n)-->()) AS out_degree
-#     """
-#     with neo4j_driver.session() as session:
-#         result = session.run(query, id=id).single()
+# Evolution graph node endpoints
+@app.get("/evolution_graph/node", response_model=QueryEvolutionGraphNode)
+async def get_evolution_graph_node(id: str = Query(..., description="Node UUID")):
+    """Retrieve a node in the evolution graph by its ID."""
+    query = """
+    MATCH   (n:FormulaNode {formula_id: $id})--(m:FormulaNode)
+    WITH    n, 
+            n.avgQ AS q,
+            sum(CASE WHEN m.avgQ < q THEN 1 ELSE 0 END) AS in_degree,
+            sum(CASE WHEN m.avgQ > q THEN 1 ELSE 0 END) AS out_degree
+    RETURN  n.formula_id AS formula_id,
+            n.avgQ AS avgQ,
+            n.visited_counter AS visited_counter,
+            n.num_vars AS num_vars,
+            n.width AS width,
+            n.size AS size,
+            in_degree,
+            out_degree
+    """
+    with neo4j_driver.session() as session:
+        result = session.run(query, id=id).single()
     
-#     if not result:
-#         raise HTTPException(status_code=404, detail="Node not found")
+    if not result:
+        raise HTTPException(status_code=404, detail="Node not found")
     
-#     return EvolutionGraphNode(**result.data())
+    return QueryEvolutionGraphNode(**result.data())
 
 
-# @app.post("/evolution_graph/node", response_model=NodeResponse, status_code=201)
-# async def create_evolution_graph_node(node: CreateNodeRequest):
-#     """Add a new node to the evolution graph."""
-#     query = """
-#     MERGE (n:EvolutionNode {formula_id: $formula_id})
-#     ON CREATE SET n.avgQ = $avgQ,
-#                   n.visited_counter = $visited_counter,
-#                   n.inactive = coalesce($inactive, false),
-#                   n.timestamp = timestamp()
-#     RETURN n.formula_id AS node_id
-#     """
-#     node_data = node.model_dump()
-#     with neo4j_driver.session() as session:
-#         result = session.run(query, **node_data).single()
-
-#     if not result:
-#         raise HTTPException(status_code=500, detail="Failed to create node")
-
-#     return NodeResponse(node_id=result["node_id"])
-
-
-# @app.put("/evolution_graph/node", response_model=SuccessResponse)
-# async def update_evolution_graph_node(node: UpdateNodeRequest):
-#     """Update an existing node."""
-#     node_id = node.node_id
-#     update_data = node.model_dump(exclude_unset=True, exclude={"node_id"})
-
-#     if not update_data:
-#         raise HTTPException(status_code=400, detail="No update data provided")
-
-#     set_clauses = [f"n.{key} = ${key}" for key in update_data.keys()]
-#     query = f"""
-#     MATCH (n:EvolutionNode {{formula_id: $node_id}})
-#     SET {', '.join(set_clauses)}
-#     RETURN n
-#     """
+@app.post("/evolution_graph/node", response_model=NodeResponse, status_code=201)
+async def create_evolution_graph_node(node: CreateNodeRequest):
+    """Add a new node to the evolution graph."""
+    query = """
+    MERGE (n:FormulaNode {formula_id: $formula_id})
+    ON CREATE SET n.avgQ = $avgQ,
+                  n.num_vars = $num_vars,
+                  n.width = $width,
+                  n.size = $size,
+                  n.visited_counter = 0,
+    RETURN n.formula_id AS formula_id
+    """
+    node_data = node.model_dump()
     
-#     params = {"node_id": node_id, **update_data}
+    with neo4j_driver.session() as session:
+        result = session.run(query, **node_data).single()
 
-#     with neo4j_driver.session() as session:
-#         result = session.run(query, params).single()
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to create node")
 
-#     if not result:
-#         raise HTTPException(status_code=404, detail="Node not found")
-
-#     return SuccessResponse(message="Node updated successfully")
+    return NodeResponse(formula_id=result["formula_id"])
 
 
-# @app.delete("/evolution_graph/node", response_model=SuccessResponse)
-# async def delete_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
-#     """Delete a node and its relationships."""
-#     query = """
-#     MATCH (n:EvolutionNode {formula_id: $node_id})
-#     WITH count(n) AS deleted_count
-#     DETACH DELETE n
-#     RETURN deleted_count
-#     """
-#     with neo4j_driver.session() as session:
-#         result = session.run(query, node_id=node_id).single()
+@app.put("/evolution_graph/node", response_model=SuccessResponse)
+async def update_evolution_graph_node(node: UpdateNodeRequest):
+    """Update an existing node."""
+    formula_id = node.formula_id
+    update_data = node.model_dump(exclude_unset=True, exclude={"formula_id"})
 
-#     if not result or result["deleted_count"] == 0:
-#         raise HTTPException(status_code=404, detail="Node not found")
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
 
-#     return SuccessResponse(message="Node deleted successfully")
+    ivc_s = 'inc_visited_counter'
+    set_clauses = [f"n.{key} = ${key}" for key in update_data.keys() if key != ivc_s]
+    
+    if ivc_s in update_data:
+        set_clauses.append("n.visited_counter = n.visited_counter + $inc_visited_counter")
+
+    query = f"""
+    MATCH   (n:FormulaNode {{formula_id: $formula_id}})
+    SET     {', '.join(set_clauses)}
+    RETURN  n
+    """
+    
+    params = {"formula_id": formula_id, **update_data}
+
+    with neo4j_driver.session() as session:
+        result = session.run(query, params).single()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    return SuccessResponse(message="Node updated successfully")
+
+
+@app.delete("/evolution_graph/node", response_model=SuccessResponse)
+async def delete_evolution_graph_node(formula_id: str = Query(..., description="Node UUID")):
+    """Delete a node and its relationships."""
+    query = """
+    MATCH   (n:FormulaNode {formula_id: $formula_id})
+    WITH    n.formula_id AS formula_id
+    DETACH  DELETE n
+    RETURN  formula_id
+    """
+    with neo4j_driver.session() as session:
+        result = session.run(query, formula_id=formula_id).single()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    return SuccessResponse(message="Node deleted successfully")
 
 
 # # Evolution graph edge endpoints
@@ -403,6 +421,24 @@ async def get_formula_definition(id: str = Query(..., description="Formula UUID"
                 raise HTTPException(status_code=500, detail=f"Unknown token type: {ttype}")
 
     return QueryFormulaDefinitionResponse(id=id, definition=list(definition))
+
+
+@app.post("/evolution_graph/path", response_model=CreateNewPathRequest, status_code=201)
+async def create_new_path(request: CreateNewPathRequest):
+    """Create a new path in the evolution graph."""
+    query = """
+    WITH    $path AS nodes
+    UNWIND  range(0, size(nodes) - 2) AS i
+    MERGE   (n:FormulaNode {formula_id: nodes[i]})
+    MERGE   (m:FormulaNode {formula_id: nodes[i + 1]})
+    MERGE   (n)-[:EVOLVED_TO]->(m)
+    """
+    
+    with neo4j_driver.session() as session:
+        session.run(query, path=request.path)
+        
+    return SuccessResponse(message="Path created successfully")
+
 
 # @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
 # async def get_evolution_subgraph(

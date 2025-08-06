@@ -3,7 +3,7 @@ Pydantic models for the Warehouse API.
 """
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # Formula-related models
@@ -114,12 +114,66 @@ class UpdateTrajectoryRequest(BaseModel):
 class TrajectoryResponse(BaseModel):
     """Response model for trajectory creation."""
     id: str
-    
+
+
+# Evolution graph node models
+class QueryEvolutionGraphNode(BaseModel):
+    """Evolution graph node model."""
+    formula_id: str
+    avgQ: float
+    num_vars: int
+    width: int
+    size: int
+    visited_counter: int
+    in_degree: int
+    out_degree: int
+
+
+class CreateNodeRequest(BaseModel):
+    """Request model for creating a node."""
+    formula_id: str
+    avgQ: float
+    num_vars: int
+    width: int
+    size: int
+
+
+class UpdateNodeRequest(BaseModel):
+    """Request model for updating a node."""
+    formula_id: str
+    inc_visited_counter: int | None = None
+    visited_counter: int | None = None
+    avgQ: float | None = None
+    num_vars: int | None = None
+    width: int | None = None
+    size: int | None = None
+
+    @model_validator(mode='before')
+    def check_exclusive_fields(cls, values):
+        inc = values.get('inc_visited_counter')
+        visited = values.get('visited_counter')
+        
+        if inc is not None and visited is not None:
+            raise ValueError('Only one of inc_visited_counter or visited_counter can be set, not both.')
+        
+        return values
+
+class NodeResponse(BaseModel):
+    """Response model for node creation."""
+    formula_id: str
+
+
 # Formula definition models
 class QueryFormulaDefinitionResponse(BaseModel):
     """Formula definition model."""
     id: str
     definition: list[int]
+
+
+# Path models
+class CreateNewPathRequest(BaseModel):
+    """Request model for creating a new path."""
+    path: list[str] = Field(..., description="List of node IDs representing the path")
 
 
 # Generic response models

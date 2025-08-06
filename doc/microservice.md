@@ -111,9 +111,8 @@ Each trajectory is either a partial trajectory or the full definition of a formu
 
 ### Evolution Graph (Neo4j)
 
-Each graph is labeled with `N<num_vars>W<width>`, where `num_vars` is the number of variables and `width` is the width of the formula.
+Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_TO`. Nodes have the following attributes:
 
-#### Node Attributes
 
 | Attribute   | Type   | Description                   |
 | ---------------- | :----: | ----------------------------- |
@@ -615,13 +614,17 @@ Add a new node to the evolution graph. The visited counter is set to 0, and the 
     }
     ```
 - **Response:**  
-    - Success message.
+    ```json
+    {
+        "formula_id": "f123"
+    }
+    ```
 - **Status Codes:**  
     - `201 Created`, `422 Unprocessable Entity`
 
 
 #### `PUT /evolution_graph/node`
-Update an existing node. The parameter ``inc_visited_counter`` is used to increment the visited counter by a specified amount and suppose to be greater than 0. 
+Update an existing node. 
 
 - **Request Body:**  
     ```json
@@ -631,6 +634,11 @@ Update an existing node. The parameter ``inc_visited_counter`` is used to increm
         "avgQ": 4.56
     }
     ```
+- **Constraints**:
+    - `inc_visited_counter` (int, optional): Increment the visited counter by this amount.
+    - `visited_counter` and `inc_visited_counter` are mutually exclusive.
+    - `formula_id` (string) is required to identify the node to be updated.
+    - `avgQ`, `num_vars`, `width`, and `size` are optional fields that can be updated.
 - **Response:**  
     - Success message.
 - **Status Codes:**  

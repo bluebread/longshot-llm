@@ -25,7 +25,6 @@ def test_cnf():
     cnf.toggle(Clause(pos=0b0101, neg=0b1010))
     cnf.toggle(Clause(pos=[3], neg=[0, 1]))
     
-    print(cnf)
     assert str(cnf) == "(x0∨¬x1∨x2∨¬x3)∧(¬x0∨¬x1∨x3)" or str(cnf) == "(¬x0∨¬x1∨x3)∧(x0∨¬x1∨x2∨¬x3)"
     
     assert cnf.eval(0b0000) == True
@@ -58,8 +57,6 @@ def test_tree():
     assert dnf.eval(0b10101) == tree.decide(0b10101)
     assert dnf.eval(0b00000) == tree.decide(0b00000)
     assert dnf.eval(0b11111) == tree.decide(0b11111)
-    
-    tree.root.pprint()
     
 def test_graph():
     f1 = DNF(5)

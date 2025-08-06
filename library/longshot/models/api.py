@@ -175,6 +175,10 @@ class CreateNewPathRequest(BaseModel):
     """Request model for creating a new path."""
     path: list[str] = Field(..., description="List of node IDs representing the path")
 
+# Download Nodes Response
+class DownloadNodesResponse(BaseModel):
+    """Response model for downloading nodes."""
+    nodes: list[QueryEvolutionGraphNode] = Field(..., description="List of evolution graph nodes")
 
 # Generic response models
 class SuccessResponse(BaseModel):

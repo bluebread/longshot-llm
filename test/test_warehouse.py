@@ -204,51 +204,86 @@ class TestTrajectory:
         data = response.json()
         assert data["detail"] == "Trajectory not found"
 
-# class TestEvolutionGraphNode:
-#     """Test evolution graph node endpoints."""
+class TestEvolutionGraphNode:
+    """Test evolution graph node endpoints."""
     
-#     def test_get_evolution_graph_node(self, client: httpx.Client):
-#         """Test GET /evolution_graph/node endpoint."""
-#         response = client.get("/evolution_graph/node", params={"id": "n789"})
-#         assert response.status_code == 200
-#         data = response.json()
-#         assert data["formula_id"] == "f123"
-#         assert data["avgQ"] == 2.5
-#         assert data["visited_counter"] == 10
-#         assert data["inactive"] is False
-#         assert data["in_degree"] == 2
-#         assert data["out_degree"] == 3
+    def test_crud_evolution_graph_node(self, client: httpx.Client):
+        """Test /evolution_graph/node endpoints."""
+        # Test post
+        node_data = {
+            "formula_id": "f123",
+            "avgQ": 2.5,
+            "num_vars": 3,
+            "width": 4,
+            "size": 5
+        }
+        response = client.post("/evolution_graph/node", json=node_data)
+        assert response.status_code == 201
+        data = response.json()
+        assert "formula_id" in data
+        assert node_data["formula_id"] == data["formula_id"]
+        assert len(data["formula_id"]) > 0
+        formula_id = data["formula_id"]
+        
+        # Test update
+        update_data = {
+            "formula_id": "f123",
+            "inc_visited_counter": 10,
+        }
+        response = client.put("/evolution_graph/node", json=update_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Node updated successfully"
+        
+        # Test get
+        response = client.get("/evolution_graph/node", params={"id": formula_id})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["formula_id"] == "f123"
+        assert data["avgQ"] == 2.5
+        assert data["num_vars"] == 3
+        assert data["width"] == 4
+        assert data["size"] == 5
+        assert data["visited_counter"] == 10  # Updated value
+        
+        # Test delete
+        response = client.delete("/evolution_graph/node", params={"formula_id": formula_id})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Node deleted successfully"
     
-#     def test_create_evolution_graph_node(self, client: httpx.Client):
-#         """Test POST /evolution_graph/node endpoint."""
-#         node_data = {
-#             "formula_id": "f456",
-#             "avgQ": 3.0
-#         }
-#         response = client.post("/evolution_graph/node", json=node_data)
-#         assert response.status_code == 201
-#         data = response.json()
-#         assert "node_id" in data
-#         assert len(data["node_id"]) > 0
+    def test_code_422(self, client: httpx.Client):
+        """Test 422 error for invalid evolution graph node."""
+        # Test post with invalid data
+        invalid_data = {
+            "formula_id": "f123",
+            "avgQ": "not_a_float",  # Invalid type
+            "num_vars": 3,
+            "width": 4,
+            "size": 5
+        }
+        response = client.post("/evolution_graph/node", json=invalid_data)
+        assert response.status_code == 422
+        data = response.json()
+        assert data["detail"][0]["msg"] == "Input should be a valid number, unable to parse string as a number"
+        
+        # Test update with invalid data
+        invalid_update_data = {
+            "formula_id": "f123",
+            "inc_visited_counter": "not_an_int"  # Invalid type
+        }
+        response = client.put("/evolution_graph/node", json=invalid_update_data)
+        assert response.status_code == 422
+        data = response.json()
+        assert data["detail"][0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
     
-#     def test_update_evolution_graph_node(self, client: httpx.Client):
-#         """Test PUT /evolution_graph/node endpoint."""
-#         update_data = {
-#             "node_id": "n789",
-#             "inc_visited_counter": 5,
-#             "inactive": True
-#         }
-#         response = client.put("/evolution_graph/node", json=update_data)
-#         assert response.status_code == 200
-#         data = response.json()
-#         assert data["message"] == "Node updated successfully"
-    
-#     def test_delete_evolution_graph_node(self, client: httpx.Client):
-#         """Test DELETE /evolution_graph/node endpoint."""
-#         response = client.delete("/evolution_graph/node", params={"node_id": "n789"})
-#         assert response.status_code == 200
-#         data = response.json()
-#         assert data["message"] == "Node deleted successfully"
+    def test_code_404(self, client: httpx.Client):
+        """Test 404 error for non-existent evolution graph node."""
+        response = client.get("/evolution_graph/node", params={"id": "non_existent_id"})
+        print(response.text)
+        assert response.status_code == 404
+        data = response.json()
+        assert data["detail"] == "Node not found"
 
 
 # class TestEvolutionGraphEdge:
@@ -373,6 +408,74 @@ class TestHighLevelAPI:
                 client.delete("/formula/info", params={"id": fid})
             for tid in trajectory_ids:
                 client.delete("/trajectory", params={"id": tid})
+    
+    def test_create_new_path(self, client: httpx.Client):
+        """Test POST /path endpoint."""
+        path_data = {
+            "path": ["f123", "f456", "f789"]
+        }
+        
+        for fid in path_data["path"]:
+            # Create a formula node for each formula ID
+            response = client.post("/evolution_graph/node", json={
+                "formula_id": fid,
+                "avgQ": 1.0,
+                "num_vars": 2,
+                "width": 2,
+                "size": 2
+            })
+            response.raise_for_status()
+        
+        try:
+            # Create a new path with the created formula nodes
+            response = client.post("/evolution_graph/path", json=path_data)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["message"] == "Path created successfully"
+        finally:
+            # Clean up created formula nodes
+            for fid in path_data["path"]:
+                response = client.delete("/evolution_graph/node", params={"formula_id": fid})
+                response.raise_for_status()
+    
+    def test_download_nodes(self, client: httpx.Client):
+        """Test GET /evolution_graph/download_nodes endpoint."""
+        # Create some nodes for testing
+        nodes_data = [
+            {"formula_id": "f123", "avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5},
+            {"formula_id": "f456", "avgQ": 3.0, "num_vars": 3, "width": 4, "size": 6}
+        ]
+        
+        for node in nodes_data:
+            response = client.post("/evolution_graph/node", json=node)
+            assert response.status_code == 201
+        
+        try:
+            # Download nodes
+            response = client.get("/evolution_graph/download_nodes", params={"num_vars": 3, "width": 4, "size_constraint": 5})
+            assert response.status_code == 200
+            data = response.json()
+            assert isinstance(data["nodes"], list)
+            assert len(data["nodes"]) == 1
+            
+            # Verify the structure of the first node
+            first_node = data["nodes"][0]
+            assert "formula_id" in first_node
+            assert first_node["formula_id"] == "f123"
+            assert "avgQ" in first_node
+            assert first_node["avgQ"] == 2.5
+            assert "num_vars" in first_node
+            assert first_node["num_vars"] == 3
+            assert "width" in first_node
+            assert first_node["width"] == 4
+            assert "size" in first_node
+            assert first_node["size"] == 5
+            
+        finally:
+            # Clean up created nodes
+            for node in nodes_data:
+                response = client.delete("/evolution_graph/node", params={"formula_id": node["formula_id"]})
+                response.raise_for_status()
     
     # def test_get_evolution_subgraph(self, client: httpx.Client):
     #     """Test GET /evolution_graph/subgraph endpoint."""

@@ -28,6 +28,7 @@ from longshot.models import (
     NodeResponse,
     QueryFormulaDefinitionResponse,
     CreateNewPathRequest,
+    DownloadNodesResponse,
     SuccessResponse
 )
 
@@ -69,14 +70,46 @@ async def lifespan(app: FastAPI):
         neo4j_driver.verify_connectivity()
     except Exception as e:
         raise HTTPException(status_code=500, detail="MongoDB connection failed")
-    # Initialize resources
+    
+    # Initialize MongoDB resources
     try:
         # TODO: add validator
-       mongodb.create_collection("FormulaTable", check_exists=True) 
-       mongodb.create_collection("TrajectoryTable", check_exists=True)
+        mongodb.create_collection("FormulaTable", check_exists=True) 
+        mongodb.create_collection("TrajectoryTable", check_exists=True)
     except Exception:
         pass
+
+    # Initialize Neo4j resources
+    init_statements = [
+        """
+        CREATE CONSTRAINT formula_id_unique IF NOT EXISTS
+        FOR (n:FormulaNode)
+        REQUIRE n.formula_id IS UNIQUE
+        """,
+        """
+        CREATE INDEX num_vars_index IF NOT EXISTS
+        FOR (n:FormulaNode)
+        ON (n.num_vars)
+        """,
+        """
+        CREATE INDEX width_index IF NOT EXISTS
+        FOR (n:FormulaNode)
+        ON (n.width)
+        """,
+        """
+        CREATE INDEX size_index IF NOT EXISTS
+        FOR (n:FormulaNode)
+        ON (n.size)
+        """
+    ]
+
+    with neo4j_driver.session() as session:
+        for stmt in init_statements:
+            session.run(stmt)
+    
+    # Yield control to the application
     yield
+    
     # Cleanup resources
     mongo_client.close()
     iso_hash_table.close()
@@ -234,11 +267,11 @@ async def delete_trajectory(id: str = Query(..., description="Trajectory UUID"))
 async def get_evolution_graph_node(id: str = Query(..., description="Node UUID")):
     """Retrieve a node in the evolution graph by its ID."""
     query = """
-    MATCH   (n:FormulaNode {formula_id: $id})--(m:FormulaNode)
+    MATCH   (n:FormulaNode {formula_id: $id})
+    OPTIONAL MATCH (n)--(m:FormulaNode)
     WITH    n, 
-            n.avgQ AS q,
-            sum(CASE WHEN m.avgQ < q THEN 1 ELSE 0 END) AS in_degree,
-            sum(CASE WHEN m.avgQ > q THEN 1 ELSE 0 END) AS out_degree
+            sum(CASE WHEN m.avgQ < n.avgQ THEN 1 ELSE 0 END) AS in_degree,
+            sum(CASE WHEN m.avgQ > n.avgQ THEN 1 ELSE 0 END) AS out_degree
     RETURN  n.formula_id AS formula_id,
             n.avgQ AS avgQ,
             n.visited_counter AS visited_counter,
@@ -266,7 +299,7 @@ async def create_evolution_graph_node(node: CreateNodeRequest):
                   n.num_vars = $num_vars,
                   n.width = $width,
                   n.size = $size,
-                  n.visited_counter = 0,
+                  n.visited_counter = 0
     RETURN n.formula_id AS formula_id
     """
     node_data = node.model_dump()
@@ -317,7 +350,7 @@ async def delete_evolution_graph_node(formula_id: str = Query(..., description="
     """Delete a node and its relationships."""
     query = """
     MATCH   (n:FormulaNode {formula_id: $formula_id})
-    WITH    n.formula_id AS formula_id
+    WITH    n, n.formula_id AS formula_id
     DETACH  DELETE n
     RETURN  formula_id
     """
@@ -423,7 +456,7 @@ async def get_formula_definition(id: str = Query(..., description="Formula UUID"
     return QueryFormulaDefinitionResponse(id=id, definition=list(definition))
 
 
-@app.post("/evolution_graph/path", response_model=CreateNewPathRequest, status_code=201)
+@app.post("/evolution_graph/path", response_model=SuccessResponse, status_code=201)
 async def create_new_path(request: CreateNewPathRequest):
     """Create a new path in the evolution graph."""
     query = """
@@ -438,6 +471,45 @@ async def create_new_path(request: CreateNewPathRequest):
         session.run(query, path=request.path)
         
     return SuccessResponse(message="Path created successfully")
+
+
+@app.get("/evolution_graph/download_nodes", response_model=DownloadNodesResponse)
+async def download_evolution_graph_nodes(
+    num_vars: int = Query(..., description="Number of variables in formula"),
+    width: int = Query(..., description="Width of formula"),
+    size_constraint: int | None = Query(None, description="Maximum size of formula"),
+):
+    """Download all nodes in the evolution graph."""
+    filters = ["n.num_vars = $num_vars", "n.width = $width"]
+    params = {"num_vars": num_vars, "width": width}
+
+    if size_constraint is not None:
+        filters.append("n.size <= $size_constraint")
+        params["size_constraint"] = size_constraint
+
+    filter_str = " AND ".join(filters)
+    query = f"""
+    MATCH   (n:FormulaNode)
+    WHERE   {filter_str}
+    OPTIONAL MATCH (n)--(m:FormulaNode)
+    WITH    n, 
+            sum(CASE WHEN m.avgQ < n.avgQ THEN 1 ELSE 0 END) AS in_degree,
+            sum(CASE WHEN m.avgQ > n.avgQ THEN 1 ELSE 0 END) AS out_degree
+    RETURN  n.formula_id AS formula_id,
+            n.avgQ AS avgQ,
+            n.visited_counter AS visited_counter,
+            n.num_vars AS num_vars,
+            n.width AS width,
+            n.size AS size,
+            in_degree,
+            out_degree
+    """
+    
+    with neo4j_driver.session() as session:
+        response = session.run(query, **params)
+        records = list(response)
+
+    return {"nodes": [record.data() for record in records]}
 
 
 # @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)

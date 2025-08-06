@@ -49,10 +49,10 @@ This document outlines the structure and content of the API documentation for th
         - `GET /topk_arms`: Return the current best top-K arms.
 
 5. **Cluster Bomb**
-    - A microservice that randomly collects trajectories from the environment and pushes them to the trajectory queue.
+    - Randomly collects trajectories from the environment and pushes them to the trajectory queue.
 
 6. **Guided Missile**
-    - A microservice that collects trajectories from the environment through RL policy and pushes them to the trajectory queue.
+    - Collects trajectories from the environment through RL policy and pushes them to the trajectory queue.
 
         
 ## Database Schema
@@ -706,6 +706,7 @@ Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_v
 - **Query Parameters:**  
     - `num_vars` (int): The number of variables in the formula.
     - `width` (int): The width of the formula.
+    - `size_constraint` (int, optional): The maximum size of the formula. Default: None.
 - **Response:**  
     ```json
     {

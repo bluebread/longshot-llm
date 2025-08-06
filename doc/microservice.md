@@ -7,6 +7,7 @@ This document outlines the structure and content of the API documentation for th
 1. **Trajectory Queue**
     - RabbitMQ interface.
     - Handles the queuing of trajectories for processing.
+
 2. **Warehouse**
     - Manages the storage and retrieval of data. It hides the complexity of data management and provides a simple interface for data access.
     - Contains the following tables:
@@ -47,18 +48,11 @@ This document outlines the structure and content of the API documentation for th
     - Main API:
         - `GET /topk_arms`: Return the current best top-K arms.
 
-5. **Trainer**
-    - Trains a RL policy that learns how to build a CNF/DNF formula with the largest average-case deterministic query complexity.
-    - Retrieves dataset (trajectories) from the environment (wrapper). 
-    - Includes but not limited to the following modules:
-        1. Replay Buffer (able to handle both Markovian and non-Markovian sequences)
-        2. General Advantage Estimation（optional）
-        3. Optimizer
-        4. Scheduler
-        5. Loss Function
-        6. Gumbel-Topk Distribution
-        7. Policy Network
-        8. Critic Network
+5. **Cluster Bomb**
+    - A microservice that randomly collects trajectories from the environment and pushes them to the trajectory queue.
+
+6. **Guided Missile**
+    - A microservice that collects trajectories from the environment through RL policy and pushes them to the trajectory queue.
 
         
 ## Database Schema
@@ -123,8 +117,7 @@ Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_
 | avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
 | visited\_counter | int    | The number of times this node has been touched by a trajectory                   |
 
-## Microservice
-
+## API Endpoints
 
 ### Trajectory Queue
 

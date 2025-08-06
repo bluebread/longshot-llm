@@ -465,6 +465,9 @@ async def create_new_path(request: CreateNewPathRequest):
     MERGE   (n:FormulaNode {formula_id: nodes[i]})
     MERGE   (m:FormulaNode {formula_id: nodes[i + 1]})
     MERGE   (n)-[:EVOLVED_TO]->(m)
+    WITH    n, m
+    WHERE   n.avgQ IS NOT NULL AND m.avgQ IS NOT NULL AND n.avgQ = m.avgQ
+    MERGE   (n)-[:SAME_Q]->(m)
     """
     
     with neo4j_driver.session() as session:

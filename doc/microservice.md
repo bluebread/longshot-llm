@@ -105,7 +105,7 @@ Each trajectory is either a partial trajectory or the full definition of a formu
 
 ### Evolution Graph (Neo4j)
 
-Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_TO`. Nodes have the following attributes:
+Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_TO`. If the two adjacent nodes have the same avgQ value, they will be connected with an edge labeled `SAME_Q`. Nodes have the following attributes:
 
 
 | Attribute   | Type   | Description                   |
@@ -680,7 +680,7 @@ Retrieve the full definition of a formula by its ID.
 
 #### `POST /evolution_graph/path`
 
-Add a new path to the evolution graph. The path is a list of formula IDs that represent the evolution path of the formulas in the trajectory.
+Add a new path to the evolution graph. The path is a list of formula IDs that represent the evolution path of the formulas in the trajectory. To accelerate the process of obtaining the hypernodes, it would check if the adjacent nodes have the same `avgQ` value, and if so, it will connect them with an edge labeled `SAME_Q`.
 
 - **Request Body:**  
     ```json
@@ -720,6 +720,34 @@ Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_v
                 "in_degree": 2,
                 "out_degree": 3
             },
+        ]
+    }
+    ```
+- **Status Codes:**
+    - `200 OK`, `422 Unprocessable Entity`
+
+
+#### `GET /evolution_graph/download_hypernodes`
+
+Get the hypernodes of the evolution graph. A hypernode is a connected component of nodes with the same avgQ. A hypernode of size 1 would be omitted.
+
+- **Query Parameters:**
+    - `num_vars` (int): The number of variables in the formula.
+    - `width` (int): The width of the formula.
+    - `size_constraint` (int, optional): The maximum size of the formula. Default: None.
+
+- **Response:**
+    ```json
+    {
+        "hypernodes": [
+            {
+                "avgQ": 3.2,
+                "nodes": [
+                    "f123",
+                    "f124",
+                    "f125"
+                ]
+            }
         ]
     }
     ```

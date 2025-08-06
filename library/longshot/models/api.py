@@ -136,7 +136,7 @@ class CreateNodeRequest(BaseModel):
     num_vars: int
     width: int
     size: int
-
+    
 
 class UpdateNodeRequest(BaseModel):
     """Request model for updating a node."""
@@ -175,10 +175,23 @@ class CreateNewPathRequest(BaseModel):
     """Request model for creating a new path."""
     path: list[str] = Field(..., description="List of node IDs representing the path")
 
+
 # Download Nodes Response
 class DownloadNodesResponse(BaseModel):
     """Response model for downloading nodes."""
     nodes: list[QueryEvolutionGraphNode] = Field(..., description="List of evolution graph nodes")
+
+
+# Download Hypothetical Nodes Response
+class QueryHyperNodeInfo(BaseModel):
+    """Response model for querying hyper nodes."""
+    avgQ: float = Field(..., description="Average Q value of the hyper node")
+    nodes: list[str] = Field(..., description="List of node IDs representing the hyper nodes")
+    
+class DownloadHyperNodesResponse(BaseModel):
+    """Response model for downloading hyper nodes."""
+    hypernodes: list[QueryHyperNodeInfo] = Field(..., description="List of hyper nodes with their average Q values and node IDs")
+
 
 # Generic response models
 class SuccessResponse(BaseModel):

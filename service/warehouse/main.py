@@ -29,6 +29,7 @@ from longshot.models import (
     QueryFormulaDefinitionResponse,
     CreateNewPathRequest,
     DownloadNodesResponse,
+    DownloadHyperNodesResponse,
     SuccessResponse
 )
 
@@ -514,6 +515,31 @@ async def download_evolution_graph_nodes(
 
     return {"nodes": [record.data() for record in records]}
 
+@app.get("/evolution_graph/download_hypernodes", response_model=DownloadHyperNodesResponse)
+async def download_evolution_graph_hypernodes(
+    num_vars: int = Query(..., description="Number of variables in formula"),
+    width: int = Query(..., description="Width of formula"),
+    size_constraint: int | None = Query(None, description="Maximum size of formula"),
+):
+    """Download all hypernodes in the evolution graph."""
+    predicate = "n.num_vars = $num_vars AND n.width = $width"
+    params = {"num_vars": num_vars, "width": width}
+    
+    if size_constraint is not None:
+        predicate += " AND n.size <= $size_constraint"
+        params["size_constraint"] = size_constraint
+        
+    query = f"""
+    MATCH (n:FormulaNode)
+    WHERE {predicate}
+    CALL apoc.path.subgraphNodes(n, {{
+        relationshipFilter: "SAME_Q",
+        minLevel: 0,
+        filterPredicate: {predicate}
+    }}) YIELD node
+    WITH n.avgQ AS avgQ, collect(node.formula_id) AS group
+    RETURN DISTINCT group
+    """
 
 # @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
 # async def get_evolution_subgraph(

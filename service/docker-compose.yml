@@ -7,7 +7,7 @@ services:
       - "7687:7687"   # Bolt protocol, used for Python driver, etc.
     environment:
       NEO4J_AUTH: "neo4j/bread861122"  # ← Replace with your desired password
-      NEO4JLABS_PLUGINS: '["apoc"]'   # Enable APOC plugin
+      NEO4JLABS_PLUGINS: '["apoc", "graph-data-science"]'   # Enable plugins
       NEO4J_apoc_export_file_enabled: "true"   # If you need to export files with APOC
       NEO4J_apoc_import_file_enabled: "true"   # If you need to import files with APOC
       NEO4J_apoc_import_file_use__neo4j__config: "true"  # Use Neo4j default import path

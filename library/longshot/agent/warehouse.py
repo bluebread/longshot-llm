@@ -264,3 +264,343 @@ class WarehouseAgent:
         This method is called when the `with` statement is exited, regardless of whether an exception occurred.
         """
         self.close()
+        
+
+class AsyncWarehouseAgent:
+    """Asynchronous agent for interacting with the Longshot warehouse service.
+    This class provides an async interface to the warehouse API, allowing for
+    non-blocking I/O operations. It manages formula information, trajectories,
+    and evolution graph data.
+    It is recommended to use this class as an async context manager to ensure
+    the underlying HTTP client is properly closed.
+    
+    Example:
+        >>> async with AsyncWarehouseAgent(host="localhost", port=8000) as agent:
+        ...     info = await agent.get_formula_info("some_formula_id")
+        
+    Attributes:
+        _client (httpx.AsyncClient): The asynchronous HTTP client for making requests.
+        _config (Dict[str, Any]): Additional configuration options.
+    """
+    def __init__(self, host: str, port: int, **config: Any):
+        """Initializes the AsyncWarehouseAgent.
+        
+        Args:
+            host (str): The hostname or IP address of the warehouse service.
+            port (int): The port number of the warehouse service.
+            **config (Any): Additional configuration parameters (currently unused).
+        """
+        base_url = f"http://{host}:{port}"
+        self._client = httpx.AsyncClient(base_url=base_url, **config)
+        self._config = config
+
+    async def get_formula_info(self, formula_id: str) -> Dict[str, Any]:
+        """Retrieves information for a specific formula.
+        
+        Args:
+            formula_id (str): The unique identifier of the formula.
+            
+        Returns:
+            Dict[str, Any]: A dictionary containing the formula's information.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.get("/formula/info", params={"id": formula_id})
+        response.raise_for_status()
+        return response.json()
+
+    async def post_formula_info(self, **body: Any) -> str:
+        """Creates a new formula information entry.
+        
+        Args:
+            **body (Any): Keyword arguments representing the formula's data.
+            
+        Returns:
+            str: The ID of the newly created formula.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.post("/formula/info", json=body)
+        response.raise_for_status()
+        return response.json()["id"]
+
+    async def put_formula_info(self, **body: Any) -> None:
+        """Updates an existing formula information entry.
+        The body must contain the 'id' of the formula to update.
+        
+        Args:
+            **body (Any): Keyword arguments for the update, including the 'id'.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.put("/formula/info", json=body)
+        response.raise_for_status()
+
+    async def delete_formula_info(self, formula_id: str) -> None:
+        """Deletes a formula information entry.
+        
+        Args:
+            formula_id (str): The ID of the formula to delete.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.delete("/formula/info", params={"id": formula_id})
+        response.raise_for_status()
+
+    async def get_likely_isomorphic(self, wl_hash: str) -> list[str]:
+        """Gets a list of formula IDs likely isomorphic to a given WL hash.
+        
+        Args:
+            wl_hash (str): The Weisfeiler-Lehman hash to query.
+            
+        Returns:
+            list[str]: A list of formula IDs that are likely isomorphic.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.get("/formula/likely_isomorphic", params={"wl_hash": wl_hash})
+        response.raise_for_status()
+        return response.json().get("isomorphic_ids", [])
+
+    async def post_likely_isomorphic(self, wl_hash: str, formula_id: str) -> None:
+        """Associates a formula ID with a Weisfeiler-Lehman hash.
+        This is used to record that a formula has a given WL hash, suggesting
+        it is likely isomorphic to other formulas with the same hash.
+        
+        Args:
+            wl_hash (str): The Weisfeiler-Lehman hash.
+            formula_id (str): The formula ID to associate with the hash.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        body = {"wl_hash": wl_hash, "formula_id": formula_id}
+        response = await self._client.post("/formula/likely_isomorphic", json=body)
+        response.raise_for_status()
+
+    async def delete_likely_isomorphic(self, wl_hash: str) -> None:
+        """Deletes the likely isomorphic entry for a given WL hash.
+        
+        Args:
+            wl_hash (str): The WL hash entry to delete.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.delete("/formula/likely_isomorphic", params={"wl_hash": wl_hash})
+        response.raise_for_status()
+
+    async def get_trajectory(self, traj_id: str) -> Dict[str, Any]:
+        """Retrieves a trajectory by its ID.
+        
+        Args:
+            traj_id (str): The unique identifier for the trajectory.
+            
+        Returns:
+            Dict[str, Any]: A dictionary containing the trajectory data.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.get("/trajectory", params={"id": traj_id})
+        response.raise_for_status()
+        return response.json()
+
+    async def post_trajectory(self, **body: Any) -> str:
+        """Creates a new trajectory entry.
+        
+        Args:
+            **body (Any): Keyword arguments representing the trajectory data.
+            
+        Returns:
+            str: The ID of the newly created trajectory.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.post("/trajectory", json=body)
+        response.raise_for_status()
+        return response.json()["id"]
+
+    async def put_trajectory(self, **body: Any) -> None:
+        """Updates an existing trajectory.
+        The body must contain the 'id' of the trajectory to update.
+        
+        Args:
+            **body (Any): Keyword arguments for the update, including the 'id'.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.put("/trajectory", json=body)
+        response.raise_for_status()
+
+    async def delete_trajectory(self, traj_id: str) -> None:
+        """Deletes a trajectory.
+        
+        Args:
+            traj_id (str): The ID of the trajectory to delete.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.delete("/trajectory", params={"id": traj_id})
+        response.raise_for_status()
+
+    async def get_evolution_graph_node(self, formula_id: str) -> Dict[str, Any]:
+        """Retrieves a node from the evolution graph.
+        
+        Args:
+            formula_id (str): The formula ID corresponding to the graph node.
+            
+        Returns:
+            Dict[str, Any]: A dictionary containing the node's data.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.get("/evolution_graph/node", params={"id": formula_id})
+        response.raise_for_status()
+        return response.json()
+
+    async def post_evolution_graph_node(self, **body: Any) -> str:
+        """Creates a new node in the evolution graph.
+        
+        Args:
+            **body (Any): Keyword arguments representing the node's data.
+            
+        Returns:
+            str: The formula ID of the newly created node.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.post("/evolution_graph/node", json=body)
+        response.raise_for_status()
+        return response.json()["formula_id"]
+
+    async def put_evolution_graph_node(self, **body: Any) -> None:
+        """
+        Updates an existing node in the evolution graph.
+        The body must contain the 'formula_id' of the node to update.
+        
+        Args:
+            **body (Any): Keyword arguments for the update, including 'formula_id'.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.put("/evolution_graph/node", json=body)
+        response.raise_for_status()
+
+    async def delete_evolution_graph_node(self, formula_id: str) -> None:
+        """Deletes a node from the evolution graph.
+        
+        Args:
+            formula_id (str): The formula ID of the node to delete.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        response = await self._client.delete("/evolution_graph/node", params={"formula_id": formula_id})
+        response.raise_for_status()
+
+    async def get_formula_definition(self, formula_id: str | None) -> list[int]:
+        """Retrieves the definition (list of clauses) for a formula.
+        
+        Args:
+            formula_id (str | None): The ID of the formula. If None, an empty list is returned.
+            
+        Returns:
+            list[int]: A list of integers representing the formula's clauses.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        if formula_id is None:
+            return []
+        
+        response = await self._client.get("/formula/definition", params={"id": formula_id})
+        response.raise_for_status()
+        return response.json()['definition']
+
+    async def post_evolution_graph_path(self, path: List[str]) -> None:
+        """Posts a path of nodes to the evolution graph.
+        This method is used to record a sequence of transformations or
+        connections between formulas in the graph.
+        
+        Args:
+            path (List[str]): A list of formula IDs representing the path.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        body = {"path": path}
+        response = await self._client.post("/evolution_graph/path", json=body)
+        response.raise_for_status()
+
+    async def download_nodes(self, num_vars: int, width: int, size_constraint: int | None = None) -> List[Dict[str, Any]]:
+        """Downloads evolution graph nodes matching specific criteria.
+        
+        Args:
+            num_vars (int): The number of variables in the formulas.
+            width (int): The width (max clause length) of the formulas.
+            size_constraint (int | None, optional): A constraint on the size of 
+            the formulas. Defaults to None.
+            
+        Returns:
+            List[Dict[str, Any]]: A list of nodes matching the criteria.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        params = {"num_vars": num_vars, "width": width}
+        if size_constraint is not None:
+            params["size_constraint"] = size_constraint
+        
+        response = await self._client.get("/evolution_graph/download_nodes", params=params)
+        response.raise_for_status()
+        return response.json()["nodes"]
+
+    async def download_hypernodes(self, num_vars: int, width: int, size_constraint: int | None = None) -> List[Dict[str, Any]]:
+        """Downloads evolution graph hypernodes matching specific criteria.
+        
+        Args:
+            num_vars (int): The number of variables in the formulas.
+            width (int): The width (max clause length) of the formulas.
+            size_constraint (int | None, optional): A constraint on the size
+            of the formulas. Defaults to None.
+            
+        Returns:
+            List[Dict[str, Any]]: A list of hypernodes matching the criteria.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API returns a non-2xx status code.
+        """
+        params = {"num_vars": num_vars, "width": width}
+        if size_constraint is not None:
+            params["size_constraint"] = size_constraint
+        response = await self._client.post("/evolution_graph/download_hypernodes", params=params)
+        response.raise_for_status()
+        return response.json()["hypernodes"]
+
+    async def aclose(self) -> None:
+        """Closes the underlying HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self) -> "AsyncWarehouseAgent":
+        """Enters the async context manager.
+        
+        Returns:
+            AsyncWarehouseAgent: The instance of the agent.
+        """
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exits the async context manager, ensuring the client is closed."""
+        await self.aclose()

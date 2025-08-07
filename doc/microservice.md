@@ -36,6 +36,7 @@ This document outlines the structure and content of the API documentation for th
         - `GET /formula/definition`: Retrieves the full definition of a formula by its ID.
         - `POST /evolution_graph/path`: Adds a new path to the evolution graph.
         - `GET /evolution_graph/download_nodes`: Retrieves the evolution subgraph of nodes satisfying the given conditions.
+        - `GET /evolution_graph/download_hypernodes`: Retrieves the hypernodes of the evolution graph.
 
 3. **Trajectory Processor**
     - Processes incoming trajectories and updates the warehouse with new data.
@@ -48,11 +49,13 @@ This document outlines the structure and content of the API documentation for th
     - Main API:
         - `GET /topk_arms`: Return the current best top-K arms.
 
-5. **Cluster Bomb**
-    - Randomly collects trajectories from the environment and pushes them to the trajectory queue.
-
-6. **Guided Missile**
-    - Collects trajectories from the environment through RL policy and pushes them to the trajectory queue.
+5. **Weapons**
+    - Simulate environment interactions in various ways, collect trajectories, and push them to the trajectory queue. 
+    - Public API:
+        - `POST /weapon/rollout`: Given the number of steps and the initial formula's definition, it will run the environment for the specified number of steps and collect trajectories.
+    - Including the following types of weapons:
+        - **Cluster Bomb**: Randomly collects trajectories from the environment and pushes them to the trajectory queue.
+        - **Guided Missile**: Collects trajectories from the environment through RL policy and pushes them to the trajectory queue.
 
         
 ## Database Schema
@@ -741,7 +744,7 @@ Get the hypernodes of the evolution graph. A hypernode is a connected component 
     {
         "hypernodes": [
             {
-                "avgQ": 3.2,
+                "hnid": 1,
                 "nodes": [
                     "f123",
                     "f124",

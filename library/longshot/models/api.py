@@ -185,7 +185,7 @@ class DownloadNodesResponse(BaseModel):
 # Download Hypothetical Nodes Response
 class QueryHyperNodeInfo(BaseModel):
     """Response model for querying hyper nodes."""
-    avgQ: float = Field(..., description="Average Q value of the hyper node")
+    hnid: int = Field(..., description="Hyper node ID")
     nodes: list[str] = Field(..., description="List of node IDs representing the hyper nodes")
     
 class DownloadHyperNodesResponse(BaseModel):

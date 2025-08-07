@@ -522,24 +522,48 @@ async def download_evolution_graph_hypernodes(
     size_constraint: int | None = Query(None, description="Maximum size of formula"),
 ):
     """Download all hypernodes in the evolution graph."""
-    predicate = "n.num_vars = $num_vars AND n.width = $width"
+    predicate = "node.num_vars = $num_vars AND node.width = $width"
     params = {"num_vars": num_vars, "width": width}
     
     if size_constraint is not None:
-        predicate += " AND n.size <= $size_constraint"
+        predicate += " AND node.size <= $size_constraint"
         params["size_constraint"] = size_constraint
-        
-    query = f"""
-    MATCH (n:FormulaNode)
-    WHERE {predicate}
-    CALL apoc.path.subgraphNodes(n, {{
-        relationshipFilter: "SAME_Q",
-        minLevel: 0,
-        filterPredicate: {predicate}
-    }}) YIELD node
-    WITH n.avgQ AS avgQ, collect(node.formula_id) AS group
-    RETURN DISTINCT group
+    
+    gid = uuid.uuid4()
+    gs = f"sameQ_{gid}"
+    
+    proj_cmd = """
+    CALL gds.graph.project(
+        $gs,
+        'FormulaNode',
+        { SAME_Q: { type: 'SAME_Q', orientation: 'UNDIRECTED' } }
+    )
+    YIELD graphName, nodeCount, relationshipCount
     """
+    query = f"""
+    CALL    gds.wcc.stream($gs)
+    YIELD   nodeId, componentId
+    WITH    componentId, 
+            gds.util.asNode(nodeId) AS node
+    WHERE   {predicate}
+    WITH    componentId,
+            collect(node.formula_id) AS nodes
+    WHERE   size(nodes) > 1
+    RETURN  componentId AS hnid,
+            nodes
+    """
+    drop_cmd = """
+    CALL    gds.graph.drop($gs)
+    YIELD   graphName, nodeCount, relationshipCount
+    """
+    
+    with neo4j_driver.session() as session:
+        session.run(proj_cmd, gs=gs)
+        response = session.run(query, gs=gs, **params)
+        records = list(response)
+        session.run(drop_cmd, gs=gs)
+
+    return { "hypernodes": [record.data() for record in records] }
 
 # @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
 # async def get_evolution_subgraph(

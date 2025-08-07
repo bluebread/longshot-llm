@@ -506,24 +506,24 @@ class TestHighLevelAPI:
             })
             response.raise_for_status()
     
-        # try:
-        #     # Download hypernodes
-        #     response = client.get("/evolution_graph/download_hypernodes", params={
-        #         "num_vars": 2, 
-        #         "width": 2, 
-        #         "size_constraint": 2
-        #     })
-        #     assert response.status_code == 200
-        #     data = response.json()
-        #     assert isinstance(data["hypernodes"], list)
-        #     assert len(data["hypernodes"]) == 1
-        #     assert data["hypernodes"][0] == (1.0, ["f2", "f3", "f4"])
-        # finally:
-        #     # Clean up created nodes and paths
-        #     # for fid, _ in nodes:
-        #     #     response = client.delete("/evolution_graph/node", params={"formula_id": fid})
-        #     #     response.raise_for_status()
-        #     pass # # Uncomment when the endpoint is implemented
+        try:
+            # Download hypernodes
+            response = client.get("/evolution_graph/download_hypernodes", params={
+                "num_vars": 2, 
+                "width": 2, 
+                "size_constraint": 2
+            })
+            assert response.status_code == 200
+            data = response.json()
+            assert isinstance(data["hypernodes"], list)
+            assert len(data["hypernodes"]) == 1
+            assert set(data["hypernodes"][0]["nodes"]) == set(["f2", "f3", "f4"])
+            
+        finally:
+            # Clean up created nodes and paths
+            for fid, _ in nodes:
+                response = client.delete("/evolution_graph/node", params={"formula_id": fid})
+                response.raise_for_status()
     
     # def test_get_evolution_subgraph(self, client: httpx.Client):
     #     """Test GET /evolution_graph/subgraph endpoint."""

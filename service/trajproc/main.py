@@ -18,7 +18,10 @@ trajproc = TrajectoryProcessor(warehouse)
 
 if __name__ == "__main__":
     try:
-        trajectory_queue.start_consuming(trajproc.process_trajectory)
+        def consume_trajectory(data):
+            trajproc.process_trajectory(data)
+
+        trajectory_queue.start_consuming(consume_trajectory)
     except KeyboardInterrupt:
         logger.info("Stopping trajectory queue consumption.")
     finally:

@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field, model_validator
 class QueryFormulaInfoResponse(BaseModel):
     """Formula information model."""
     id: str = Field(alias="_id", serialization_alias="id")
-    base_formula_id: str
-    trajectory_id: str
+    base_formula_id: str | None = None
+    trajectory_id: str | None = None
     avgQ: float
     wl_hash: str
     num_vars: int
@@ -20,9 +20,6 @@ class QueryFormulaInfoResponse(BaseModel):
     timestamp: datetime
     node_id: str
     
-    class Config:
-        validate_by_name = True
-        allow_population_by_alias = True
         
 class CreateFormulaRequest(BaseModel):
     """Request model for creating a formula."""
@@ -66,8 +63,6 @@ class LikelyIsomorphicRequest(BaseModel):
     wl_hash: str
     formula_id: str
 
-    class Config:
-        validate_by_name = True
 
 
 # Trajectory-related models
@@ -85,9 +80,6 @@ class QueryTrajectoryInfoResponse(BaseModel):
     timestamp: datetime
     steps: list[TrajectoryInfoStep]
     
-    class Config:
-        validate_by_name = True
-        allow_population_by_alias = True
 
 
 class CreateTrajectoryRequest(BaseModel):

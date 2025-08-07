@@ -141,7 +141,50 @@ class WarehouseAgent:
         """
         response = self._client.delete("/trajectory", params={"id": traj_id})
         response.raise_for_status()
+    
+    def get_evolution_graph_node(self, formula_id: str) -> Dict[str, Any]:
+        """
+        Retrieves the evolution graph node for a given formula ID.
 
+        :param formula_id: The ID of the formula to retrieve the evolution graph node for.
+        :return: A dictionary containing the evolution graph node information.
+        """
+        response = self._client.get("/evolution_graph/node", params={"id": formula_id})
+        response.raise_for_status()
+        return response.json()
+    
+    def post_evolution_graph_node(self, **body: Any) -> str:
+        """
+        Creates a new evolution graph node in the warehouse.
+
+        :param body: The evolution graph node information to create.
+        :return: The ID of the created evolution graph node.
+        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
+        """
+        response = self._client.post("/evolution_graph/node", json=body)
+        response.raise_for_status()
+        return response.json()["formula_id"]
+    
+    def put_evolution_graph_node(self, **body: Any) -> None:
+        """
+        Updates an existing evolution graph node in the warehouse.
+
+        :param body: The evolution graph node information to update.
+        :raises httpx.HTTPException: If the evolution graph node with the given ID does not exist in the warehouse or if the request body is not in the correct format.
+        """
+        response = self._client.put("/evolution_graph/node", json=body)
+        response.raise_for_status()
+        
+    def delete_evolution_graph_node(self, formula_id: str) -> None:
+        """
+        Deletes an evolution graph node from the warehouse by its formula ID.
+
+        :param formula_id: The ID of the evolution graph node to delete.
+        :raises httpx.HTTPException: If the evolution graph node with the given ID does not exist in the warehouse.
+        """
+        response = self._client.delete("/evolution_graph/node", params={"formula_id": formula_id})
+        response.raise_for_status()
+    
     def get_formula_definition(self, formula_id: str | None) -> list[int]:
         """
         Retrieves the definition of a formula by its ID.
@@ -156,6 +199,50 @@ class WarehouseAgent:
         response = self._client.get("/formula/definition", params={"id": formula_id})
         response.raise_for_status()
         return response.json()['definition']
+
+    def post_evolution_graph_path(self, path: List[str]) -> None:
+        """
+        Posts an evolution path to the warehouse.
+        
+        :param evo_path: A list of formula IDs representing the evolution path.
+        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
+        """
+        body = {"path": path}
+        response = self._client.post("/evolution_graph/path", json=body)
+        response.raise_for_status()
+
+    def download_nodes(self, num_vars: int, width: int, size_constraint: int | None = None) -> List[Dict[str, Any]]:
+        """
+        Downloads nodes from the warehouse based on the given constraints.
+        
+        :param num_vars: The number of variables in the formulas.
+        :param width: The width of the formulas.
+        :param size_constraint: An optional size constraint for the formulas.
+        :return: A list of dictionaries containing the downloaded nodes.
+        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
+        """
+        params = {"num_vars": num_vars, "width": width}
+        if size_constraint is not None:
+            params["size_constraint"] = size_constraint
+        
+        response = self._client.get("/evolution_graph/download_nodes", params=params)
+        response.raise_for_status()
+        return response.json()["nodes"]
+
+    def download_hypernodes(self, num_vars: int, width: int, size_constraint: int | None = None) -> List[Dict[str, Any]]:
+        """
+        Downloads hypernodes from the warehouse.
+        
+        :param hypernodes: A list of hypernode IDs to download.
+        :return: A dictionary containing the downloaded hypernodes.
+        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
+        """
+        params = {"num_vars": num_vars, "width": width}
+        if size_constraint is not None:
+            params["size_constraint"] = size_constraint
+        response = self._client.post("/evolution_graph/download_hypernodes", params=params)
+        response.raise_for_status()
+        return response.json()["hypernodes"]
 
     def close(self) -> None:
         """

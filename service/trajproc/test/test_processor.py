@@ -16,7 +16,7 @@ hash_iters = 3
 
 @pytest.fixture
 def processor():
-    with httpx.Client(base_url=warehouse_url) as warehouse:
+    with WarehouseAgent(host, port) as warehouse:
         processor = TrajectoryProcessor(warehouse, iterations=hash_iters)
         yield processor
 
@@ -95,8 +95,8 @@ class TestTrajectoryProcessor:
         wl2 = weisfeiler_lehman_graph_hash(fg2, iterations=hash_iters, node_attr="label")
         assert wl1 == wl2, "WL hashes should match for isomorphic graphs"
         
-        fid2, tid2 = self.save_formula_example(processor.warehouse, fdef2, wl2)
-        response = processor.warehouse.post("/formula/likely_isomorphic", json={
+        fid2, tid2 = self.save_formula_example(processor.warehouse._client, fdef2, wl2)
+        response = processor.warehouse._client.post("/formula/likely_isomorphic", json={
             "wl_hash": wl2,
             "formula_id": fid2,
         })
@@ -104,8 +104,8 @@ class TestTrajectoryProcessor:
         assert response.status_code == 201, f"Failed to check isomorphism: {response.text}"
         assert processor.isomorphic_to(fg1) == fid2
         
-        self.del_formula_example(processor.warehouse, fid2, tid2)
-        response = processor.warehouse.delete("/formula/likely_isomorphic", params={"wl_hash": wl2})
+        self.del_formula_example(processor.warehouse._client, fid2, tid2)
+        response = processor.warehouse._client.delete("/formula/likely_isomorphic", params={"wl_hash": wl2})
         assert response.status_code == 200, f"Failed to delete isomorphic formula: {response.text}"
     
     def test_isomorphic_to_not_found(self, processor: TrajectoryProcessor):
@@ -127,8 +127,8 @@ class TestTrajectoryProcessor:
         wl2 = weisfeiler_lehman_graph_hash(fg2, iterations=hash_iters, node_attr="label")
         assert wl1 != wl2, "WL hashes should not match for non-isomorphic graphs"
         
-        fid2, tid2 = self.save_formula_example(processor.warehouse, fdef2, wl2)
-        response = processor.warehouse.post("/formula/likely_isomorphic", json={
+        fid2, tid2 = self.save_formula_example(processor.warehouse._client, fdef2, wl2)
+        response = processor.warehouse._client.post("/formula/likely_isomorphic", json={
             "wl_hash": wl2,
             "formula_id": fid2,
         })
@@ -136,8 +136,8 @@ class TestTrajectoryProcessor:
         assert response.status_code == 201, f"Failed to check isomorphism: {response.text}"
         assert processor.isomorphic_to(fg1) is None
         
-        self.del_formula_example(processor.warehouse, fid2, tid2)
-        response = processor.warehouse.delete("/formula/likely_isomorphic", params={"wl_hash": wl2})
+        self.del_formula_example(processor.warehouse._client, fid2, tid2)
+        response = processor.warehouse._client.delete("/formula/likely_isomorphic", params={"wl_hash": wl2})
         assert response.status_code == 200, f"Failed to delete isomorphic formula: {response.text}"
         
     def test_process_trajectory(self, processor: TrajectoryProcessor):
@@ -156,7 +156,7 @@ class TestTrajectoryProcessor:
         base_info = {
             "num_vars": 4,
             "width": 2,
-            "base_size": 2,
+            "base_size": 0,
             "timestamp": datetime.now(),
         }
         
@@ -191,21 +191,34 @@ class TestTrajectoryProcessor:
                 ]
             }
         )
+        expect_size = [2, 3, 5, 6]
+        expect_avgQ = [1.0, 2.0, 0.0, 3.0]
         
-        r1 = processor.process_trajectory(msg1)
-        nf1 = r1["new_formulas"]
-        ep1 = r1["evo_path"]
-        
-        r2 = processor.process_trajectory(msg2)
-        nf2 = r2["new_formulas"]
-        ep2 = r2["evo_path"]
+        try:
+            processor.process_trajectory(msg1)
+            processor.process_trajectory(msg2)
+            
+            # TODO: obtain data from warehouse and check if correctly processed
+            n = base_info["num_vars"]
+            w = base_info["width"]
+            nodes = processor.warehouse.download_nodes(n, w)
 
-        assert len(nf1) == 2, "Should have created two new formulas"
-        assert len(nf2) == 2, "Should have created two new formulas"
-        assert ep1 == ep2[:3], "Evolution paths should match for the first two steps"
-
-        with WarehouseAgent(host, port) as warehouse:
-            for nf in nf1 + nf2:
-                warehouse.delete_formula_info(nf["id"])
-                warehouse.delete_trajectory(nf["trajectory_id"])
-                warehouse.delete_likely_isomorphic(nf["wl_hash"])
+            assert len(nodes) == 4, "Should have downloaded four nodes"
+            
+            for i, node in enumerate(nodes):
+                finfo = processor.warehouse.get_formula_info(node["formula_id"])
+                node["trajectory_id"] = finfo["trajectory_id"]
+                node["wl_hash"] = finfo["wl_hash"]
+                assert node["size"] == expect_size[i], f"Node {i} size mismatch"
+                assert node["avgQ"] == expect_avgQ[i], f"Node {i} avgQ mismatch"
+                assert node["num_vars"] == n, f"Node {i} num_vars mismatch"
+                assert node["width"] == w, f"Node {i} width mismatch"
+                
+        finally:
+            # Clean up the warehouse by deleting the nodes created during the test
+            # This ensures that the warehouse remains clean for subsequent tests.
+            for node in nodes:
+                processor.warehouse.delete_formula_info(node["formula_id"])
+                processor.warehouse.delete_trajectory(node["trajectory_id"])
+                processor.warehouse.delete_likely_isomorphic(node["wl_hash"])
+                processor.warehouse.delete_evolution_graph_node(node["formula_id"])

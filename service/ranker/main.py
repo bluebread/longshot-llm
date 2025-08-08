@@ -93,10 +93,6 @@ async def topk_arms(
 
         nodes, hypernodes = await asyncio.gather(c1, c2)
         
-    logger.info(f"Downloaded {len(nodes)} nodes and {len(hypernodes)} hypernodes")
-    logger.info(f"Nodes: {nodes}")
-    logger.info(f"Hypernodes: {hypernodes}")
-
     nmap = { node.pop("formula_id"): node for node in nodes }
     hmap = { hn["hnid"]: hn["nodes"] for hn in hypernodes }
     hset = set(reduce(lambda x, y: x + y, hmap.values(), []))
@@ -126,9 +122,6 @@ async def topk_arms(
     rng = random.Random()
     selected_fids = [rng.choice(hmap[aid]) if aid in hmap else aid for _, aid in ranking[:k]]
     selected_arms = []
-    
-    logger.info(f"Ranking arms: {ranking}")
-    logger.info(f"Selected arms: {selected_fids}")
     
     async with AsyncWarehouseAgent(host="localhost", port=8000) as warehouse:
         coroutines = [

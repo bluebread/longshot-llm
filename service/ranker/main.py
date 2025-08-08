@@ -10,6 +10,7 @@ import pathlib
 import uuid
 import numpy as np
 import math
+import random
 import asyncio
 from functools import reduce
 from collections import namedtuple
@@ -27,7 +28,7 @@ config = namedtuple("Config", config.keys())(**config)
 
 logging.basicConfig(
     level=logging.INFO, 
-    filename="filter.log", 
+    filename="ranker.log", 
     format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="a",
 )
@@ -46,14 +47,13 @@ app = FastAPI(
 )
 
 class Arm(BaseModel):
-    num_vars: int
     avgQ: float
     visited_counter: int
     in_degree: int
     out_degree: int
 
 
-def score(self, arm: Arm, num_vars: int, total_visited: int) -> float:
+def score(arm: Arm, num_vars: int, total_visited: int) -> float:
     """
     Scores a single arm (formula) based on its properties.
 
@@ -93,12 +93,16 @@ async def topk_arms(
 
         nodes, hypernodes = await asyncio.gather(c1, c2)
         
+    logger.info(f"Downloaded {len(nodes)} nodes and {len(hypernodes)} hypernodes")
+    logger.info(f"Nodes: {nodes}")
+    logger.info(f"Hypernodes: {hypernodes}")
+
     nmap = { node.pop("formula_id"): node for node in nodes }
     hmap = { hn["hnid"]: hn["nodes"] for hn in hypernodes }
     hset = set(reduce(lambda x, y: x + y, hmap.values(), []))
     
     armmap = {
-        hnid: Arm({
+        hnid: Arm(**{
             "avgQ": nmap[nodes[0]]['avgQ'],
             "visited_counter": sum([nmap[nid]['visited_counter'] for nid in nodes]),
             "in_degree": sum([nmap[nid]['in_degree'] for nid in nodes]),
@@ -119,18 +123,23 @@ async def topk_arms(
         for aid, arm in armmap.items()
     ], reverse=True)
     
+    rng = random.Random()
+    selected_fids = [rng.choice(hmap[aid]) if aid in hmap else aid for _, aid in ranking[:k]]
     selected_arms = []
+    
+    logger.info(f"Ranking arms: {ranking}")
+    logger.info(f"Selected arms: {selected_fids}")
     
     async with AsyncWarehouseAgent(host="localhost", port=8000) as warehouse:
         coroutines = [
-            warehouse.get_formula_definition(aid)
-            for _, aid in ranking[:k]
+            warehouse.get_formula_definition(fid)
+            for fid in selected_fids
         ]
         definitions = await asyncio.gather(*coroutines)
 
-    for (_, aid), definition in zip(ranking[:k], definitions):
+    for fid, definition in zip(selected_fids, definitions):
         selected_arms.append({
-            "formula_id": aid,
+            "formula_id": fid,
             "definition": definition,
         })
 

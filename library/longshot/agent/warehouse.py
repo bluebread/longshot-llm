@@ -585,7 +585,7 @@ class AsyncWarehouseAgent:
         params = {"num_vars": num_vars, "width": width}
         if size_constraint is not None:
             params["size_constraint"] = size_constraint
-        response = await self._client.post("/evolution_graph/download_hypernodes", params=params)
+        response = await self._client.get("/evolution_graph/download_hypernodes", params=params)
         response.raise_for_status()
         return response.json()["hypernodes"]
 

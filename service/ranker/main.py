@@ -8,13 +8,22 @@ import httpx
 import logging
 import pathlib
 import uuid
-from longshot.models import TopKArmsResponse
-from longshot.agent import TrajectoryQueueAgent
 import numpy as np
 import math
+import asyncio
+from functools import reduce
+from collections import namedtuple
+from pydantic import BaseModel
+from longshot.models import TopKArmsResponse
+from longshot.agent import TrajectoryQueueAgent, AsyncWarehouseAgent
+from longshot.utils import to_lambda
 
-
-ranking_dir = pathlib.Path(__file__).parent / "ranking"
+config = {
+    "eps": 0.1,  # Small value to avoid division by zero
+    "wq": 1.0,  # Weight for the average Q value
+    "wvc": 2.0,  # Weight for the visited counter
+}
+config = namedtuple("Config", config.keys())(**config)
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -24,15 +33,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-warehouse_url = "http://localhost:8000"  # URL of the warehouse service
-warehouse = httpx.Client(base_url=warehouse_url)
-
 trajectory_queue = TrajectoryQueueAgent(host="rabbitmq-bread", port=5672)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    warehouse.close()
     trajectory_queue.close()
 
 app = FastAPI(
@@ -40,46 +45,31 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-class ArmRanker:
+class Arm(BaseModel):
+    num_vars: int
+    avgQ: float
+    visited_counter: int
+    in_degree: int
+    out_degree: int
 
-    def __init__(self, **config):
-        self.wq = config.get("wq", 1.0)  # Weight for average Q value
-        self.wvc = config.get("wvc", 1.0)  # Weight
 
-    def rank_arms(self, arms: list[dict]) -> list[int]:
-        """
-        Ranks the given arms (formulas) based on their performance and potential.
+def score(self, arm: Arm, num_vars: int, total_visited: int) -> float:
+    """
+    Scores a single arm (formula) based on its properties.
 
-        :param arms: A list of dictionaries, each representing an arm (formula) with its properties.
-        :return: A list of indices representing the ranked order of the arms.
-        """
-        tvc = sum(arm.get("visited_counter", 0) for arm in arms)
-        scores = np.array([self.score(arm, tvc) for arm in arms])
-        ids = np.array([arm.get("id", i) for i, arm in enumerate(arms)])
-        sorted_idx = np.argsort(scores)
-        
-        return list(zip(ids[sorted_idx].tolist(), scores[sorted_idx].tolist()))
+    :param arm: A dictionary representing an arm (formula) with its properties.
+    :param num_vars: The number of variables in the formula, used for normalization.
+    :param total_visited: The total number of visits across all arms, used for normalization.
+    :return: A float score representing the performance and potential of the arm.
+    """
+    lmbd = to_lambda(arm.avgQ, n=num_vars, eps=config.eps)
 
-    def score(self, arm: dict, total_visited: int) -> float:
-        """
-        Scores a single arm (formula) based on its properties.
-
-        :param arm: A dictionary representing an arm (formula) with its properties.
-        :param total_visited: The total number of visits across all arms, used for normalization.
-        :return: A float score representing the performance and potential of the arm.
-        """
-        q = arm.get("avgQ", 0)
-        tvc = total_visited if total_visited > 0 else 1
-        vc = arm.get("visited_counter", 0)
-        di = arm.get("in_degree", 0)
-        do = arm.get("out_degree", 0)
-
-        # Compute the score using a weighted formula
-        score = (
-            self.wq * q 
-            + self.wvc * math.sqrt(math.log(tvc) / (vc + 1)) 
-        )
-        return score
+    # Compute the score using a weighted formula
+    score = (
+        config.wq * (arm.avgQ + lmbd)
+        + config.wvc * math.sqrt(math.log(total_visited) / (arm.visited_counter + 1))
+    )
+    return score
 
 
 @app.get("/topk_arms", response_model=TopKArmsResponse)
@@ -87,22 +77,64 @@ async def topk_arms(
     num_vars: int = Query(..., description="The number of variables in the formula"),
     width: int = Query(..., description="The width of the formula"),
     k: int = Query(..., description="The number of top arms to return"),
-    size: int | None = Query(default=None, description="The maximum size of the formula. Default: None"),
+    size_constraint: int | None = Query(default=None, description="The maximum size of the formula. Default: None"),
 ):
     """
     Filter arms based on the provided criteria.
     """
-    return TopKArmsResponse(
-        arms=[
-            {
-                "arm_id": str(uuid.uuid4()),
-                "score": 0.9,
-                "variables": [f"var_{i}" for i in range(num_vars)],
-                "width": width,
-            }
-            for _ in range(k)
+    async with AsyncWarehouseAgent(host="localhost", port=8000) as warehouse:
+        params = {
+            "num_vars": num_vars,
+            "width": width,
+            "size_constraint": size_constraint,
+        }
+        c1 = warehouse.download_nodes(**params)
+        c2 = warehouse.download_hypernodes(**params)
+
+        nodes, hypernodes = await asyncio.gather(c1, c2)
+        
+    nmap = { node.pop("formula_id"): node for node in nodes }
+    hmap = { hn["hnid"]: hn["nodes"] for hn in hypernodes }
+    hset = set(reduce(lambda x, y: x + y, hmap.values(), []))
+    
+    armmap = {
+        hnid: Arm({
+            "avgQ": nmap[nodes[0]]['avgQ'],
+            "visited_counter": sum([nmap[nid]['visited_counter'] for nid in nodes]),
+            "in_degree": sum([nmap[nid]['in_degree'] for nid in nodes]),
+            "out_degree": sum([nmap[nid]['out_degree'] for nid in nodes]),
+        })
+        for hnid, nodes in hmap.items()
+    }
+    armmap.update({
+        nid: Arm(**node) for nid, node in nmap.items() if nid not in hset
+    })
+    
+    total_visited = sum(arm.visited_counter for arm in armmap.values())
+    ranking = sorted([
+        (
+            score(arm, num_vars, total_visited), 
+            aid,
+        )
+        for aid, arm in armmap.items()
+    ], reverse=True)
+    
+    selected_arms = []
+    
+    async with AsyncWarehouseAgent(host="localhost", port=8000) as warehouse:
+        coroutines = [
+            warehouse.get_formula_definition(aid)
+            for _, aid in ranking[:k]
         ]
-    )
+        definitions = await asyncio.gather(*coroutines)
+
+    for (_, aid), definition in zip(ranking[:k], definitions):
+        selected_arms.append({
+            "formula_id": aid,
+            "definition": definition,
+        })
+
+    return TopKArmsResponse(top_k_arms=selected_arms)
 
 
 if __name__ == "__main__":

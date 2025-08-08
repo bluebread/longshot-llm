@@ -50,7 +50,7 @@ This document outlines the structure and content of the API documentation for th
         - `GET /topk_arms`: Return the current best top-K arms.
 
 5. **Weapons**
-    - Simulate environment interactions in various ways, collect trajectories, and push them to the trajectory queue. 
+    - Collect trajectories, and push them to the trajectory queue. 
     - Public API:
         - `POST /weapon/rollout`: Given the number of steps and the initial formula's definition, it will run the environment for the specified number of steps and collect trajectories.
     - Including the following types of weapons:
@@ -771,6 +771,10 @@ The Arm Ranker is a microservice responsible for filtering and selecting the bes
 
 Returns the current best top-K arms based on the latest trajectories and evolution graph. If parameter `size` is provided, it will return only the formulas of size less than or equal to `size`. If `size` is not provided, it will return the formulas of any size.
 
+##### Current Implementation
+
+The current implementation ranks the arms based on a scoring function that considers the average-case deterministic query complexity, and visited counter. It has not implemented the mechanism filtering out the less promising arms, so it downloads all the nodes and hypernodes from the evolution graph, and then rank them based on the score. Moreover, score calculation does not consider in-degree and out-degree of the nodes yet, which is a TODO item.
+
 ##### Endpoint
 ```
 GET /topk_arms
@@ -820,55 +824,3 @@ GET /topk_arms
 
 * `200 OK`: Successfully returned top-K arms
 * `422 Unprocessable Entity`: Missing required parameters or invalid values
-
-<!-- ## Local Modules: Arm Filter
-
-The internal components of the Arm Filter microservice are responsible for processing trajectories, managing the evolution graph, and ranking arms (formulas). These components work together to maintain the evolution graph of formulas and implement policies for arm selection.
-
-### Main Program Flow
-
-The main program flow of the Arm Filter microservice involves the following components:
-
-- Scheduled Tasks (TrajectoryProcessor): These tasks periodically process the trajectories from the queue, check/update the evolution graph, perform necessary updates (such as graph contraction), rank arms, and save the ranking to a file with timestamp. 
-- API Endpoint (Arm Ranker): The /topk_arms endpoint allows users to retrieve the current best top-K arms based on the latest trajectories and evolution graph. The only thing that the API does is to read the latest ranking file and return the top-K arms' definition (obained from the warehouse). The ranking file is updated by the scheduled tasks.
-
-
-### `Class ArmRanker(max_num_arms: int, **config)`
-
-The `ArmRanker` class ranks the arms (formulas) based on their performance and potential. It uses the evolution graph and formulas' information to determine the best arms. This class is stateless and just provides a method to rank arms.
-
-#### Constructor Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `max_num_arms` | int | The maximum number of arms to return in the ranking. |
-| `config`  | dict   | Configuration parameters for the ranker       |
-
-#### `ArmRanker.score(self, arm: dict, total_visited: int) -> float`
-
-Scores a single arm (formula) based on its properties such as average-case deterministic query complexity, visited counter, in-degree, and out-degree. The score is calculated using a weighted formula that combines these properties.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `arm`     | dict   | A dictionary representing the arm (formula) to be scored, containing fields like `avgQ`, `visited_counter`, `in_degree`, and `out_degree`. |
-| `total_visited` | int | The total number of visited counters across all arms, used to normalize the score. |
-
-#### `ArmRanker.rank_arms(self, arms: list[dict], total_visited: int) -> list[tuple[int, float]]`
-
-Ranks the provided arms based on their performance and potential. This method uses the evolution graph and trajectories to determine the best arms. In the case that the UCB algorithm is adopted, the current time step is the sum of visited counters of all arms.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `arms`    | list[dict] | A list of dict objects representing the arms to be ranked from EvolutionGraphManager.get_active_nodes method |
-| `total_visited` | int | The total number of visited counters across all arms, used to normalize the scores. |
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| list[tuple[int, float]] | A list of tuples, each containing the arm's ID and its score, sorted in descending order of score. The first element is the arm's ID, and the second element is the score. | 
--->

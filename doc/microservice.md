@@ -840,28 +840,28 @@ Collects trajectories from the environment and pushes them to the trajectory que
     {
         "num_vars": 3,
         "width": 2,
-        "num_steps": 100,
+        "steps_per_trajectory": 100,
         "num_trajectories": 10,
+        "initial_formula_id": "f123",
         "initial_definition": [
-            [1, 2, 3],
-            [4, 5]
-        ]
+            1, 2, 3,
+        ],
+        "seed": 42,
     }
     ```
 - Request Field Descriptions:
     - `num_vars` (int): Number of variables in the formula.
     - `width` (int): Width of the formula.
+    - `steps_per_trajectory` (int): Number of steps to run in a single trajectory.
     - `num_trajectories` (int): Number of trajectories to collect.
-    - `num_steps` (int): Number of steps to run in the environment.
-    - `initial_definition` (list[list[int]]): Initial definition of the formula, represented as a list of lists of literals (represented by integers).
-- Constraints:
-    - Either `num_steps` or `num_trajectories` must be provided, but not both.
-    - When the microservice reaches either `num_steps` or `num_trajectories`, it will stop collecting trajectories and push them to the trajectory queue. In other words, one of `num_steps` or `num_trajectories` in the response will be equal to the value in the request, and the other will be less than or equal to the value in the request.
+    - `initial_formula_id` (string): ID of the initial formula to start with. If not provided, a random formula will be used.
+    - `initial_definition` (list[int]): Initial definition of the formula, represented as a list of lists of literals (represented by integers).
+    - `seed` (int, optional): Random seed for reproducibility. Default: None.
 - Response:
     ```json
     {
-        "num_steps": 100,
-        "num_trajectories": 6,
+        "total_steps": 1000,
+        "num_trajectories": 10,
     }
     ```
 - Status Codes:

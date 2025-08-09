@@ -14,7 +14,7 @@ from .._core import (
     _CppDecisionTree,
 )
 
-MAX_NUM_VARS = 24
+MAX_NUM_VARS = 32  # Maximum number of variables supported
 
 class Literals(_Literals):
     """

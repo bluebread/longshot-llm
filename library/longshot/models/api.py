@@ -207,4 +207,32 @@ class TopKArmsResponse(BaseModel):
     It defines the structure of the output data.
     """
 
-    top_k_arms: list[ArmInfo] 
+    top_k_arms: list[ArmInfo]
+
+
+# Weapon-related models
+class WeaponRolloutRequest(BaseModel):
+    """Request model for weapon rollout endpoint."""
+    num_vars: int = Field(..., description="Number of variables in the formula")
+    width: int = Field(..., description="Width of the formula")
+    num_steps: int | None = Field(None, description="Number of steps to run in the environment")
+    num_trajectories: int | None = Field(None, description="Number of trajectories to collect")
+    initial_definition: list[list[int]] = Field(..., description="Initial definition of the formula, represented as a list of lists of literals")
+
+    @model_validator(mode='before')
+    def check_exclusive_fields(cls, values):
+        num_steps = values.get('num_steps')
+        num_trajectories = values.get('num_trajectories')
+        
+        if num_steps is None and num_trajectories is None:
+            raise ValueError('Either num_steps or num_trajectories must be provided')
+        
+        if num_steps is not None and num_trajectories is not None:
+            raise ValueError('Only one of num_steps or num_trajectories can be provided, not both')
+        
+        return values
+
+class WeaponRolloutResponse(BaseModel):
+    """Response model for weapon rollout endpoint."""
+    num_steps: int = Field(..., description="Number of steps actually run")
+    num_trajectories: int = Field(..., description="Number of trajectories actually collected") 

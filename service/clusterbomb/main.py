@@ -4,11 +4,10 @@ FastAPI application for the Clusterbomb microservice.
 This service provides weapon rollout functionality for the longshot system.
 """
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 import logging
-from pydantic import BaseModel
-from typing import Any, Dict
+from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -31,21 +30,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-class WeaponRolloutRequest(BaseModel):
-    """Request model for weapon rollout endpoint."""
-    # Add specific fields based on your requirements
-    # These are placeholder fields - modify as needed
-    target: str
-    payload: Dict[str, Any]
-    config: Dict[str, Any] = {}
-
-class WeaponRolloutResponse(BaseModel):
-    """Response model for weapon rollout endpoint."""
-    success: bool
-    rollout_id: str
-    message: str
-    results: Dict[str, Any] = {}
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -56,34 +40,37 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     """
     Execute a weapon rollout operation.
     
-    This endpoint handles weapon rollout requests with the provided target,
-    payload, and configuration parameters.
+    Collects trajectories from the environment and pushes them to the trajectory queue.
+    The request specifies the number of steps to run and the initial formula's definition.
     """
     try:
-        logger.info(f"Weapon rollout requested for target: {request.target}")
+        logger.info(f"Weapon rollout requested: num_vars={request.num_vars}, width={request.width}")
         
         # TODO: Implement the actual weapon rollout logic here
-        # This is a placeholder implementation
+        # This should:
+        # 1. Initialize the RL environment with the given parameters
+        # 2. Run the environment for num_steps or until num_trajectories collected
+        # 3. Push collected trajectories to the trajectory queue
+        # 4. Return actual counts of steps and trajectories
         
-        # Generate a rollout ID (you might want to use UUID or another method)
-        rollout_id = f"rollout_{hash(request.target)}_{hash(str(request.payload))}"
+        # Placeholder implementation - replace with actual logic
+        actual_steps = request.num_steps if request.num_steps else 50  # Default fallback
+        actual_trajectories = request.num_trajectories if request.num_trajectories else 5  # Default fallback
         
-        # Placeholder processing logic
-        # Replace this with your actual implementation
-        processed_results = {
-            "target_processed": request.target,
-            "payload_size": len(str(request.payload)),
-            "config_applied": bool(request.config),
-            "status": "processed"
-        }
+        # If num_steps was provided, we might collect fewer trajectories
+        # If num_trajectories was provided, we might run fewer steps
+        if request.num_steps:
+            # Simulate collecting some trajectories during the steps
+            actual_trajectories = min(actual_steps // 10, 10)  # Rough estimation
+        elif request.num_trajectories:
+            # Simulate running some steps to collect trajectories
+            actual_steps = actual_trajectories * 15  # Rough estimation
         
-        logger.info(f"Weapon rollout completed successfully: {rollout_id}")
+        logger.info(f"Weapon rollout completed: {actual_steps} steps, {actual_trajectories} trajectories")
         
         return WeaponRolloutResponse(
-            success=True,
-            rollout_id=rollout_id,
-            message="Weapon rollout completed successfully",
-            results=processed_results
+            num_steps=actual_steps,
+            num_trajectories=actual_trajectories
         )
         
     except Exception as e:

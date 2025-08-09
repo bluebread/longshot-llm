@@ -824,3 +824,46 @@ GET /topk_arms
 
 * `200 OK`: Successfully returned top-K arms
 * `422 Unprocessable Entity`: Missing required parameters or invalid values
+
+---
+
+### Weapons
+
+The Weapons microservice is responsible for collecting trajectories and pushing them to the trajectory queue. It provides a public API for external clients to interact with the system and collect trajectories from the environment.
+
+#### `POST /weapon/rollout`
+
+Collects trajectories from the environment and pushes them to the trajectory queue. The request should specify the number of steps to run and the initial formula's definition.
+
+- Request Body:
+    ```json
+    {
+        "num_vars": 3,
+        "width": 2,
+        "num_steps": 100,
+        "num_trajectories": 10,
+        "initial_definition": [
+            [1, 2, 3],
+            [4, 5]
+        ]
+    }
+    ```
+- Request Field Descriptions:
+    - `num_vars` (int): Number of variables in the formula.
+    - `width` (int): Width of the formula.
+    - `num_trajectories` (int): Number of trajectories to collect.
+    - `num_steps` (int): Number of steps to run in the environment.
+    - `initial_definition` (list[list[int]]): Initial definition of the formula, represented as a list of lists of literals (represented by integers).
+- Constraints:
+    - Either `num_steps` or `num_trajectories` must be provided, but not both.
+    - When the microservice reaches either `num_steps` or `num_trajectories`, it will stop collecting trajectories and push them to the trajectory queue. In other words, one of `num_steps` or `num_trajectories` in the response will be equal to the value in the request, and the other will be less than or equal to the value in the request.
+- Response:
+    ```json
+    {
+        "num_steps": 100,
+        "num_trajectories": 6,
+    }
+    ```
+- Status Codes:
+    - `200 OK`: Successfully collected trajectories and pushed to the queue.
+    - `422 Unprocessable Entity`: Missing required parameters or invalid values.

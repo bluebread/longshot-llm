@@ -4,6 +4,7 @@ requires = [
     "pybind11>=2.10.0",
     "wheel",
     "pika>=1.3.2",
+    "aio-pika>=9.0.0",
 ]
 build-backend = "setuptools.build_meta"
 

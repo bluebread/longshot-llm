@@ -215,9 +215,11 @@ class WeaponRolloutRequest(BaseModel):
     """Request model for weapon rollout endpoint."""
     num_vars: int = Field(..., description="Number of variables in the formula")
     width: int = Field(..., description="Width of the formula")
-    num_steps: int | None = Field(None, description="Number of steps to run in the environment")
-    num_trajectories: int | None = Field(None, description="Number of trajectories to collect")
-    initial_definition: list[list[int]] = Field(..., description="Initial definition of the formula, represented as a list of lists of literals")
+    steps_per_trajectory: int  = Field(None, description="Number of steps per trajectory")
+    num_trajectories: int  = Field(None, description="Number of trajectories to collect")
+    initial_definition: list[int] = Field(..., description="Initial definition of the formula, represented as a list of integers representing gates")
+    initial_formula_id: str | None = Field(None, description="ID of the initial formula used as base for trajectories")
+    seed: int | None = Field(None, description="Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic")
 
     @model_validator(mode='before')
     def check_exclusive_fields(cls, values):
@@ -234,5 +236,5 @@ class WeaponRolloutRequest(BaseModel):
 
 class WeaponRolloutResponse(BaseModel):
     """Response model for weapon rollout endpoint."""
-    num_steps: int = Field(..., description="Number of steps actually run")
+    total_steps: int = Field(..., description="Number of steps actually run")
     num_trajectories: int = Field(..., description="Number of trajectories actually collected") 

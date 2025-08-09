@@ -10,26 +10,48 @@ The Clusterbomb service provides a single endpoint for executing weapon rollout 
 
 ### POST /weapon/rollout
 
-Execute a weapon rollout operation.
+Execute a weapon rollout operation that collects trajectories from the environment and pushes them to the trajectory queue.
 
 **Request Body:**
 ```json
 {
-  "target": "string",
-  "payload": {},
-  "config": {}
+  "num_vars": 5,
+  "width": 3,
+  "steps_per_trajectory": 50,
+  "num_trajectories": 1000,
+  "initial_definition": [1, 2, -3, 0, 4, -5, 0],
+  "initial_formula_id": "formula_abc123",
+  "seed": 42
 }
 ```
+
+**Request Fields:**
+- `num_vars` (int, required): Number of variables in the formula
+- `width` (int, required): Width of the formula
+- `steps_per_trajectory` (int, optional): Number of steps per trajectory
+- `num_trajectories` (int, optional): Number of trajectories to collect
+- `initial_definition` (list[int], required): Initial definition of the formula as list of integers representing gates
+- `initial_formula_id` (str, optional): ID of the initial formula used as base for trajectories
+- `seed` (int, optional): Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic
 
 **Response:**
 ```json
 {
-  "success": true,
-  "rollout_id": "rollout_12345_67890",
-  "message": "Weapon rollout completed successfully",
-  "results": {}
+  "total_steps": 50000,
+  "num_trajectories": 1000
 }
 ```
+
+**Response Fields:**
+- `total_steps`: Total number of steps actually executed across all trajectories
+- `num_trajectories`: Number of trajectories actually collected
+
+**Behavior:**
+- Parses the initial formula definition and creates a FormulaGame environment
+- Runs trajectory simulation with random token generation
+- Collects trajectory data with steps containing order, token_type, token_literals, reward, and avgQ
+- Pushes all collected trajectories to RabbitMQ queue in batch for efficient processing
+- Uses the provided seed for deterministic random number generation if specified
 
 ### GET /health
 

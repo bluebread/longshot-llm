@@ -76,3 +76,12 @@ class FormulaGame:
         self._cur_f = self._init_f.copy()
         self._cur_avgQ = self._init_avgQ
         
+    @property
+    def cur_avgQ(self) -> float:
+        """
+        Returns the current average-case deterministic query complexity of the formula.
+        
+        Returns:
+            float: The current average-case deterministic query complexity.
+        """
+        return self._cur_avgQ

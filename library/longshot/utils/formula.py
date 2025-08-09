@@ -1,5 +1,8 @@
 from functools import reduce
+import random
 import networkx as nx
+from ..circuit import NormalFormFormula, FormulaType, Clause, Term, Literals
+from ..models import GateToken
 
 def to_lambda(avgQ: float, *, n: int, eps: float) -> float:
     """
@@ -99,17 +102,74 @@ def definition_to_graph(definition: list) -> nx.Graph:
     return formula_graph
 
 
-def encode_literals(pos: list[int], neg: list[int]) -> str:
+def parse_formula_definition(
+    definition: list[int], 
+    num_vars: int, 
+    formula_type: FormulaType = FormulaType.Conjunctive
+) -> NormalFormFormula:
     """
-    Encodes a list of integers to a base64 string.
+    Parse formula definition into a NormalFormFormula object.
     
-    :param pos: A list of positive literals.
-    :param neg: A list of negative literals.
-    :return: An encoded string representing the literals.
-    :raises ValueError: If all parameters are empty or None.
+    Args:
+        definition: 1D list of integers, each representing a gate (literals)
+        num_vars: Number of variables in the formula
+        formula_type: Type of formula (CNF or DNF)
+        
+    Returns:
+        NormalFormFormula: The constructed formula
     """
-    pos = [(1 << i) for i in pos]
-    neg = [(1 << i) for i in neg]
-    p = reduce(lambda x, y: x | y, pos, 0)
-    n = reduce(lambda x, y: x | y, neg, 0)
-    return p | (n << 32)
+    formula = NormalFormFormula(num_vars, formula_type)
+    
+    for literal_int in definition:
+        # Lower 32 bits are positive literals, upper 32 bits are negative literals
+        pos_bits = literal_int & 0xFFFFFFFF          # Extract lower 32 bits (0-31)
+        neg_bits = (literal_int >> 32) & 0xFFFFFFFF  # Extract upper 32 bits (32-63)
+        
+        # Create Literals object and add to formula
+        if pos_bits != 0 or neg_bits != 0:  # Skip empty literals
+            # Add appropriate gate based on formula type
+            if formula_type == FormulaType.Conjunctive:
+                clause = Clause(pos=pos_bits, neg=neg_bits)
+                formula.toggle(clause)
+            else:
+                term = Term(pos=pos_bits, neg=neg_bits)
+                formula.toggle(term)
+    
+    return formula
+
+
+def generate_random_token(num_vars: int, width: int, rng: random.Random = None) -> GateToken:
+    """
+    Generate a random GateToken for the RL environment.
+    
+    Args:
+        num_vars: Number of variables in the formula
+        width: Maximum width constraint
+        rng: Optional random number generator instance. If None, uses global random module
+        
+    Returns:
+        GateToken: Random token for the environment
+    """
+    # Use provided RNG or fall back to global random module
+    if rng is None:
+        rng = random
+    
+    # Randomly choose ADD or DELETE operation
+    token_type = rng.choice(['ADD', 'DELETE'])
+    
+    # Generate random literals within width constraint
+    num_literals = rng.randint(1, min(width, num_vars))
+    selected_vars = rng.sample(range(num_vars), num_literals)
+    
+    pos_bits = 0
+    neg_bits = 0
+    
+    for var in selected_vars:
+        # Randomly assign positive or negative
+        if rng.random() < 0.5:
+            pos_bits |= (1 << var)
+        else:
+            neg_bits |= (1 << var)
+    
+    literals = Literals(pos=pos_bits, neg=neg_bits)
+    return GateToken(type=token_type, literals=literals)

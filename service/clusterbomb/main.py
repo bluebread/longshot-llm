@@ -7,7 +7,14 @@ This service provides weapon rollout functionality for the longshot system.
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 import logging
+import random
+from datetime import datetime
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
+from longshot.models.trajectory import TrajectoryQueueMessage, TrajectoryMessageMultipleSteps, TrajectoryMessageStep
+from longshot.agent.trajectory_queue import AsyncTrajectoryQueueAgent
+from longshot.circuit import FormulaType
+from longshot.env import FormulaGame
+from longshot.utils import parse_formula_definition, generate_random_token
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -41,44 +48,133 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     Execute a weapon rollout operation.
     
     Collects trajectories from the environment and pushes them to the trajectory queue.
-    The request specifies the number of steps to run and the initial formula's definition.
+    The request specifies the number of steps per trajectory, the initial formula's definition,
+    and optionally a random seed for reproducible results.
+    
+    If a seed is provided, all random token generation will be deterministic and reproducible.
+    Without a seed, the service uses non-deterministic randomness.
     """
     try:
         logger.info(f"Weapon rollout requested: num_vars={request.num_vars}, width={request.width}")
+        logger.info(f"Initial definition: {request.initial_definition}")
         
-        # TODO: Implement the actual weapon rollout logic here
-        # This should:
-        # 1. Initialize the RL environment with the given parameters
-        # 2. Run the environment for num_steps or until num_trajectories collected
-        # 3. Push collected trajectories to the trajectory queue
-        # 4. Return actual counts of steps and trajectories
+        # Create local RNG instance for coroutine safety
+        rng = random.Random(request.seed) if request.seed is not None else random.Random()
+        if request.seed is not None:
+            logger.info(f"Random seed set to: {request.seed}")
+        else:
+            logger.info("No seed provided - using non-deterministic randomness")
         
-        # Placeholder implementation - replace with actual logic
-        actual_steps = request.num_steps if request.num_steps else 50  # Default fallback
-        actual_trajectories = request.num_trajectories if request.num_trajectories else 5  # Default fallback
-        
-        # If num_steps was provided, we might collect fewer trajectories
-        # If num_trajectories was provided, we might run fewer steps
-        if request.num_steps:
-            # Simulate collecting some trajectories during the steps
-            actual_trajectories = min(actual_steps // 10, 10)  # Rough estimation
-        elif request.num_trajectories:
-            # Simulate running some steps to collect trajectories
-            actual_steps = actual_trajectories * 15  # Rough estimation
-        
-        logger.info(f"Weapon rollout completed: {actual_steps} steps, {actual_trajectories} trajectories")
-        
-        return WeaponRolloutResponse(
-            num_steps=actual_steps,
-            num_trajectories=actual_trajectories
+        # 1. Parse the initial formula definition
+        initial_formula = parse_formula_definition(
+            request.initial_definition, 
+            request.num_vars, 
+            FormulaType.Conjunctive  # Assume CNF for now
         )
         
+        logger.info(f"Parsed initial formula with {initial_formula.num_gates} gates")
+        
+        # 2. Initialize the RL environment (FormulaGame)
+        game = FormulaGame(
+            initial_formula, 
+            width=request.width,
+            size=(2**request.num_vars),  # Default size limit
+            penalty=-1.0
+        )
+        
+        # 3. Run the environment simulation
+        actual_trajectories = 0
+        trajectories_collected = []
+        
+        # Determine stopping condition and trajectory length
+        steps_per_trajectory = request.steps_per_trajectory if request.steps_per_trajectory else 50  # Default steps per trajectory
+        max_trajectories = request.num_trajectories if request.num_trajectories else 1000  # Default max trajectories
+        
+        while actual_trajectories < max_trajectories:
+            current_trajectory = []
+            
+            # Reset game for new trajectory
+            if actual_trajectories > 0:
+                game.reset()
+            
+            # Run exactly steps_per_trajectory steps for this trajectory
+            for i in range(steps_per_trajectory):
+                # Generate random action (token) using local RNG for coroutine safety
+                token = generate_random_token(request.num_vars, request.width, rng)
+                
+                # Take step in environment
+                reward = game.step(token)
+                
+                # Record step
+                step_data = {
+                    "order": i,
+                    "token_type": token.type,
+                    "token_literals": int(token.literals),  # Convert to integer representation
+                    "reward": reward,
+                    "avgQ": game.cur_avgQ  # Current average query complexity
+                }
+                current_trajectory.append(step_data)
+            
+            # Complete trajectory (all trajectories now have same length)
+            trajectories_collected.append(current_trajectory)
+            actual_trajectories += 1
+            logger.info(f"Completed trajectory {actual_trajectories} with {len(current_trajectory)} steps")
+        
     except Exception as e:
-        logger.error(f"Error during weapon rollout: {str(e)}")
+        logger.error(f"Error during weapon rollout: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Weapon rollout failed: {str(e)}"
         )
+        
+    logger.info(f"Collected {len(trajectories_collected)} trajectories")
+    
+    # Push trajectories to RabbitMQ queue using async batch push
+    try:
+        # Convert all trajectory data to pydantic models first
+        trajectory_messages = []
+        for trajectory_data in trajectories_collected:
+            steps = [
+                TrajectoryMessageStep(
+                    order=step["order"],
+                    token_type=step["token_type"],
+                    token_literals=step["token_literals"],
+                    reward=step["reward"],
+                    avgQ=step["avgQ"]
+                )
+                for step in trajectory_data
+            ]
+            
+            trajectory_msg = TrajectoryMessageMultipleSteps(
+                base_formula_id=request.initial_formula_id,
+                steps=steps
+            )
+            
+            queue_message = TrajectoryQueueMessage(
+                num_vars=request.num_vars,
+                width=request.width,
+                base_size=initial_formula.num_gates,
+                timestamp=datetime.now(),
+                trajectory=trajectory_msg
+            )
+            
+            trajectory_messages.append(queue_message)
+        
+        # Use async context manager for automatic connection handling
+        async with AsyncTrajectoryQueueAgent(host="localhost", port=5672) as queue_agent:
+            # Push all trajectories in batch for better performance
+            trajectories_pushed = await queue_agent.push_batch(trajectory_messages)
+        
+        logger.info(f"Successfully pushed {trajectories_pushed} trajectories to RabbitMQ queue")
+        
+    except Exception as queue_error:
+        logger.error(f"Error pushing trajectories to queue: {str(queue_error)}", exc_info=True)
+        # Don't fail the whole request if queue pushing fails - just log it
+        
+    return WeaponRolloutResponse(
+        total_steps=request.steps_per_trajectory * actual_trajectories,
+        num_trajectories=actual_trajectories
+    )
 
 if __name__ == "__main__":
     import uvicorn

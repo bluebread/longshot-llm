@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import asyncio
 import threading
 import queue
@@ -49,7 +50,6 @@ class TestTrajectoryQueueAgent:
             }
         }
             
-        
         msg = TrajectoryQueueMessage(**msg)
         que.push(msg)
         timer = threading.Timer(10, time_is_up)
@@ -117,12 +117,10 @@ class TestTrajectoryQueueAgent:
 class TestAsyncTrajectoryQueueAgent:
     """Test suite for asynchronous AsyncTrajectoryQueueAgent"""
     
-    @pytest.fixture(scope="function")
+    @pytest_asyncio.fixture(scope="function")
     async def async_que(self):
-        que = AsyncTrajectoryQueueAgent(host, port)
-        await que.connect()
-        yield que
-        await que.close()
+        async with AsyncTrajectoryQueueAgent(host, port) as que:
+            yield que
 
     @pytest.mark.asyncio
     async def test_async_pingpong(self, async_que: AsyncTrajectoryQueueAgent):

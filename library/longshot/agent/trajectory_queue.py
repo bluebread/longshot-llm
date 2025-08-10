@@ -69,7 +69,7 @@ class TrajectoryQueueAgent:
         :type trajectory: TrajectoryQueueMessage
         :raises ValueError: If the trajectory parameter is not an instance of TrajectoryQueueMessage
         """
-        message = json.dumps(trajectory.model_dump())  # Convert dict to JSON string
+        message = trajectory.model_dump_json()  # Convert to JSON string directly
         self.channel.basic_publish(
             exchange=self.exchange_name,
             routing_key=self.routing_key,
@@ -264,7 +264,7 @@ class AsyncTrajectoryQueueAgent:
         :param trajectory: The trajectory data to be queued
         :type trajectory: TrajectoryQueueMessage
         """
-        message_body = json.dumps(trajectory.model_dump())
+        message_body = trajectory.model_dump_json()
         message = Message(
             message_body.encode(),
             content_type='application/json',
@@ -276,12 +276,18 @@ class AsyncTrajectoryQueueAgent:
             routing_key=self.routing_key
         )
 
-    async def push_batch(self, trajectories: List[TrajectoryQueueMessage]) -> int:
+    async def push_batch(
+        self, 
+        trajectories: List[TrajectoryQueueMessage], 
+        batch_size: int = 50
+    ) -> int:
         """
         Pushes multiple trajectories to the RabbitMQ queue in batch for better performance.
         
         :param trajectories: List of trajectory data to be queued
         :type trajectories: List[TrajectoryQueueMessage]
+        :param batch_size: Number of trajectories to process in each batch (default: 50)
+        :type batch_size: int
         :return: Number of trajectories successfully pushed
         :rtype: int
         """
@@ -294,16 +300,15 @@ class AsyncTrajectoryQueueAgent:
         pushed_count = 0
         
         # Process trajectories in batches to avoid overwhelming the server
-        batch_size = 50
         for i in range(0, len(trajectories), batch_size):
             batch = trajectories[i:i + batch_size]
             
             # Create all messages for this batch
             messages = []
             for trajectory in batch:
-                message_body = json.dumps(trajectory.model_dump())
+                message_body = trajectory.model_dump_json()
                 message = Message(
-                    message_body.encode(),
+                    message_body.encode() if isinstance(message_body, str) else message_body,
                     content_type='application/json',
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT
                 )

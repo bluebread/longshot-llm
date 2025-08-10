@@ -16,6 +16,7 @@ from longshot.agent.trajectory_queue import AsyncTrajectoryQueueAgent
 from longshot.circuit import FormulaType
 from longshot.env import FormulaGame
 from longshot.utils import parse_formula_definition, generate_random_token
+from longshot.error import LongshotError
 
 trajque_host = 'rabbitmq-bread'
 trajque_port = 5672
@@ -58,36 +59,44 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     If a seed is provided, all random token generation will be deterministic and reproducible.
     Without a seed, the service uses non-deterministic randomness.
     """
+    logger.info(f"Weapon rollout requested: num_vars={request.num_vars}, width={request.width}")
+    logger.info(f"Initial definition: {request.initial_definition}")
+    
+    # Create local RNG instance for coroutine safety
+    if request.seed is not None:
+        rng = random.Random(request.seed)
+        logger.info(f"Random seed set to: {request.seed}")
+    else:
+        rng = random.Random()
+        logger.info("No seed provided - using non-deterministic randomness")
+    
+    # 1. Parse the initial formula definition
+    initial_formula = parse_formula_definition(
+        request.initial_definition, 
+        request.num_vars, 
+        FormulaType.Conjunctive  # Assume CNF for now
+    )
+    
+    logger.info(f"Parsed initial formula with {initial_formula.num_gates} gates")
+    
+    # 2. Initialize the RL environment (FormulaGame) - Validation errors return 422
     try:
-        logger.info(f"Weapon rollout requested: num_vars={request.num_vars}, width={request.width}")
-        logger.info(f"Initial definition: {request.initial_definition}")
-        
-        # Create local RNG instance for coroutine safety
-        if request.seed is not None:
-            rng = random.Random(request.seed)
-            logger.info(f"Random seed set to: {request.seed}")
-        else:
-            rng = random.Random()
-            logger.info("No seed provided - using non-deterministic randomness")
-        
-        # 1. Parse the initial formula definition
-        initial_formula = parse_formula_definition(
-            request.initial_definition, 
-            request.num_vars, 
-            FormulaType.Conjunctive  # Assume CNF for now
-        )
-        
-        logger.info(f"Parsed initial formula with {initial_formula.num_gates} gates")
-        
-        # 2. Initialize the RL environment (FormulaGame)
         game = FormulaGame(
             initial_formula, 
             width=request.width,
             size=request.size,
             penalty=-1.0
         )
-        
-        # 3. Run the environment simulation
+    except LongshotError as game_error:
+        logger.warning(f"Invalid game parameters: {str(game_error)}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid formula parameters: {str(game_error)}. "
+                   f"The initial_definition may not be compatible with the specified width ({request.width}) or size ({request.size}) constraints."
+        )
+    
+    # 3. Run the environment simulation - Server errors return 500
+    try:
         actual_trajectories = 0
         push_coroutines = []  # Collect coroutines to gather later
         
@@ -146,10 +155,10 @@ async def weapon_rollout(request: WeaponRolloutRequest):
             logger.info(f"Completed trajectory {actual_trajectories} with {len(current_trajectory)} steps")
         
     except Exception as e:
-        logger.error(f"Error during weapon rollout: {str(e)}", exc_info=True)
+        logger.error(f"Error during simulation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Weapon rollout failed: {str(e)}"
+            detail=f"Simulation failed: {str(e)}"
         )
         
     logger.info(f"Collected {len(push_coroutines)} trajectories for pushing")

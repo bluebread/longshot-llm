@@ -257,6 +257,27 @@ class TestClusterbombService:
         response = client.post("/weapon/rollout", json=invalid_types_request)
         assert response.status_code == 422
 
+    def test_invalid_formula_parameters(self, client: httpx.Client):
+        """Test API with invalid formula parameter combinations."""
+        
+        # Width mismatch: formula definition incompatible with width constraint
+        width_mismatch_request = {
+            "num_vars": 2,
+            "width": 1,  # Width too small for the formula definition
+            "size": 3,
+            "steps_per_trajectory": 5,
+            "num_trajectories": 1,
+            "initial_definition": [1, 2, 3],  # Results in width 2, but width=1 requested
+            "seed": 42
+        }
+        
+        response = client.post("/weapon/rollout", json=width_mismatch_request)
+        assert response.status_code == 422  # Unprocessable Entity
+        
+        response_data = response.json()
+        assert "Invalid formula parameters" in response_data["detail"]
+        assert "width" in response_data["detail"].lower()
+
     def test_trajectory_format_validation(self):
         """Test that trajectory format follows expected structure."""
         

@@ -868,4 +868,8 @@ Collects trajectories from the environment and pushes them to the trajectory que
     ```
 - Status Codes:
     - `200 OK`: Successfully collected trajectories and pushed to the queue.
-    - `422 Unprocessable Entity`: Missing required parameters or invalid values.
+    - `422 Unprocessable Entity`: Invalid request parameters. This includes:
+        - Missing required fields or invalid data types
+        - Formula parameter conflicts (e.g., `initial_definition` incompatible with specified `width` or `size` constraints)
+        - Formula definition that results in a width greater than the specified `width` parameter
+    - `500 Internal Server Error`: Unexpected server issues (e.g., queue connection failures).

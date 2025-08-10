@@ -840,6 +840,7 @@ Collects trajectories from the environment and pushes them to the trajectory que
     {
         "num_vars": 3,
         "width": 2,
+        "size": 10,
         "steps_per_trajectory": 100,
         "num_trajectories": 10,
         "initial_formula_id": "f123",
@@ -852,6 +853,7 @@ Collects trajectories from the environment and pushes them to the trajectory que
 - Request Field Descriptions:
     - `num_vars` (int): Number of variables in the formula.
     - `width` (int): Width of the formula.
+    - `size` (int): Size of the formula (number of nodes).
     - `steps_per_trajectory` (int): Number of steps to run in a single trajectory.
     - `num_trajectories` (int): Number of trajectories to collect.
     - `initial_formula_id` (string): ID of the initial formula to start with. If not provided, a random formula will be used.

@@ -60,10 +60,11 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         logger.info(f"Initial definition: {request.initial_definition}")
         
         # Create local RNG instance for coroutine safety
-        rng = random.Random(request.seed) if request.seed is not None else random.Random()
         if request.seed is not None:
+            rng = random.Random(request.seed)
             logger.info(f"Random seed set to: {request.seed}")
         else:
+            rng = random.Random()
             logger.info("No seed provided - using non-deterministic randomness")
         
         # 1. Parse the initial formula definition
@@ -92,8 +93,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         max_trajectories = request.num_trajectories
         
         # Create queue agent connection once for all pushes
-        queue_agent = AsyncTrajectoryQueueAgent(host="localhost", port=5672)
-        await queue_agent.connect()
+        queue_agent = await AsyncTrajectoryQueueAgent.create(host="localhost", port=5672)
         
         try:
             while actual_trajectories < max_trajectories:

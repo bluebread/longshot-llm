@@ -128,9 +128,54 @@ class AsyncTrajectoryQueueAgent:
     
     This async version is more efficient for bulk operations and integrates better
     with FastAPI async endpoints.
+    
+    Usage:
+    ------
+    
+    Basic usage with automatic connection:
+    
+        # Create and connect in one step
+        agent = await AsyncTrajectoryQueueAgent.create("localhost", port=5672)
+        
+        # Create with custom QoS prefetch count for high-throughput scenarios
+        agent = await AsyncTrajectoryQueueAgent.create("localhost", qos_prefetch_count=500)
+        
+        # Push a single trajectory
+        await agent.push(trajectory_message)
+        
+        # Push multiple trajectories efficiently
+        await agent.push_batch(trajectory_list)
+        
+        # Pop a trajectory (returns None if queue is empty)
+        trajectory = await agent.pop()
+        
+        # Clean up connection
+        await agent.close()
+    
+    Context manager usage (recommended):
+    
+        async with AsyncTrajectoryQueueAgent("localhost", port=5672) as agent:
+            await agent.push(trajectory_message)
+            # Connection automatically established and closed
+    
+    Consumer usage:
+    
+        agent = await AsyncTrajectoryQueueAgent.create("localhost")
+        
+        async def process_trajectory(data):
+            print(f"Received trajectory: {data}")
+        
+        await agent.start_consuming(process_trajectory)  # Blocks until stopped
+        await agent.close()
+    
+    Important Notes:
+    ---------------
+    - Always use the async factory method `create()` instead of direct instantiation
+    - Use context manager pattern when possible for automatic cleanup
+    - All methods assume an active connection and will fail if not connected
     """
 
-    def __init__(self, host: str, port: int = 5672):
+    def __init__(self, host: str, port: int = 5672, qos_prefetch_count: int = 100):
         """
         Initializes the AsyncTrajectoryQueueAgent with the specified RabbitMQ host and port.
         
@@ -145,9 +190,12 @@ class AsyncTrajectoryQueueAgent:
         :type host: str
         :param port: The RabbitMQ server port (default: 5672)
         :type port: int
+        :param qos_prefetch_count: Number of unacknowledged messages that can be processed simultaneously (default: 100)
+        :type qos_prefetch_count: int
         """
         self.host = host
         self.port = port
+        self.qos_prefetch_count = qos_prefetch_count
         self.queue_name = 'trajectory.queue'
         self.exchange_name = 'trajectory.exchange'
         self.routing_key = 'trajectory.routing'
@@ -172,22 +220,42 @@ class AsyncTrajectoryQueueAgent:
         # Create channel
         self.channel = await self.connection.channel()
         
-        # Declare exchange
-        self.exchange = await self.channel.declare_exchange(
-            self.exchange_name,
-            aio_pika.ExchangeType.DIRECT,
-            durable=True
+        # Declare exchange and queue concurrently (they're independent)
+        self.exchange, self.queue = await asyncio.gather(
+            self.channel.declare_exchange(
+                self.exchange_name,
+                aio_pika.ExchangeType.DIRECT,
+                durable=True
+            ),
+            self.channel.declare_queue(
+                self.queue_name,
+                durable=True,
+                auto_delete=False
+            )
         )
         
-        # Declare queue
-        self.queue = await self.channel.declare_queue(
-            self.queue_name,
-            durable=True,
-            auto_delete=False
-        )
-        
-        # Bind queue to exchange
+        # Bind queue to exchange (depends on both being created)
         await self.queue.bind(self.exchange, self.routing_key)
+
+    @classmethod
+    async def create(cls, host: str, port: int = 5672, qos_prefetch_count: int = 100):
+        """
+        Factory method that creates and connects an AsyncTrajectoryQueueAgent.
+        This aligns with the synchronous TrajectoryQueueAgent where connection
+        happens immediately during initialization.
+        
+        :param host: The RabbitMQ server host address
+        :type host: str
+        :param port: The RabbitMQ server port (default: 5672)
+        :type port: int
+        :param qos_prefetch_count: Number of unacknowledged messages that can be processed simultaneously (default: 100)
+        :type qos_prefetch_count: int
+        :return: Connected AsyncTrajectoryQueueAgent instance
+        :rtype: AsyncTrajectoryQueueAgent
+        """
+        instance = cls(host, port, qos_prefetch_count)
+        await instance.connect()
+        return instance
 
     async def push(self, trajectory: TrajectoryQueueMessage) -> None:
         """
@@ -196,9 +264,6 @@ class AsyncTrajectoryQueueAgent:
         :param trajectory: The trajectory data to be queued
         :type trajectory: TrajectoryQueueMessage
         """
-        if not self.connection or self.connection.is_closed:
-            await self.connect()
-            
         message_body = json.dumps(trajectory.model_dump())
         message = Message(
             message_body.encode(),
@@ -220,14 +285,11 @@ class AsyncTrajectoryQueueAgent:
         :return: Number of trajectories successfully pushed
         :rtype: int
         """
-        if not self.connection or self.connection.is_closed:
-            await self.connect()
-        
         if not trajectories:
             return 0
             
         # Use publisher confirms for reliability
-        await self.channel.set_qos(prefetch_count=100)
+        await self.channel.set_qos(prefetch_count=self.qos_prefetch_count)
         
         pushed_count = 0
         
@@ -266,9 +328,6 @@ class AsyncTrajectoryQueueAgent:
         :return: The popped trajectory data or None if queue is empty
         :rtype: TrajectoryQueueMessage | None
         """
-        if not self.connection or self.connection.is_closed:
-            await self.connect()
-            
         try:
             message = await self.queue.get(timeout=1.0)
             if message:
@@ -287,9 +346,6 @@ class AsyncTrajectoryQueueAgent:
         :param callback: Async function to be called with trajectory data
         :type callback: callable
         """
-        if not self.connection or self.connection.is_closed:
-            await self.connect()
-            
         async def process_message(message: aio_pika.abc.AbstractIncomingMessage):
             async with message.process():
                 data = json.loads(message.body.decode())

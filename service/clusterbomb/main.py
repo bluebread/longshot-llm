@@ -17,6 +17,9 @@ from longshot.circuit import FormulaType
 from longshot.env import FormulaGame
 from longshot.utils import parse_formula_definition, generate_random_token
 
+trajque_host = 'rabbitmq-bread'
+trajque_port = 5672
+
 logging.basicConfig(
     level=logging.INFO, 
     filename="clusterbomb.log", 
@@ -93,54 +96,54 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         max_trajectories = request.num_trajectories
         
         # Create queue agent connection once for all pushes
-        queue_agent = await AsyncTrajectoryQueueAgent.create(host="localhost", port=5672)
+        queue_agent = await AsyncTrajectoryQueueAgent.create(
+            host=trajque_host, 
+            port=trajque_port,
+        )
         
-        try:
-            while actual_trajectories < max_trajectories:
-                current_trajectory = []
+        while actual_trajectories < max_trajectories:
+            current_trajectory = []
+            
+            # Reset game for new trajectory
+            if actual_trajectories > 0:
+                game.reset()
+            
+            # Run exactly steps_per_trajectory steps for this trajectory
+            for i in range(steps_per_trajectory):
+                # Generate random action (token) using local RNG for coroutine safety
+                token = generate_random_token(request.num_vars, request.width, rng)
                 
-                # Reset game for new trajectory
-                if actual_trajectories > 0:
-                    game.reset()
+                # Take step in environment
+                reward = game.step(token)
                 
-                # Run exactly steps_per_trajectory steps for this trajectory
-                for i in range(steps_per_trajectory):
-                    # Generate random action (token) using local RNG for coroutine safety
-                    token = generate_random_token(request.num_vars, request.width, rng)
-                    
-                    # Take step in environment
-                    reward = game.step(token)
-                    
-                    # Record step
-                    step_data = {
-                        "order": i,
-                        "token_type": token.type,
-                        "token_literals": int(token.literals),  # Convert to integer representation
-                        "reward": reward,
-                        "avgQ": game.cur_avgQ  # Current average query complexity
-                    }
-                    current_trajectory.append(step_data)
-                
-                # Push trajectory immediately after completing the round
-                queue_message = TrajectoryQueueMessage(
-                    num_vars=request.num_vars,
-                    width=request.width,
-                    base_size=initial_formula.num_gates,
-                    timestamp=datetime.now(),
-                    trajectory=TrajectoryMessageMultipleSteps(
-                        base_formula_id=request.initial_formula_id,
-                        steps=current_trajectory
-                    )
+                # Record step
+                step_data = {
+                    "order": i,
+                    "token_type": token.type,
+                    "token_literals": int(token.literals),  # Convert to integer representation
+                    "reward": reward,
+                    "avgQ": game.cur_avgQ  # Current average query complexity
+                }
+                current_trajectory.append(step_data)
+            
+            # Push trajectory immediately after completing the round
+            queue_message = TrajectoryQueueMessage(
+                num_vars=request.num_vars,
+                width=request.width,
+                base_size=initial_formula.num_gates,
+                timestamp=datetime.now(),
+                trajectory=TrajectoryMessageMultipleSteps(
+                    base_formula_id=request.initial_formula_id,
+                    steps=current_trajectory
                 )
-                
-                # Create coroutine for pushing this trajectory and collect it
-                push_coroutine = queue_agent.push(queue_message)
-                push_coroutines.append(push_coroutine)
-                
-                actual_trajectories += 1
-                logger.info(f"Completed trajectory {actual_trajectories} with {len(current_trajectory)} steps")
-        finally:
-            await queue_agent.close()
+            )
+            
+            # Create coroutine for pushing this trajectory and collect it
+            push_coroutine = queue_agent.push(queue_message)
+            push_coroutines.append(push_coroutine)
+            
+            actual_trajectories += 1
+            logger.info(f"Completed trajectory {actual_trajectories} with {len(current_trajectory)} steps")
         
     except Exception as e:
         logger.error(f"Error during weapon rollout: {str(e)}", exc_info=True)
@@ -162,6 +165,9 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     except Exception as queue_error:
         logger.error(f"Error pushing trajectories to queue: {str(queue_error)}", exc_info=True)
         # Don't fail the whole request if queue pushing fails - just log it
+    finally:
+        # Close the queue agent connection after all pushes are complete
+        await queue_agent.close()
         
     return WeaponRolloutResponse(
         total_steps=request.steps_per_trajectory * actual_trajectories,

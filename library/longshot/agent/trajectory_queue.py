@@ -169,7 +169,7 @@ class AsyncTrajectoryQueueAgent:
         await agent.close()
     
     Important Notes:
-    ---------------
+    ----------------
     - Always use the async factory method `create()` instead of direct instantiation
     - Use context manager pattern when possible for automatic cleanup
     - All methods assume an active connection and will fail if not connected

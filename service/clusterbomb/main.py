@@ -6,20 +6,19 @@ This service provides weapon rollout functionality for the longshot system.
 
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
-import asyncio
 import logging
 import random
 from datetime import datetime
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
 from longshot.models.trajectory import TrajectoryQueueMessage, TrajectoryMessageMultipleSteps
-from longshot.agent.trajectory_queue import AsyncTrajectoryQueueAgent
+from longshot.agent import TrajectoryProcessor, WarehouseAgent
 from longshot.circuit import FormulaType
 from longshot.env import FormulaGame
 from longshot.utils import parse_formula_definition, generate_random_token
 from longshot.error import LongshotError
 
-trajque_host = 'rabbitmq-bread'
-trajque_port = 5672
+warehouse_host = 'warehouse-bread'
+warehouse_port = 8010
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -52,7 +51,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     """
     Execute a weapon rollout operation.
     
-    Collects trajectories from the environment and pushes them to the trajectory queue.
+    Collects trajectories from the environment and processes them directly using TrajectoryProcessor.
     The request specifies the number of steps per trajectory, the initial formula's definition,
     and optionally a random seed for reproducible results.
     
@@ -95,20 +94,18 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                    f"The initial_definition may not be compatible with the specified width ({request.width}) or size ({request.size}) constraints."
         )
     
-    # 3. Run the environment simulation - Server errors return 500
+    # 3. Initialize warehouse agent and trajectory processor
+    warehouse = WarehouseAgent(warehouse_host, warehouse_port)
+    processor = TrajectoryProcessor(warehouse)
+    
+    # 4. Run the environment simulation - Server errors return 500
     try:
         actual_trajectories = 0
-        push_coroutines = []  # Collect coroutines to gather later
+        trajectories_to_process = []  # Collect trajectory messages for processing
         
         # Determine stopping condition and trajectory length
         steps_per_trajectory = request.steps_per_trajectory 
         max_trajectories = request.num_trajectories
-        
-        # Create queue agent connection once for all pushes
-        queue_agent = await AsyncTrajectoryQueueAgent.create(
-            host=trajque_host, 
-            port=trajque_port,
-        )
         
         while actual_trajectories < max_trajectories:
             current_trajectory = []
@@ -135,8 +132,8 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 }
                 current_trajectory.append(step_data)
             
-            # Push trajectory immediately after completing the round
-            queue_message = TrajectoryQueueMessage(
+            # Create trajectory message for processing
+            trajectory_message = TrajectoryQueueMessage(
                 num_vars=request.num_vars,
                 width=request.width,
                 base_size=initial_formula.num_gates,
@@ -147,9 +144,8 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 )
             )
             
-            # Create coroutine for pushing this trajectory and collect it
-            push_coroutine = queue_agent.push(queue_message)
-            push_coroutines.append(push_coroutine)
+            # Collect trajectory for processing
+            trajectories_to_process.append(trajectory_message)
             
             actual_trajectories += 1
             logger.info(f"Completed trajectory {actual_trajectories} with {len(current_trajectory)} steps")
@@ -161,22 +157,21 @@ async def weapon_rollout(request: WeaponRolloutRequest):
             detail=f"Simulation failed: {str(e)}"
         )
         
-    logger.info(f"Collected {len(push_coroutines)} trajectories for pushing")
+    logger.info(f"Collected {len(trajectories_to_process)} trajectories for processing")
     
-    # Gather all push coroutines after all rounds are complete
+    # Process all trajectories using TrajectoryProcessor
+    trajectories_processed = 0
     try:
-        # Execute all trajectory pushes concurrently
-        await asyncio.gather(*push_coroutines)
-        trajectories_pushed = len(push_coroutines)
+        for trajectory_msg in trajectories_to_process:
+            processor.process_trajectory(trajectory_msg)
+            trajectories_processed += 1
+            logger.info(f"Processed trajectory {trajectories_processed}/{len(trajectories_to_process)}")
         
-        logger.info(f"Successfully pushed {trajectories_pushed} trajectories to RabbitMQ queue")
+        logger.info(f"Successfully processed {trajectories_processed} trajectories")
         
-    except Exception as queue_error:
-        logger.error(f"Error pushing trajectories to queue: {str(queue_error)}", exc_info=True)
-        # Don't fail the whole request if queue pushing fails - just log it
-    finally:
-        # Close the queue agent connection after all pushes are complete
-        await queue_agent.close()
+    except Exception as process_error:
+        logger.error(f"Error processing trajectories: {str(process_error)}", exc_info=True)
+        # Don't fail the whole request if processing fails - just log it
         
     return WeaponRolloutResponse(
         total_steps=request.steps_per_trajectory * actual_trajectories,

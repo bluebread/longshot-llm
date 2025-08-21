@@ -100,15 +100,16 @@ class ArmRanker:
         hypernodes = self.warehouse.download_hypernodes(**params)
         
         # Process the downloaded data
-        nmap = {node.pop("formula_id"): node for node in nodes}
+        nmap = {node.pop("node_id"): node for node in nodes}
         hmap = {hn["hnid"]: hn["nodes"] for hn in hypernodes}
         hset = set(reduce(lambda x, y: x + y, hmap.values(), []))
         
         # Create arm mapping for hypernodes
+        # Note: visited_counter doesn't exist in V2, so we use in_degree + out_degree as a proxy
         armmap = {
             hnid: Arm(**{
                 "avgQ": nmap[nodes[0]]['avgQ'],
-                "visited_counter": sum([nmap[nid]['visited_counter'] for nid in nodes]),
+                "visited_counter": sum([nmap[nid]['in_degree'] + nmap[nid]['out_degree'] + 1 for nid in nodes]),
                 "in_degree": sum([nmap[nid]['in_degree'] for nid in nodes]),
                 "out_degree": sum([nmap[nid]['out_degree'] for nid in nodes]),
             })
@@ -116,8 +117,12 @@ class ArmRanker:
         }
         
         # Add individual nodes that are not part of hypernodes
+        # Use in_degree + out_degree + 1 as proxy for visited_counter
         armmap.update({
-            nid: Arm(**node) for nid, node in nmap.items() if nid not in hset
+            nid: Arm(**{
+                **node,
+                "visited_counter": node['in_degree'] + node['out_degree'] + 1
+            }) for nid, node in nmap.items() if nid not in hset
         })
         
         # Calculate total visited count and rank arms
@@ -147,7 +152,7 @@ class ArmRanker:
         selected_arms = []
         for fid, definition in zip(selected_fids, definitions):
             selected_arms.append({
-                "formula_id": fid,
+                "node_id": fid,
                 "definition": definition,
             })
 

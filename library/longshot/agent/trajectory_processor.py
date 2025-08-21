@@ -199,13 +199,13 @@ class TrajectoryProcessor:
             
             # In turn add or delete gates in the formula graph based on the trajectory steps
             for step in msg.trajectory.steps[s:t]:
-                if step.token_type == 'ADD':
+                if step.token_type == 'ADD' or step.token_type == 0:
                     self.add_gate_to_graph(fg, step.token_literals)
                     cur_size += 1
-                elif step.token_type == 'DEL':
+                elif step.token_type == 'DEL' or step.token_type == 1:
                     self.del_gate_from_graph(fg, step.token_literals)
                     cur_size -= 1
-                elif step.token_type == 'EOS':
+                elif step.token_type == 'EOS' or step.token_type == 2:
                     pass
                 else:
                     raise ValueError(f"Unknown token type: {step.token_type}")
@@ -225,49 +225,45 @@ class TrajectoryProcessor:
             
             # If not a duplicate, store the trajectory and formula
             traj_id = self.warehouse.post_trajectory(
-                base_formula_id=prev_formula_id,
                 steps=[
                     {
-                        "token_type": 0 if step.token_type == 'ADD' else 1,
+                        "token_type": 0 if (step.token_type == 'ADD' or step.token_type == 0) else 1,
                         "token_literals": step.token_literals,
-                        "reward": step.reward,
+                        "cur_avgQ": step.avgQ,
                     }
                     for step in msg.trajectory.steps[s:t]
                 ],
             )
             
             formula_data = {
-                "base_formula_id": prev_formula_id,
-                "trajectory_id": traj_id,
                 "avgQ": msg.trajectory.steps[t-1].avgQ,
                 "wl_hash": wl_hash,
                 "num_vars": msg.num_vars,
                 "width": msg.width,
                 "size": cur_size,
-                "node_id": "" # Unused in this context, but required by the API
             }
             
-            # Store the formula ID in the isomorphism hash table
-            formula_data["id"] = self.warehouse.post_formula_info(**formula_data)
-            
-            # Post the likely isomorphic formula to the warehouse
-            self.warehouse.post_likely_isomorphic(
-                wl_hash=wl_hash,
-                formula_id=formula_data["id"],
-            )
-            
-            # Post a new evolution graph node to the warehouse
-            self.warehouse.post_evolution_graph_node(
-                formula_id=formula_data["id"],
+            # Post a new evolution graph node to the warehouse (V2 integrated approach)
+            formula_data["node_id"] = self.warehouse.post_evolution_graph_node(
+                node_id=formula_data.get("id", f"node_{wl_hash[:8]}_{t}"),  # Generate unique ID
                 avgQ=formula_data["avgQ"],
                 num_vars=formula_data["num_vars"],
                 width=formula_data["width"],
                 size=formula_data["size"],
+                wl_hash=wl_hash,
+                traj_id=traj_id,
+                traj_slice=t-1,
+            )
+            
+            # Post the likely isomorphic formula to the warehouse
+            self.warehouse.post_likely_isomorphic(
+                wl_hash=wl_hash,
+                formula_id=formula_data["node_id"],
             )
             
             # Prepare for the next iteration
-            evo_path.append(formula_data["id"])
-            prev_formula_id = formula_data["id"]
+            evo_path.append(formula_data["node_id"])
+            prev_formula_id = formula_data["node_id"]
 
         # Save the evolution path to the warehouse
         evo_path = [fid for fid in evo_path if fid]

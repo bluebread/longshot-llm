@@ -20,49 +20,7 @@ class WarehouseAgent:
         self._client = httpx.Client(base_url=base_url)
         self._config = config
         
-    def get_formula_info(self, formula_id: str) -> Dict[str, Any]:
-        """
-        Retrieves information about a formula by its ID.
-        
-        :param formula_id: The ID of the formula to retrieve information for.
-        :return: A dictionary containing the formula information.
-        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse.
-        """
-        response = self._client.get("/formula/info", params={"id": formula_id})
-        response.raise_for_status()
-        return response.json()
-
-    def post_formula_info(self, **body: Any) -> str:
-        """
-        Creates or updates formula information in the warehouse.
-        
-        :param body: The formula information to create or update.
-        :return: The ID of the created or updated formula.
-        :raises httpx.HTTPException: If the request body is not in the correct format or missing required fields.
-        """
-        response = self._client.post("/formula/info", json=body)
-        response.raise_for_status()
-        return response.json()["id"]
-
-    def put_formula_info(self, **body: Any) -> None:
-        """
-        Updates formula information in the warehouse.
-        
-        :param body: The formula information to update.
-        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse or if the request body is not in the correct format.
-        """
-        response = self._client.put("/formula/info", json=body)
-        response.raise_for_status()
-
-    def delete_formula_info(self, formula_id: str) -> None:
-        """
-        Deletes a formula from the warehouse by its ID.
-        
-        :param formula_id: The ID of the formula to delete.
-        :raises httpx.HTTPException: If the formula with the given ID does not exist in the warehouse.
-        """
-        response = self._client.delete("/formula/info", params={"id": formula_id})
-        response.raise_for_status()
+    # Formula info endpoints removed in V2 - formulas are now integrated into Evolution Graph nodes
 
     def get_likely_isomorphic(self, wl_hash: str) -> list[str]:
         """
@@ -84,7 +42,7 @@ class WarehouseAgent:
         :param formula_id: The ID of the formula to add to the list of likely isomorphic formulas.
         :raises httpx.HTTPException: If the formula with the given hash does not exist in the warehouse or if the request body is not in the correct format.
         """
-        body = {"wl_hash": wl_hash, "formula_id": formula_id}
+        body = {"wl_hash": wl_hash, "node_id": formula_id}
         response = self._client.post("/formula/likely_isomorphic", json=body)
         response.raise_for_status()
 
@@ -106,7 +64,7 @@ class WarehouseAgent:
         :return: A dictionary containing the trajectory information.
         :raises httpx.HTTPException: If the trajectory with the given ID does not exist in the warehouse.
         """
-        response = self._client.get("/trajectory", params={"id": traj_id})
+        response = self._client.get("/trajectory", params={"traj_id": traj_id})
         response.raise_for_status()
         return response.json()
 
@@ -120,7 +78,7 @@ class WarehouseAgent:
         """
         response = self._client.post("/trajectory", json=body)
         response.raise_for_status()
-        return response.json()["id"]
+        return response.json()["traj_id"]
 
     def put_trajectory(self, **body: Any) -> None:
         """
@@ -139,7 +97,7 @@ class WarehouseAgent:
         :param traj_id: The ID of the trajectory to delete.
         :raises httpx.HTTPException: If the trajectory with the given ID does not exist in the warehouse.
         """
-        response = self._client.delete("/trajectory", params={"id": traj_id})
+        response = self._client.delete("/trajectory", params={"traj_id": traj_id})
         response.raise_for_status()
     
     def get_evolution_graph_node(self, formula_id: str) -> Dict[str, Any]:
@@ -149,7 +107,7 @@ class WarehouseAgent:
         :param formula_id: The ID of the formula to retrieve the evolution graph node for.
         :return: A dictionary containing the evolution graph node information.
         """
-        response = self._client.get("/evolution_graph/node", params={"id": formula_id})
+        response = self._client.get("/evolution_graph/node", params={"node_id": formula_id})
         response.raise_for_status()
         return response.json()
     
@@ -163,7 +121,7 @@ class WarehouseAgent:
         """
         response = self._client.post("/evolution_graph/node", json=body)
         response.raise_for_status()
-        return response.json()["formula_id"]
+        return response.json()["node_id"]
     
     def put_evolution_graph_node(self, **body: Any) -> None:
         """
@@ -182,7 +140,7 @@ class WarehouseAgent:
         :param formula_id: The ID of the evolution graph node to delete.
         :raises httpx.HTTPException: If the evolution graph node with the given ID does not exist in the warehouse.
         """
-        response = self._client.delete("/evolution_graph/node", params={"formula_id": formula_id})
+        response = self._client.delete("/evolution_graph/node", params={"node_id": formula_id})
         response.raise_for_status()
     
     def get_formula_definition(self, formula_id: str | None) -> list[int]:
@@ -196,7 +154,7 @@ class WarehouseAgent:
         if formula_id is None:
             return []
         
-        response = self._client.get("/formula/definition", params={"id": formula_id})
+        response = self._client.get("/formula/definition", params={"node_id": formula_id})
         response.raise_for_status()
         return response.json()['definition']
 
@@ -240,7 +198,7 @@ class WarehouseAgent:
         params = {"num_vars": num_vars, "width": width}
         if size_constraint is not None:
             params["size_constraint"] = size_constraint
-        response = self._client.post("/evolution_graph/download_hypernodes", params=params)
+        response = self._client.get("/evolution_graph/download_hypernodes", params=params)
         response.raise_for_status()
         return response.json()["hypernodes"]
 
@@ -294,62 +252,7 @@ class AsyncWarehouseAgent:
         self._client = httpx.AsyncClient(base_url=base_url, **config)
         self._config = config
 
-    async def get_formula_info(self, formula_id: str) -> Dict[str, Any]:
-        """Retrieves information for a specific formula.
-        
-        Args:
-            formula_id (str): The unique identifier of the formula.
-            
-        Returns:
-            Dict[str, Any]: A dictionary containing the formula's information.
-            
-        Raises:
-            httpx.HTTPStatusError: If the API returns a non-2xx status code.
-        """
-        response = await self._client.get("/formula/info", params={"id": formula_id})
-        response.raise_for_status()
-        return response.json()
-
-    async def post_formula_info(self, **body: Any) -> str:
-        """Creates a new formula information entry.
-        
-        Args:
-            **body (Any): Keyword arguments representing the formula's data.
-            
-        Returns:
-            str: The ID of the newly created formula.
-            
-        Raises:
-            httpx.HTTPStatusError: If the API returns a non-2xx status code.
-        """
-        response = await self._client.post("/formula/info", json=body)
-        response.raise_for_status()
-        return response.json()["id"]
-
-    async def put_formula_info(self, **body: Any) -> None:
-        """Updates an existing formula information entry.
-        The body must contain the 'id' of the formula to update.
-        
-        Args:
-            **body (Any): Keyword arguments for the update, including the 'id'.
-            
-        Raises:
-            httpx.HTTPStatusError: If the API returns a non-2xx status code.
-        """
-        response = await self._client.put("/formula/info", json=body)
-        response.raise_for_status()
-
-    async def delete_formula_info(self, formula_id: str) -> None:
-        """Deletes a formula information entry.
-        
-        Args:
-            formula_id (str): The ID of the formula to delete.
-            
-        Raises:
-            httpx.HTTPStatusError: If the API returns a non-2xx status code.
-        """
-        response = await self._client.delete("/formula/info", params={"id": formula_id})
-        response.raise_for_status()
+    # Formula info endpoints removed in V2 - formulas are now integrated into Evolution Graph nodes
 
     async def get_likely_isomorphic(self, wl_hash: str) -> list[str]:
         """Gets a list of formula IDs likely isomorphic to a given WL hash.
@@ -379,7 +282,7 @@ class AsyncWarehouseAgent:
         Raises:
             httpx.HTTPStatusError: If the API returns a non-2xx status code.
         """
-        body = {"wl_hash": wl_hash, "formula_id": formula_id}
+        body = {"wl_hash": wl_hash, "node_id": formula_id}
         response = await self._client.post("/formula/likely_isomorphic", json=body)
         response.raise_for_status()
 
@@ -407,7 +310,7 @@ class AsyncWarehouseAgent:
         Raises:
             httpx.HTTPStatusError: If the API returns a non-2xx status code.
         """
-        response = await self._client.get("/trajectory", params={"id": traj_id})
+        response = await self._client.get("/trajectory", params={"traj_id": traj_id})
         response.raise_for_status()
         return response.json()
 
@@ -425,7 +328,7 @@ class AsyncWarehouseAgent:
         """
         response = await self._client.post("/trajectory", json=body)
         response.raise_for_status()
-        return response.json()["id"]
+        return response.json()["traj_id"]
 
     async def put_trajectory(self, **body: Any) -> None:
         """Updates an existing trajectory.
@@ -449,7 +352,7 @@ class AsyncWarehouseAgent:
         Raises:
             httpx.HTTPStatusError: If the API returns a non-2xx status code.
         """
-        response = await self._client.delete("/trajectory", params={"id": traj_id})
+        response = await self._client.delete("/trajectory", params={"traj_id": traj_id})
         response.raise_for_status()
 
     async def get_evolution_graph_node(self, formula_id: str) -> Dict[str, Any]:
@@ -464,7 +367,7 @@ class AsyncWarehouseAgent:
         Raises:
             httpx.HTTPStatusError: If the API returns a non-2xx status code.
         """
-        response = await self._client.get("/evolution_graph/node", params={"id": formula_id})
+        response = await self._client.get("/evolution_graph/node", params={"node_id": formula_id})
         response.raise_for_status()
         return response.json()
 
@@ -482,7 +385,7 @@ class AsyncWarehouseAgent:
         """
         response = await self._client.post("/evolution_graph/node", json=body)
         response.raise_for_status()
-        return response.json()["formula_id"]
+        return response.json()["node_id"]
 
     async def put_evolution_graph_node(self, **body: Any) -> None:
         """
@@ -507,7 +410,7 @@ class AsyncWarehouseAgent:
         Raises:
             httpx.HTTPStatusError: If the API returns a non-2xx status code.
         """
-        response = await self._client.delete("/evolution_graph/node", params={"formula_id": formula_id})
+        response = await self._client.delete("/evolution_graph/node", params={"node_id": formula_id})
         response.raise_for_status()
 
     async def get_formula_definition(self, formula_id: str | None) -> list[int]:
@@ -525,7 +428,7 @@ class AsyncWarehouseAgent:
         if formula_id is None:
             return []
         
-        response = await self._client.get("/formula/definition", params={"id": formula_id})
+        response = await self._client.get("/formula/definition", params={"node_id": formula_id})
         response.raise_for_status()
         return response.json()['definition']
 

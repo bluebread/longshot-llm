@@ -73,7 +73,7 @@ class TestClusterbombService:
             "steps_per_trajectory": 5,
             "num_trajectories": 2,
             "initial_definition": [1, 2, 3, 4, 5],  # Simple test formula
-            "initial_formula_id": "test_formula_sync",
+            "initial_node_id": "test_formula_sync",
             "seed": 42  # Deterministic for testing
         }
         
@@ -119,7 +119,7 @@ class TestClusterbombService:
             assert trajectory.num_vars == request_data["num_vars"]
             assert trajectory.width == request_data["width"]
             assert trajectory.base_size == request_data["size"]
-            assert trajectory.trajectory.base_formula_id == request_data["initial_formula_id"]
+            assert trajectory.trajectory.base_formula_id == request_data["initial_node_id"]
             
             # Validate timestamp is reasonable (within last minute)
             assert isinstance(trajectory.timestamp, datetime)
@@ -150,7 +150,7 @@ class TestClusterbombService:
             "steps_per_trajectory": 3,
             "num_trajectories": 1,
             "initial_definition": [1, 2, 3],
-            "initial_formula_id": "test_formula_async"
+            "initial_node_id": "test_formula_async"
             # No seed - should use non-deterministic randomness
         }
         
@@ -177,7 +177,7 @@ class TestClusterbombService:
         assert trajectory.num_vars == request_data["num_vars"]
         assert trajectory.width == request_data["width"]
         assert trajectory.base_size == request_data["size"]
-        assert trajectory.trajectory.base_formula_id == request_data["initial_formula_id"]
+        assert trajectory.trajectory.base_formula_id == request_data["initial_node_id"]
         assert len(trajectory.trajectory.steps) == request_data["steps_per_trajectory"]
         
         # Validate steps are properly ordered and formatted
@@ -197,7 +197,7 @@ class TestClusterbombService:
             "steps_per_trajectory": 20,
             "num_trajectories": 5,
             "initial_definition": [1, 2, 3, 4, 5, 6, 7, 8],
-            "initial_formula_id": "test_formula_large",
+            "initial_node_id": "test_formula_large",
             "seed": 123
         }
         
@@ -229,7 +229,7 @@ class TestClusterbombService:
         assert first_trajectory.num_vars == 4
         assert first_trajectory.width == 3
         assert first_trajectory.base_size == 8
-        assert first_trajectory.trajectory.base_formula_id == request_data["initial_formula_id"]
+        assert first_trajectory.trajectory.base_formula_id == request_data["initial_node_id"]
         assert len(first_trajectory.trajectory.steps) == 20
 
     def test_invalid_request_data(self, client: httpx.Client):

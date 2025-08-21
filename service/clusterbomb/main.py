@@ -125,13 +125,13 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 # Take step in environment
                 reward = game.step(token)
                 
-                # Record step
+                # Record step (matching TrajectoryMessageStep model)
                 step_data = {
                     "order": i,
                     "token_type": token.type,
                     "token_literals": int(token.literals),  # Convert to integer representation
                     "reward": reward,
-                    "avgQ": game.cur_avgQ  # Current average query complexity
+                    "avgQ": game.cur_avgQ  # Average Q-value for this step
                 }
                 current_trajectory.append(step_data)
             
@@ -142,7 +142,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 base_size=initial_formula.num_gates,
                 timestamp=datetime.now(),
                 trajectory=TrajectoryMessageMultipleSteps(
-                    base_formula_id=request.initial_formula_id,
+                    base_formula_id=request.initial_node_id,  # V2 field name
                     steps=current_trajectory
                 )
             )

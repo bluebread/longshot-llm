@@ -290,3 +290,4 @@ node_modules/
 !rl/env
 doc/*/_generated
 !library/longshot/env/
+.claude

@@ -53,6 +53,7 @@ class TestClusterbombService:
     
     def test_weapon_rollout_with_warehouse_validation(self, client: httpx.Client, warehouse_agent: WarehouseAgent):
         """Test weapon rollout functionality and validate data in warehouse."""
+        # TODO: don't forget to clean the database
         request_data = {
             "num_vars": 3,
             "width": 2, 

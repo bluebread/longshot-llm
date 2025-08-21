@@ -476,41 +476,6 @@ async def download_evolution_graph_hypernodes(
 
     return { "hypernodes": [record.data() for record in records] }
 
-# @app.get("/evolution_graph/subgraph", response_model=SubgraphResponse)
-# async def get_evolution_subgraph(
-#     num_vars: int = Query(..., description="Number of variables"),
-#     width: int = Query(..., description="Width of the formula")
-# ):
-#     """Retrieve the evolution subgraph of active nodes."""
-#     # Stub implementation
-#     return SubgraphResponse(
-#         nodes=[],
-#         edges=[]
-#     )
-
-
-# @app.post("/formula/add", response_model=FormulaResponse, status_code=201)
-# async def add_formula(formula: AddFormulaRequest):
-#     """Add a new formula to the warehouse, updating the isomorphism hash table and evolution graph."""
-#     # Stub implementation
-#     new_id = str(uuid.uuid4())
-#     return FormulaResponse(id=new_id)
-
-
-# @app.post("/evolution_graph/subgraph", response_model=SuccessResponse, status_code=201)
-# async def add_subgraph(subgraph: SubgraphRequest):
-#     """Add a new subgraph to the evolution graph of a formula."""
-#     # Stub implementation
-#     return SuccessResponse(message="Subgraph added successfully")
-
-
-# @app.post("/evolution_graph/contract_edge", response_model=SuccessResponse)
-# async def contract_edge(request: ContractEdgeRequest):
-#     """Contract an edge in the evolution graph; one node will be deactivated."""
-#     # Stub implementation
-#     return SuccessResponse(message="Edge contracted successfully")
-
-
 # Health check endpoint
 @app.get("/health")
 async def health_check():

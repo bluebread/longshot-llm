@@ -205,7 +205,7 @@ def retrieve_evolution_graph(warehouse: WarehouseAgent) -> nx.DiGraph:
     # Add nodes
     for node in nodes:
         G.add_node(
-            node['id'],
+            node['node_id'],
             avgQ=node.get('avgQ', 0),
             size=node.get('size', 0),
             width=node.get('width', 0),

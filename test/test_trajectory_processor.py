@@ -3,10 +3,10 @@ import httpx
 import functools
 import pprint
 from datetime import datetime
-from networkx import weisfeiler_lehman_graph_hash
 
 from longshot.agent import TrajectoryProcessor, WarehouseAgent
 from longshot.models import TrajectoryQueueMessage
+from longshot.env import FormulaGraph
 
 host = "localhost"
 port = 8000
@@ -89,10 +89,10 @@ class TestTrajectoryProcessor:
         ]
         fdef1 = [self.encode_literals(p, n) for p, n in fdef1]
         fdef2 = [self.encode_literals(p, n) for p, n in fdef2]
-        fg1 = TrajectoryProcessor.definition_to_graph(fdef1)
-        fg2 = TrajectoryProcessor.definition_to_graph(fdef2)
-        wl1 = weisfeiler_lehman_graph_hash(fg1, iterations=hash_iters, node_attr="label")
-        wl2 = weisfeiler_lehman_graph_hash(fg2, iterations=hash_iters, node_attr="label")
+        fg1 = FormulaGraph(fdef1)
+        fg2 = FormulaGraph(fdef2)
+        wl1 = fg1.wl_hash(iterations=hash_iters)
+        wl2 = fg2.wl_hash(iterations=hash_iters)
         assert wl1 == wl2, "WL hashes should match for isomorphic graphs"
         
         fid2, tid2 = self.save_formula_example(processor.warehouse._client, fdef2, wl2)
@@ -121,10 +121,10 @@ class TestTrajectoryProcessor:
         ]
         fdef1 = [self.encode_literals(p, n) for p, n in fdef1]
         fdef2 = [self.encode_literals(p, n) for p, n in fdef2]
-        fg1 = TrajectoryProcessor.definition_to_graph(fdef1)
-        fg2 = TrajectoryProcessor.definition_to_graph(fdef2)
-        wl1 = weisfeiler_lehman_graph_hash(fg1, iterations=hash_iters, node_attr="label")
-        wl2 = weisfeiler_lehman_graph_hash(fg2, iterations=hash_iters, node_attr="label")
+        fg1 = FormulaGraph(fdef1)
+        fg2 = FormulaGraph(fdef2)
+        wl1 = fg1.wl_hash(iterations=hash_iters)
+        wl2 = fg2.wl_hash(iterations=hash_iters)
         assert wl1 != wl2, "WL hashes should not match for non-isomorphic graphs"
         
         fid2, tid2 = self.save_formula_example(processor.warehouse._client, fdef2, wl2)

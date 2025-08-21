@@ -21,8 +21,8 @@ from longshot.models.trajectory import (
 )
 from longshot.agent import WarehouseAgent
 
-warehouse_host = 'warehouse-bread'
-warehouse_port = 8010
+warehouse_host = 'localhost'
+warehouse_port = 8000
 
 class TestClusterbombService:
     """Test suite for Clusterbomb microservice endpoints."""

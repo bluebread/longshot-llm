@@ -17,8 +17,8 @@ from longshot.env import FormulaGame
 from longshot.utils import parse_formula_definition, generate_random_token
 from longshot.error import LongshotError
 
-warehouse_host = 'warehouse-bread'
-warehouse_port = 8010
+warehouse_host = 'localhost'
+warehouse_port = 8000
 
 logging.basicConfig(
     level=logging.INFO, 

@@ -33,7 +33,15 @@ class TrajectoryProcessor:
         if formula_id is None:
             return []
         
-        return self.warehouse.get_formula_definition(formula_id)
+        # Handle non-existent formulas (like initial empty formulas)
+        try:
+            return self.warehouse.get_formula_definition(formula_id)
+        except Exception as e:
+            # If formula doesn't exist (404) or other error, return empty definition
+            # This allows processing to start from an empty formula
+            if "404" in str(e) or "Not Found" in str(e):
+                return []  # Empty formula definition
+            raise  # Re-raise other errors
 
     @staticmethod
     def add_gate_to_graph(graph: nx.Graph, gate: int) -> None:
@@ -184,7 +192,6 @@ class TrajectoryProcessor:
         
         base_fdef = self.retrieve_definition(msg.trajectory.base_formula_id)
         fg = self.definition_to_graph(base_fdef)
-        prev_formula_id: str = msg.trajectory.base_formula_id
         evo_path: list[str] = [msg.trajectory.base_formula_id]
         cur_size = msg.base_size
 
@@ -218,7 +225,6 @@ class TrajectoryProcessor:
             )
             
             if (fid := self.isomorphic_to(fg, wl_hash)) is not None:
-                prev_formula_id = fid
                 evo_path.append(fid)
 
                 continue  # Skip storing if it's a duplicate
@@ -263,7 +269,6 @@ class TrajectoryProcessor:
             
             # Prepare for the next iteration
             evo_path.append(formula_data["node_id"])
-            prev_formula_id = formula_data["node_id"]
 
         # Save the evolution path to the warehouse
         evo_path = [fid for fid in evo_path if fid]

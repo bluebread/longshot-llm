@@ -13,7 +13,7 @@ def ranker():
                 {
                     "token_type": 0,
                     "token_literals": i,
-                    "reward": 1.0,
+                    "cur_avgQ": 1.0,
                 } for i in range(4)
             ],
         ] * 7
@@ -30,29 +30,19 @@ def ranker():
         )
         
         for avgQ, vc, fdef in iterator:
-            # Create a formula node for each formula ID
+            # Create a formula node for each formula ID (V2 compatible)
             traj_id = warehouse.post_trajectory(
                 steps=fdef
             )
-            fid = warehouse.post_formula_info(
-                trajectory_id=traj_id,
+            fid = warehouse.post_evolution_graph_node(
+                node_id=f"test_node_{traj_id[:8]}_{avgQ}",
                 avgQ=avgQ,
                 num_vars=4,
                 width=2,
                 size=vc,
                 wl_hash=f"formula_{traj_id}",
-                node_id="",
-            )
-            warehouse.post_evolution_graph_node(
-                formula_id=fid,
-                avgQ=avgQ,
-                num_vars=4,
-                width=2,
-                size=vc,
-            )
-            warehouse.put_evolution_graph_node(
-                formula_id=fid,
-                inc_visited_counter=vc
+                traj_id=traj_id,
+                traj_slice=len(fdef) - 1
             )
             
             fs.append(fid)
@@ -67,10 +57,9 @@ def ranker():
         ranker = ArmRanker(sync_warehouse)
         yield ranker
         
-    # Clean up the test data
+    # Clean up the test data (V2 compatible)
     with WarehouseAgent(host="localhost", port=8000) as warehouse:
         for fid in fs:
-            warehouse.delete_formula_info(fid)
             warehouse.delete_evolution_graph_node(fid)
         for tid in ts:
             warehouse.delete_trajectory(tid)
@@ -93,7 +82,7 @@ class TestArmRanker:
         assert len(result) == 2
         
         first_arm = result[0]
-        assert "formula_id" in first_arm
+        assert "node_id" in first_arm
         assert "definition" in first_arm
         assert isinstance(first_arm["definition"], list)
         
@@ -111,7 +100,7 @@ class TestArmRanker:
         assert len(result) == 3
         
         for arm in result:
-            assert "formula_id" in arm
+            assert "node_id" in arm
             assert "definition" in arm
     
     def test_score_method(self, ranker: ArmRanker):

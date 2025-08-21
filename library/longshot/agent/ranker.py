@@ -116,6 +116,7 @@ class ArmRanker:
             for hnid, nodes in hmap.items()
         }
         
+        # TODO: this approach of selecting arms is deprecated. 
         # Add individual nodes that are not part of hypernodes
         # Use in_degree + out_degree + 1 as proxy for visited_counter
         armmap.update({

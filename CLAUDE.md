@@ -2,84 +2,115 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Structure
+## Project Overview
 
-This is a complex reinforcement learning system for boolean formula generation and optimization, consisting of:
+gym-longshot is a C++/Python reinforcement learning framework for boolean function optimization. It combines formula generation, trajectory processing, and microservice architecture to explore propositional logic formulas within RL environments.
 
-1. **Library** (`library/`): Core Python package with C++ extensions
-   - `longshot/agent/`: RL agents and environment management
-   - `longshot/circuit/`: Boolean formula and circuit representations
-   - `longshot/models/`: Neural network architectures and data models
-   - `longshot/utils/`: Utility functions and base64 encoding
-   - `longshot/core/`: C++ backend for performance-critical operations
+## Build and Test Commands
 
-2. **Services** (`service/`): Microservices architecture
-   - `warehouse/`: FastAPI service for formula storage (MongoDB, Neo4j, Redis)
-   - `trajproc/`: Trajectory processing service
-   - `ranker/`: Formula ranking service
-   - `clusterbomb/`: Additional processing service
-
-3. **Archive** (`archive/`): Research code and Jupyter notebooks for PPO training
-4. **Test** (`test/`): Unit tests and C++ test files
-5. **Doc** (`doc/`): Sphinx documentation
-
-## Key Architecture
-
-- **Core C++ Engine**: Performance-critical boolean operations in `library/longshot/core/`
-- **RL Environment**: `EnvironmentAgent` manages multiple formula games, transforms data to tensors
-- **Formula Representation**: `Literals` class represents boolean literals, `GateToken` for operations
-- **Microservices**: Docker-compose infrastructure with Neo4j, MongoDB, Redis, RabbitMQ
-- **Hybrid Language**: Python frontend with C++ backend via pybind11
-
-## Development Commands
-
-### Library Build & Development
+### Library Build (C++ Extensions)
 ```bash
-# Build the C++ extension library (from library/ directory)
-cd library && python setup.py build_ext --inplace
-
-# Install in development mode
-cd library && pip install -e .
+# Build the Python library with C++ extensions
+cd library
+pip install -e .
 ```
 
 ### Testing
 ```bash
-# Run all tests (from test/ directory)
-cd test && make test
+# Run Python tests
+cd test
+pytest .
 
-# Run Python tests only
-cd test && pytest .
+# Run C++ tests and Python tests
+make test
 
-# Run C++ tests
-cd test && make $(find . -name '*.cpp' | sed 's/.cpp/.out/g')
+# Run specific test file
+pytest test_trajectory_processor.py
 ```
 
 ### Services
 ```bash
-# Start infrastructure services
-cd service && docker-compose up -d
+# Start infrastructure services (Neo4j, Redis, MongoDB, RabbitMQ)
+cd service
+docker-compose up -d
 
-# Individual service testing
-cd service/trajproc && pytest test/
+# Run warehouse service
+cd service/warehouse
+pip install -r requirements.txt
+python main.py  # Runs on localhost:8000
+
+# Run clusterbomb service  
+cd service/clusterbomb
+pip install -r requirements.txt
+python main.py  # Runs on localhost:8060
 ```
 
-### Documentation
+### Demo System
 ```bash
-# Build documentation (from doc/ directory)
-cd doc && make html
+# Run V2 system demonstration
+python script/demo_v2_system.py
 ```
 
-## Important Implementation Details
+## Architecture
 
-- **Token Dimension**: `GateToken.dim_token(num_vars) = 2 * num_vars + 3`
-- **Environment Management**: `EnvironmentAgent` handles multiple formula games, uses arm filtering
-- **C++ Integration**: Core boolean operations compiled with `-Ofast -fopenmp` optimizations
-- **Database Schema**: Formulas stored in MongoDB, graph relationships in Neo4j, caching in Redis
-- **RL Rewards**: Based on average-case deterministic query complexity of resulting formulas
+### Core Components
 
-## Configuration Files
+1. **Library (`library/longshot/`)**
+   - **agent/**: RL agents and client wrappers for microservices
+     - `ClusterbombAgent`: Client for weapon rollout operations
+     - `WarehouseAgent`: Client for data storage/retrieval  
+     - `TrajectoryProcessor`: Processes trajectories and computes metrics
+   - **circuit/**: Logic circuit representations and operations
+   - **env/**: RL environment for formula optimization
+   - **models/**: Pydantic models for API data structures
+   - **utils/**: Utility functions and formula operations
+   - **core/**: C++ implementation for performance-critical operations
 
-- `library/pyproject.toml`: Python package configuration
-- `library/setup.py`: C++ extension build configuration with pybind11
-- `service/docker-compose.yml`: Infrastructure services setup
-- `test/pytest.ini`: Test configuration with deprecation warning filters
+2. **Microservices (`service/`)**
+   - **warehouse**: Data storage service (FastAPI)
+     - Manages Neo4j (evolution graph), MongoDB (trajectories), Redis (isomorphism cache)
+     - Provides unified API for data operations
+   - **clusterbomb**: Trajectory generation service (FastAPI)  
+     - Generates trajectories using random exploration
+     - Processes results using TrajectoryProcessor locally
+
+3. **Testing (`test/`)**
+   - Comprehensive test suite with pytest
+   - C++ unit tests with Makefile build system
+   - Tests for all major components and integrations
+
+### Data Flow
+
+1. **Trajectory Generation**: Clusterbomb service generates trajectories from boolean formulas
+2. **Processing**: TrajectoryProcessor computes avgQ values and formula metrics locally
+3. **Storage**: Warehouse stores processed data in Neo4j (graph), MongoDB (trajectories), Redis (hashes)
+4. **Retrieval**: Evolution graph analysis and visualization via warehouse API
+
+### V2 System Refactor
+
+The V2 architecture simplifies the original microservice design:
+- Removes separate trajproc and ranker services
+- Integrates processing directly into weapon services (clusterbomb)
+- Consolidates formula and graph data in single Neo4j nodes
+- Uses unified trajectory storage in MongoDB with cur_avgQ field
+
+### Database Schema
+
+- **Neo4j**: Evolution graph with FormulaNode labels containing integrated formula data
+- **MongoDB**: Trajectories with simplified schema including cur_avgQ per step
+- **Redis**: WL hash → formula ID mappings for isomorphism detection
+
+### Key Files for Development
+
+- `library/longshot/agent/trajectory_processor.py`: Core trajectory processing logic
+- `service/warehouse/main.py`: Main data service API
+- `service/clusterbomb/main.py`: Trajectory generation service
+- `script/demo_v2_system.py`: Complete system demonstration
+- `doc/microservice-v2.md`: Detailed V2 API specification
+
+## Development Notes
+
+- The system uses both Python and C++ components - ensure C++ compilation works before running tests
+- Microservices require infrastructure services (Docker Compose) to be running
+- V2 refactor is current architecture - older V1 components may be found in archive/
+- Tests expect specific database configurations - check service/docker-compose.yml for credentials

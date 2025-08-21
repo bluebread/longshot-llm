@@ -6,50 +6,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 
-# Formula-related models
-class QueryFormulaInfoResponse(BaseModel):
-    """Formula information model."""
-    id: str = Field(alias="_id", serialization_alias="id")
-    base_formula_id: str | None = None
-    trajectory_id: str | None = None
-    avgQ: float
-    wl_hash: str
-    num_vars: int
-    width: int
-    size: int
-    timestamp: datetime
-    node_id: str
-    
-        
-class CreateFormulaRequest(BaseModel):
-    """Request model for creating a formula."""
-    base_formula_id: str | None = None
-    trajectory_id: str | None = None
-    avgQ: float
-    wl_hash: str
-    num_vars: int
-    width: int
-    size: int
-    node_id: str
-
-
-class UpdateFormulaRequest(BaseModel):
-    """Request model for updating a formula."""
-    id: str
-    base_formula_id: str | None = None
-    trajectory_id: str | None = None
-    avgQ: float | None = None
-    wl_hash: str | None = None
-    num_vars: int | None = None
-    width: int | None = None
-    size: int | None = None
-    timestamp: datetime | None = None
-    node_id: str | None = None
-
-
-class FormulaResponse(BaseModel):
-    """Response model for formula creation."""
-    id: str
+# Formula-related models are now integrated into Evolution Graph nodes
+# in V2 architecture
 
 
 class LikelyIsomorphicResponse(BaseModel):
@@ -61,7 +19,7 @@ class LikelyIsomorphicResponse(BaseModel):
 class LikelyIsomorphicRequest(BaseModel):
     """Request model for adding likely isomorphic formula."""
     wl_hash: str
-    formula_id: str
+    node_id: str
 
 
 
@@ -70,13 +28,12 @@ class TrajectoryInfoStep(BaseModel):
     """A single step in a trajectory."""
     token_type: int
     token_literals: int
-    reward: float
+    cur_avgQ: float
 
 
 class QueryTrajectoryInfoResponse(BaseModel):
     """Trajectory information model."""
-    id: str = Field(alias="_id", serialization_alias="id")
-    base_formula_id: str
+    traj_id: str = Field(alias="_id", serialization_alias="traj_id")
     timestamp: datetime
     steps: list[TrajectoryInfoStep]
     
@@ -84,7 +41,6 @@ class QueryTrajectoryInfoResponse(BaseModel):
 
 class CreateTrajectoryRequest(BaseModel):
     """Request model for creating a trajectory."""
-    base_formula_id: str | None = None
     steps: list[TrajectoryInfoStep]
 
 
@@ -94,65 +50,61 @@ class UpdateTrajectoryStep(BaseModel):
     order: int
     token_type: int
     token_literals: int
-    reward: float
+    cur_avgQ: float
 
 class UpdateTrajectoryRequest(BaseModel):
     """Request model for updating a trajectory."""
-    id: str
-    base_formula_id: str | None = None
+    traj_id: str
     steps: list[UpdateTrajectoryStep] | None = None
 
 
 class TrajectoryResponse(BaseModel):
     """Response model for trajectory creation."""
-    id: str
+    traj_id: str
 
 
 # Evolution graph node models
 class QueryEvolutionGraphNode(BaseModel):
-    """Evolution graph node model."""
-    formula_id: str
+    """Evolution graph node model with integrated formula data."""
+    node_id: str
     avgQ: float
     num_vars: int
     width: int
     size: int
-    visited_counter: int
     in_degree: int
     out_degree: int
+    wl_hash: str
+    timestamp: datetime
+    traj_id: str
+    traj_slice: int
 
 
 class CreateNodeRequest(BaseModel):
-    """Request model for creating a node."""
-    formula_id: str
+    """Request model for creating a node with integrated formula data."""
+    node_id: str
     avgQ: float
     num_vars: int
     width: int
     size: int
+    wl_hash: str
+    traj_id: str
+    traj_slice: int
     
 
 class UpdateNodeRequest(BaseModel):
-    """Request model for updating a node."""
-    formula_id: str
-    inc_visited_counter: int | None = None
-    visited_counter: int | None = None
+    """Request model for updating a node with integrated formula data."""
+    node_id: str
     avgQ: float | None = None
     num_vars: int | None = None
     width: int | None = None
     size: int | None = None
-
-    @model_validator(mode='before')
-    def check_exclusive_fields(cls, values):
-        inc = values.get('inc_visited_counter')
-        visited = values.get('visited_counter')
-        
-        if inc is not None and visited is not None:
-            raise ValueError('Only one of inc_visited_counter or visited_counter can be set, not both.')
-        
-        return values
+    wl_hash: str | None = None
+    traj_id: str | None = None
+    traj_slice: int | None = None
 
 class NodeResponse(BaseModel):
     """Response model for node creation."""
-    formula_id: str
+    node_id: str
 
 
 # Formula definition models
@@ -198,7 +150,7 @@ class ArmInfo(BaseModel):
     It includes the arm's ID, its value, and any additional metadata.
     """
 
-    formula_id: str
+    node_id: str
     definition: list[int]
 
 class TopKArmsResponse(BaseModel):
@@ -219,7 +171,7 @@ class WeaponRolloutRequest(BaseModel):
     steps_per_trajectory: int  = Field(None, description="Number of steps per trajectory")
     num_trajectories: int  = Field(None, description="Number of trajectories to collect")
     initial_definition: list[int] = Field(..., description="Initial definition of the formula, represented as a list of integers representing gates")
-    initial_formula_id: str | None = Field(None, description="ID of the initial formula used as base for trajectories")
+    initial_node_id: str | None = Field(None, description="ID of the initial node used as base for trajectories")
     seed: int | None = Field(None, description="Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic")
 
 

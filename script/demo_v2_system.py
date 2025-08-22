@@ -94,14 +94,17 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str) 
     
     start_time = time.time()
     
+    # Create empty prefix trajectory for V2 API
+    from longshot.models.api import TrajectoryInfoStep
+    empty_prefix_traj = []  # Empty formula = no steps needed
+    
     result = clusterbomb.weapon_rollout(
         num_vars=4,
         width=3,
         size=1000,  # Effectively unlimited
         steps_per_trajectory=32,
         num_trajectories=10,
-        initial_definition=[],  # Empty formula
-        initial_node_id=initial_node_id,
+        prefix_traj=empty_prefix_traj,  # V2: Use prefix trajectory
         seed=42  # Deterministic seed
     )
     
@@ -110,6 +113,9 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str) 
     print(f"\n✓ Rollout completed in {elapsed:.2f} seconds")
     print(f"  - Generated {result.num_trajectories} trajectories")
     print(f"  - Total steps: {result.total_steps}")
+    print(f"  - Processed formulas: {result.processed_formulas}")
+    print(f"  - New nodes created: {result.new_nodes_created}")
+    print(f"  - Base formula exists: {result.base_formula_exists}")
     
     return result
 

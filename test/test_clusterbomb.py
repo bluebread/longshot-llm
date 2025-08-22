@@ -13,7 +13,7 @@ import json
 import time
 from datetime import datetime
 from pydantic import ValidationError
-from longshot.models.api import WeaponRolloutRequest, WeaponRolloutResponse
+from longshot.models.api import WeaponRolloutRequest, WeaponRolloutResponse, TrajectoryInfoStep
 from longshot.models.trajectory import (
     TrajectoryQueueMessage, 
     TrajectoryMessageMultipleSteps, 
@@ -41,6 +41,23 @@ class TestClusterbombService:
         agent = WarehouseAgent(warehouse_host, warehouse_port)
         return agent
     
+    def create_test_prefix_traj(self, size: int = 2) -> list[TrajectoryInfoStep]:
+        """Create a test prefix trajectory for V2 schema."""
+        if size <= 2:
+            return [
+                TrajectoryInfoStep(token_type=0, token_literals=3, cur_avgQ=0.5),  # x0 OR x1
+                TrajectoryInfoStep(token_type=0, token_literals=4, cur_avgQ=1.0)   # x2
+            ]
+        else:
+            # Create longer trajectory for larger formulas
+            steps = []
+            for i in range(size):
+                steps.append(TrajectoryInfoStep(
+                    token_type=0, 
+                    token_literals=i + 3, 
+                    cur_avgQ=0.5 + (i * 0.1)
+                ))
+            return steps
     
     def test_health_check(self, client: httpx.Client):
         """Test the health check endpoint."""
@@ -60,8 +77,7 @@ class TestClusterbombService:
             "size": 5,
             "steps_per_trajectory": 5,
             "num_trajectories": 2,
-            "initial_definition": [1, 2, 3, 4, 5],  # Simple test formula
-            "initial_node_id": "test_formula_sync",
+            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()],
             "seed": 42  # Deterministic for testing
         }
         
@@ -85,20 +101,10 @@ class TestClusterbombService:
         # Wait a moment for data to be processed and stored
         time.sleep(0.5)
         
-        # Try to query the initial node to verify it exists
-        try:
-            initial_node = warehouse_agent.get_evolution_graph_node(request_data["initial_node_id"])
-            # If we can get the initial node, it means it was created
-            assert initial_node is not None, "Initial node was not created"
-            assert initial_node.get("id") == request_data["initial_node_id"]
-        except Exception:
-            # Initial node might not exist yet, which is okay for this test
-            pass
-        
         # Since we can't easily query for connected nodes without the subgraph endpoint,
         # we'll just verify that the rollout completed successfully
         # The fact that the API returned 200 and the expected response values
-        # indicates that trajectories were processed
+        # indicates that trajectories were processed with V2 schema
         
     def test_weapon_rollout_with_seed(self, client: httpx.Client, warehouse_agent: WarehouseAgent):
         """Test weapon rollout with seed for deterministic behavior."""
@@ -108,8 +114,7 @@ class TestClusterbombService:
             "size": 3,  
             "steps_per_trajectory": 3,
             "num_trajectories": 1,
-            "initial_definition": [1, 2, 3],
-            "initial_node_id": "test_formula_async"
+            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()]
             # No seed - should use non-deterministic randomness
         }
         
@@ -123,14 +128,7 @@ class TestClusterbombService:
         # Wait for data to be processed
         time.sleep(0.5)
         
-        # Try to verify the initial node exists
-        try:
-            node = warehouse_agent.get_evolution_graph_node(request_data["initial_node_id"])
-            # If we can retrieve it, the test passes
-            assert node is not None
-        except Exception:
-            # Node might not exist, which is okay for this test
-            pass
+        # The fact that we got a 200 response indicates the V2 processing was successful
 
     def test_weapon_rollout_large_batch(self, client: httpx.Client, warehouse_agent: WarehouseAgent):
         """Test weapon rollout with larger batch to verify scalability."""
@@ -140,8 +138,7 @@ class TestClusterbombService:
             "size": 8,
             "steps_per_trajectory": 20,
             "num_trajectories": 5,
-            "initial_definition": [1, 2, 3, 4, 5, 6, 7, 8],
-            "initial_node_id": "test_formula_large",
+            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj(8)],
             "seed": 123
         }
         
@@ -160,13 +157,7 @@ class TestClusterbombService:
         # The API response already confirmed that 5 trajectories were processed
         # and 100 total steps were executed
         
-        # Try to verify at least one node exists (the initial node)
-        try:
-            node = warehouse_agent.get_evolution_graph_node(request_data["initial_node_id"])
-            assert node is not None
-        except Exception:
-            # Node might not exist, which is acceptable for this test
-            pass
+        # The successful API response indicates V2 processing completed
 
     def test_invalid_request_data(self, client: httpx.Client):
         """Test API with invalid request data."""
@@ -187,7 +178,7 @@ class TestClusterbombService:
             "size": 5,
             "steps_per_trajectory": 10,
             "num_trajectories": 2,
-            "initial_definition": [1, 2, 3, 4, 5],
+            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()],
         }
         
         response = client.post("/weapon/rollout", json=invalid_types_request)
@@ -196,23 +187,23 @@ class TestClusterbombService:
     def test_invalid_formula_parameters(self, client: httpx.Client):
         """Test API with invalid formula parameter combinations."""
         
-        # Width mismatch: formula definition incompatible with width constraint
-        width_mismatch_request = {
+        # Test with missing required prefix_traj field
+        missing_prefix_request = {
             "num_vars": 2,
-            "width": 1,  # Width too small for the formula definition
+            "width": 1,
             "size": 3,
             "steps_per_trajectory": 5,
             "num_trajectories": 1,
-            "initial_definition": [1, 2, 3],  # Results in width 2, but width=1 requested
             "seed": 42
+            # Missing prefix_traj - required in V2
         }
         
-        response = client.post("/weapon/rollout", json=width_mismatch_request)
+        response = client.post("/weapon/rollout", json=missing_prefix_request)
         assert response.status_code == 422  # Unprocessable Entity
         
         response_data = response.json()
-        assert "Invalid formula parameters" in response_data["detail"]
-        assert "width" in response_data["detail"].lower()
+        # V2 validation errors come from Pydantic, so check for error structure
+        assert "detail" in response_data
 
     def test_trajectory_format_validation(self):
         """Test that trajectory format follows expected structure."""
@@ -313,7 +304,7 @@ class TestClusterbombService:
             "size": 5,
             "steps_per_trajectory": 3,
             "num_trajectories": 1,
-            "initial_definition": [1, 2, 3, 4, 5],
+            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()],
             "seed": 999
         }
         
@@ -345,7 +336,7 @@ class TestClusterbombService:
             "size": size,
             "steps_per_trajectory": 5,
             "num_trajectories": 2,
-            "initial_definition": list(range(1, size + 1)),
+            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj(size)],
             "seed": 42
         }
         

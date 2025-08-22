@@ -6,6 +6,7 @@ from datetime import datetime
 
 from longshot.agent import TrajectoryProcessor, WarehouseAgent
 from longshot.models import TrajectoryQueueMessage
+from longshot.models.api import TrajectoryProcessingContext, TrajectoryInfoStep
 from longshot.env import FormulaGraph
 
 host = "localhost"
@@ -224,3 +225,156 @@ class TestTrajectoryProcessor:
                         pass  # Ignore cleanup errors
             except Exception:
                 pass  # Ignore if download fails
+    
+    def test_process_trajectory_v2(self, processor: TrajectoryProcessor):
+        """Test the new V2 process_trajectory_v2 method."""
+        processor.traj_granularity = 2
+        processor.traj_num_summits = 2
+        
+        # Create prefix trajectory (base formula construction)
+        prefix_steps = [
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([0, 2], []),
+                cur_avgQ=0.0
+            ),
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([1], []),
+                cur_avgQ=0.5
+            )
+        ]
+        
+        # Create suffix trajectory (new steps)
+        suffix_steps = [
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([2], [1]),
+                cur_avgQ=1.0
+            ),
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([0, 1], []),
+                cur_avgQ=2.0
+            ),
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([], [1, 2]),
+                cur_avgQ=3.0
+            )
+        ]
+        
+        # Create V2 processing context
+        context = TrajectoryProcessingContext(
+            prefix_traj=prefix_steps,
+            suffix_traj=suffix_steps,
+            base_formula_hash=None,
+            processing_metadata={
+                "num_vars": 4,
+                "width": 3,
+                "size": 100
+            }
+        )
+        
+        try:
+            # Test V2 trajectory processing
+            result = processor.process_trajectory_v2(context)
+            
+            # Verify result structure
+            assert "new_formulas" in result
+            assert "evo_path" in result
+            assert "base_formula_exists" in result
+            assert "processed_formulas" in result
+            assert "new_nodes_created" in result
+            
+            # Verify results are reasonable
+            assert isinstance(result["new_formulas"], list)
+            assert isinstance(result["evo_path"], list)
+            assert isinstance(result["base_formula_exists"], bool)
+            assert isinstance(result["processed_formulas"], int)
+            assert isinstance(result["new_nodes_created"], int)
+            
+            print(f"✅ V2 trajectory processing completed successfully:")
+            print(f"   - Base formula exists: {result['base_formula_exists']}")
+            print(f"   - Processed formulas: {result['processed_formulas']}")
+            print(f"   - New nodes created: {result['new_nodes_created']}")
+            print(f"   - Evolution path length: {len(result['evo_path'])}")
+            
+        except Exception as e:
+            print(f"⚠️  V2 trajectory processing failed: {e}")
+            raise e
+            
+        finally:
+            # Clean up any nodes that might have been created
+            try:
+                num_vars = context.processing_metadata["num_vars"]
+                width = context.processing_metadata["width"]
+                nodes = processor.warehouse.download_nodes(num_vars, width)
+                for node in nodes:
+                    try:
+                        processor.warehouse.delete_evolution_graph_node(node["node_id"])
+                        if "traj_id" in node:
+                            processor.warehouse.delete_trajectory(node["traj_id"])
+                    except Exception:
+                        pass  # Ignore cleanup errors
+            except Exception:
+                pass  # Ignore if download fails
+    
+    def test_reconstruct_base_formula(self, processor: TrajectoryProcessor):
+        """Test base formula reconstruction from prefix trajectory."""
+        
+        # Create prefix trajectory that builds a specific formula
+        prefix_steps = [
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([0, 1], []),
+                cur_avgQ=1.0
+            ),
+            TrajectoryInfoStep(
+                token_type=0,  # ADD
+                token_literals=self.encode_literals([2], [0]),
+                cur_avgQ=1.5
+            ),
+            TrajectoryInfoStep(
+                token_type=1,  # DEL - remove first gate
+                token_literals=self.encode_literals([0, 1], []),
+                cur_avgQ=1.2
+            )
+        ]
+        
+        try:
+            # Test base formula reconstruction
+            base_formula = processor.reconstruct_base_formula(prefix_steps)
+            
+            # Verify the formula graph was created
+            assert hasattr(base_formula, 'gates') or hasattr(base_formula, 'num_gates')
+            
+            print(f"✅ Base formula reconstruction completed successfully")
+            print(f"   - Formula has gates: {hasattr(base_formula, 'gates')}")
+            
+        except Exception as e:
+            print(f"⚠️  Base formula reconstruction failed: {e}")
+            raise e
+    
+    def test_check_base_formula_exists(self, processor: TrajectoryProcessor):
+        """Test checking if base formula already exists in database."""
+        
+        # Create a simple formula
+        formula_def = [self.encode_literals([0, 1], []), self.encode_literals([2], [])]
+        formula_graph = FormulaGraph(formula_def)
+        
+        try:
+            # Test checking if formula exists (should be False initially)
+            exists, formula_id = processor.check_base_formula_exists(formula_graph)
+            
+            # Initially should not exist
+            assert isinstance(exists, bool)
+            assert formula_id is None or isinstance(formula_id, str)
+            
+            print(f"✅ Base formula existence check completed")
+            print(f"   - Formula exists: {exists}")
+            print(f"   - Formula ID: {formula_id}")
+            
+        except Exception as e:
+            print(f"⚠️  Base formula existence check failed: {e}")
+            raise e

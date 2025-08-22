@@ -2,6 +2,8 @@ from ..circuit import NormalFormFormula
 from ..error import LongshotError
 from ..models import GateToken
 
+# TODO: write a static method to process avgQ sequence into reward sequence. 
+
 class FormulaGame:
     """
     The FormulaGame class implements the RL environment that simulates the process of adding or deleting gates in a normal form formula.

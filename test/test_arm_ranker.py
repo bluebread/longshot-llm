@@ -35,7 +35,6 @@ def ranker():
                 steps=fdef
             )
             fid = warehouse.post_evolution_graph_node(
-                node_id=f"test_node_{traj_id[:8]}_{avgQ}",
                 avgQ=avgQ,
                 num_vars=4,
                 width=2,

@@ -245,19 +245,23 @@ async def get_evolution_graph_node(node_id: str = Query(..., description="Node U
 @app.post("/evolution_graph/node", response_model=NodeResponse, status_code=201)
 async def create_evolution_graph_node(node: CreateNodeRequest):
     """Add a new node to the evolution graph with integrated formula data."""
+    # Generate unique node_id using uuid4
+    node_id = str(uuid.uuid4())
+    
     query = """
-    MERGE (n:FormulaNode {node_id: $node_id})
-    ON CREATE SET n.avgQ = $avgQ,
-                  n.num_vars = $num_vars,
-                  n.width = $width,
-                  n.size = $size,
-                  n.wl_hash = $wl_hash,
-                  n.traj_id = $traj_id,
-                  n.traj_slice = $traj_slice,
-                  n.timestamp = $timestamp
+    CREATE (n:FormulaNode {node_id: $node_id})
+    SET n.avgQ = $avgQ,
+        n.num_vars = $num_vars,
+        n.width = $width,
+        n.size = $size,
+        n.wl_hash = $wl_hash,
+        n.traj_id = $traj_id,
+        n.traj_slice = $traj_slice,
+        n.timestamp = $timestamp
     RETURN n.node_id AS node_id
     """
     node_data = node.model_dump()
+    node_data["node_id"] = node_id
     node_data["timestamp"] = datetime.now()
     
     with neo4j_driver.session() as session:

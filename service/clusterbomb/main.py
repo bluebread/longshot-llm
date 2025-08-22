@@ -10,8 +10,9 @@ import logging
 import random
 from datetime import datetime
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
-from longshot.models.trajectory import TrajectoryQueueMessage, TrajectoryMessageMultipleSteps
+from longshot.models.api import TrajectoryProcessingContext, TrajectoryInfoStep
 from longshot.agent import TrajectoryProcessor, WarehouseAgent
+import time
 from longshot.circuit import FormulaType
 from longshot.env import FormulaGame
 from longshot.utils import parse_formula_definition, generate_random_token
@@ -59,7 +60,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     Without a seed, the service uses non-deterministic randomness.
     """
     logger.info(f"Weapon rollout requested: num_vars={request.num_vars}, width={request.width}")
-    logger.info(f"Initial definition: {request.initial_definition}")
+    logger.info(f"V2 prefix trajectory with {len(request.prefix_traj)} steps")
     
     # Create local RNG instance for coroutine safety
     if request.seed is not None:
@@ -69,14 +70,21 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         rng = random.Random()
         logger.info("No seed provided - using non-deterministic randomness")
     
-    # 1. Parse the initial formula definition
+    # 1. V2: Reconstruct base formula from prefix trajectory
+    # Initialize temporary processor for base formula reconstruction
+    temp_processor = TrajectoryProcessor(None)
+    base_formula_graph = temp_processor.reconstruct_base_formula(request.prefix_traj)
+    
+    # Convert FormulaGraph to NormalFormFormula for game initialization
+    # Extract gates from the reconstructed formula graph
+    base_gates = list(base_formula_graph.gates) if hasattr(base_formula_graph, 'gates') else []
     initial_formula = parse_formula_definition(
-        request.initial_definition, 
-        request.num_vars, 
-        FormulaType.Conjunctive  # Assume CNF for now
+        base_gates,
+        request.num_vars,
+        FormulaType.Conjunctive
     )
     
-    logger.info(f"Parsed initial formula with {initial_formula.num_gates} gates")
+    logger.info(f"Reconstructed base formula from prefix trajectory with {initial_formula.num_gates} gates")
     
     # 2. Initialize the RL environment (FormulaGame) - Validation errors return 422
     try:
@@ -98,10 +106,57 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     warehouse = WarehouseAgent(warehouse_host, warehouse_port)
     processor = TrajectoryProcessor(warehouse)
     
+    # V2: Check if base formula already exists in database
+    base_formula_exists, base_formula_id = processor.check_base_formula_exists(base_formula_graph)
+    logger.info(f"Base formula exists in database: {base_formula_exists}, ID: {base_formula_id}")
+    
+    # If base formula doesn't exist, save it to warehouse
+    if not base_formula_exists:
+        logger.info("Base formula not found, creating new node in warehouse")
+        
+        # Save the complete prefix trajectory
+        prefix_traj_id = processor.warehouse.post_trajectory(
+            steps=[
+                {
+                    "token_type": step.token_type,
+                    "token_literals": step.token_literals,
+                    "cur_avgQ": step.cur_avgQ,
+                }
+                for step in request.prefix_traj
+            ]
+        )
+        
+        # Calculate base formula properties
+        base_wl_hash = base_formula_graph.wl_hash(iterations=processor.hash_iterations)
+        base_size = sum(1 for step in request.prefix_traj if step.token_type == 0) - sum(1 for step in request.prefix_traj if step.token_type == 1)
+        final_avgQ = request.prefix_traj[-1].cur_avgQ if request.prefix_traj else 0.0
+        
+        # Create evolution graph node for base formula
+        base_formula_id = processor.warehouse.post_evolution_graph_node(
+            avgQ=final_avgQ,
+            num_vars=request.num_vars,
+            width=request.width,
+            size=base_size,
+            wl_hash=base_wl_hash,
+            traj_id=prefix_traj_id,
+            traj_slice=len(request.prefix_traj) - 1
+        )
+        
+        # Add to isomorphism hash table
+        processor.warehouse.post_likely_isomorphic(
+            wl_hash=base_wl_hash,
+            formula_id=base_formula_id
+        )
+        
+        base_formula_exists = True  # Now it exists
+        logger.info(f"Created new base formula node: {base_formula_id}")
+        
     # 4. Run the environment simulation - Server errors return 500
     try:
         actual_trajectories = 0
-        trajectories_to_process = []  # Collect trajectory messages for processing
+        v2_contexts = []  # V2 processing contexts
+        total_processed_formulas = 0
+        total_new_nodes = 0
         
         # Determine stopping condition and trajectory length
         steps_per_trajectory = request.steps_per_trajectory 
@@ -122,30 +177,35 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 # Take step in environment
                 reward = game.step(token)
                 
-                # Record step (matching TrajectoryMessageStep model)
+                # Record step for V2 trajectory format
                 step_data = {
-                    "order": i,
-                    "token_type": token.type,
-                    "token_literals": int(token.literals),  # Convert to integer representation
-                    "reward": reward,
-                    "avgQ": game.cur_avgQ  # Average Q-value for this step
+                    "token_type": token.type if isinstance(token.type, int) else (0 if token.type == 'ADD' else 1),
+                    "token_literals": int(token.literals),
+                    "cur_avgQ": game.cur_avgQ
                 }
                 current_trajectory.append(step_data)
             
-            # Create trajectory message for processing
-            trajectory_message = TrajectoryQueueMessage(
-                num_vars=request.num_vars,
-                width=request.width,
-                base_size=initial_formula.num_gates,
-                timestamp=datetime.now(),
-                trajectory=TrajectoryMessageMultipleSteps(
-                    base_formula_id=request.initial_node_id,  # V2 field name
-                    steps=current_trajectory
+            # V2: Create TrajectoryProcessingContext with suffix trajectory
+            suffix_steps = [
+                TrajectoryInfoStep(
+                    token_type=step["token_type"],
+                    token_literals=step["token_literals"],
+                    cur_avgQ=step["cur_avgQ"]
                 )
-            )
+                for step in current_trajectory
+            ]
             
-            # Collect trajectory for processing
-            trajectories_to_process.append(trajectory_message)
+            context = TrajectoryProcessingContext(
+                prefix_traj=request.prefix_traj,
+                suffix_traj=suffix_steps,
+                base_formula_hash=None,  # Will be computed during processing
+                processing_metadata={
+                    "num_vars": request.num_vars,
+                    "width": request.width,
+                    "size": request.size
+                }
+            )
+            v2_contexts.append(context)
             
             actual_trajectories += 1
             logger.info(f"Completed trajectory {actual_trajectories} with {len(current_trajectory)} steps")
@@ -157,15 +217,17 @@ async def weapon_rollout(request: WeaponRolloutRequest):
             detail=f"Simulation failed: {str(e)}"
         )
         
-    logger.info(f"Collected {len(trajectories_to_process)} trajectories for processing")
+    logger.info(f"Collected {len(v2_contexts)} trajectories for processing")
     
-    # Process all trajectories using TrajectoryProcessor
+    # V2: Process all trajectories using new trajectory processing
     trajectories_processed = 0
     try:
-        for trajectory_msg in trajectories_to_process:
-            processor.process_trajectory(trajectory_msg)
+        for context in v2_contexts:
+            result = processor.process_trajectory_v2(context)
+            total_processed_formulas += result["processed_formulas"]
+            total_new_nodes += result["new_nodes_created"]
             trajectories_processed += 1
-            logger.info(f"Processed trajectory {trajectories_processed}/{len(trajectories_to_process)}")
+            logger.info(f"V2 Processed trajectory {trajectories_processed}/{len(v2_contexts)}: {result['new_nodes_created']} new nodes")
         
         logger.info(f"Successfully processed {trajectories_processed} trajectories")
         
@@ -175,7 +237,10 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         
     return WeaponRolloutResponse(
         total_steps=request.steps_per_trajectory * actual_trajectories,
-        num_trajectories=actual_trajectories
+        num_trajectories=actual_trajectories,
+        processed_formulas=total_processed_formulas,
+        new_nodes_created=total_new_nodes,
+        base_formula_exists=base_formula_exists
     )
 
 if __name__ == "__main__":

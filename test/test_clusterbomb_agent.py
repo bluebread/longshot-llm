@@ -13,7 +13,7 @@ import pytest_asyncio
 import httpx
 from unittest.mock import Mock, patch, AsyncMock
 from longshot.agent import ClusterbombAgent, AsyncClusterbombAgent
-from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
+from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse, TrajectoryInfoStep
 
 
 class TestClusterbombAgent:
@@ -69,6 +69,12 @@ class TestClusterbombAgent:
         mock_client.return_value.post.return_value = mock_response
         agent._client.post = Mock(return_value=mock_response)
         
+        # Create prefix trajectory for V2 schema
+        prefix_traj = [
+            TrajectoryInfoStep(token_type=0, token_literals=3, cur_avgQ=0.5),
+            TrajectoryInfoStep(token_type=0, token_literals=4, cur_avgQ=1.0)
+        ]
+        
         # Call weapon rollout
         result = agent.weapon_rollout(
             num_vars=3,
@@ -76,8 +82,7 @@ class TestClusterbombAgent:
             size=5,
             steps_per_trajectory=10,
             num_trajectories=5,
-            initial_definition=[1, 2, 3, 4, 5],
-            initial_node_id="test_node",
+            prefix_traj=prefix_traj,
             seed=42
         )
         
@@ -98,8 +103,8 @@ class TestClusterbombAgent:
         assert request_body["size"] == 5
         assert request_body["steps_per_trajectory"] == 10
         assert request_body["num_trajectories"] == 5
-        assert request_body["initial_definition"] == [1, 2, 3, 4, 5]
-        assert request_body["initial_node_id"] == "test_node"
+        assert "prefix_traj" in request_body
+        assert len(request_body["prefix_traj"]) == 2
         assert request_body["seed"] == 42
     
     def test_weapon_rollout_without_optional_params(self, agent, mock_client):
@@ -114,6 +119,11 @@ class TestClusterbombAgent:
         
         agent._client.post = Mock(return_value=mock_response)
         
+        # Create minimal prefix trajectory
+        prefix_traj = [
+            TrajectoryInfoStep(token_type=0, token_literals=1, cur_avgQ=0.0)
+        ]
+        
         # Call without optional params
         result = agent.weapon_rollout(
             num_vars=2,
@@ -121,7 +131,7 @@ class TestClusterbombAgent:
             size=3,
             steps_per_trajectory=10,
             num_trajectories=3,
-            initial_definition=[1, 2, 3]
+            prefix_traj=prefix_traj
         )
         
         # Verify response
@@ -131,8 +141,9 @@ class TestClusterbombAgent:
         # Check that optional fields are not in request
         call_args = agent._client.post.call_args
         request_body = call_args[1]["json"]
-        assert "initial_node_id" not in request_body or request_body["initial_node_id"] is None
         assert "seed" not in request_body or request_body["seed"] is None
+        assert "prefix_traj" in request_body
+        assert len(request_body["prefix_traj"]) == 1
     
     def test_context_manager(self):
         """Test agent as context manager."""
@@ -208,6 +219,12 @@ class TestAsyncClusterbombAgent:
         
         async_agent._client.post = AsyncMock(return_value=mock_response)
         
+        # Create prefix trajectory for V2 schema
+        prefix_traj = [
+            TrajectoryInfoStep(token_type=0, token_literals=5, cur_avgQ=1.5),
+            TrajectoryInfoStep(token_type=1, token_literals=6, cur_avgQ=2.0)
+        ]
+        
         # Call weapon rollout
         result = await async_agent.weapon_rollout(
             num_vars=4,
@@ -215,7 +232,7 @@ class TestAsyncClusterbombAgent:
             size=8,
             steps_per_trajectory=10,
             num_trajectories=10,
-            initial_definition=[1, 2, 3, 4, 5, 6, 7, 8],
+            prefix_traj=prefix_traj,
             seed=123
         )
         
@@ -272,6 +289,12 @@ class TestClusterbombAgentIntegration:
         try:
             agent = ClusterbombAgent('localhost', 8060)
             
+            # Create test prefix trajectory
+            prefix_traj = [
+                TrajectoryInfoStep(token_type=0, token_literals=3, cur_avgQ=0.5),
+                TrajectoryInfoStep(token_type=0, token_literals=4, cur_avgQ=1.0)
+            ]
+            
             # Try a small rollout
             result = agent.weapon_rollout(
                 num_vars=2,
@@ -279,7 +302,7 @@ class TestClusterbombAgentIntegration:
                 size=3,
                 steps_per_trajectory=5,
                 num_trajectories=1,
-                initial_definition=[1, 2, 3],
+                prefix_traj=prefix_traj,
                 seed=42
             )
             

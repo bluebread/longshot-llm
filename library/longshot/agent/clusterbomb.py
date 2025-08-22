@@ -8,6 +8,7 @@ by simulating formula transformations in the RL environment.
 import httpx
 from typing import Any, Optional
 from ..models import WeaponRolloutRequest, WeaponRolloutResponse
+from ..models.api import TrajectoryInfoStep
 
 
 class ClusterbombAgent:
@@ -51,8 +52,7 @@ class ClusterbombAgent:
         size: int,
         steps_per_trajectory: int,
         num_trajectories: int,
-        initial_definition: list[int],
-        initial_node_id: Optional[str] = None,
+        prefix_traj: list[TrajectoryInfoStep],
         seed: Optional[int] = None,
     ) -> WeaponRolloutResponse:
         """
@@ -85,8 +85,7 @@ class ClusterbombAgent:
             size=size,
             steps_per_trajectory=steps_per_trajectory,
             num_trajectories=num_trajectories,
-            initial_definition=initial_definition,
-            initial_node_id=initial_node_id,
+            prefix_traj=prefix_traj,
             seed=seed,
         )
         
@@ -149,9 +148,11 @@ class AsyncClusterbombAgent:
         size: int,
         steps_per_trajectory: int,
         num_trajectories: int,
-        initial_definition: list[int],
-        initial_node_id: Optional[str] = None,
+        prefix_traj: list[TrajectoryInfoStep],
         seed: Optional[int] = None,
+        # Deprecated V1 fields for backward compatibility
+        initial_definition: Optional[list[int]] = None,
+        initial_node_id: Optional[str] = None,
     ) -> WeaponRolloutResponse:
         """
         Executes a weapon rollout operation to generate trajectories.
@@ -183,9 +184,11 @@ class AsyncClusterbombAgent:
             size=size,
             steps_per_trajectory=steps_per_trajectory,
             num_trajectories=num_trajectories,
+            prefix_traj=prefix_traj,
+            seed=seed,
+            # Deprecated fields for backward compatibility
             initial_definition=initial_definition,
             initial_node_id=initial_node_id,
-            seed=seed,
         )
         
         response = await self._client.post("/weapon/rollout", json=request.model_dump(exclude_none=True))

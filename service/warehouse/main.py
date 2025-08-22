@@ -341,7 +341,7 @@ async def get_formula_definition(node_id: str = Query(..., description="Node UUI
     trajectory_doc = trajectory_table.find_one({"_id": traj_id})
     if not trajectory_doc:
         # Return empty definition if trajectory not found
-        return QueryFormulaDefinitionResponse(id=id, definition=[])
+        return QueryFormulaDefinitionResponse(node_id=node_id, definition=[])
     
     # Reconstruct the formula definition up to the specified slice
     definition = set()
@@ -362,7 +362,7 @@ async def get_formula_definition(node_id: str = Query(..., description="Node UUI
         else:
             raise HTTPException(status_code=500, detail=f"Unknown token type: {ttype}")
 
-    return QueryFormulaDefinitionResponse(id=node_id, definition=list(definition))
+    return QueryFormulaDefinitionResponse(node_id=node_id, definition=list(definition))
 
 
 @app.post("/evolution_graph/path", response_model=SuccessResponse, status_code=201)

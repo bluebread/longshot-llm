@@ -109,7 +109,7 @@ class NodeResponse(BaseModel):
 # Formula definition models
 class QueryFormulaDefinitionResponse(BaseModel):
     """Formula definition model."""
-    id: str
+    node_id: str
     definition: list[int]
 
 

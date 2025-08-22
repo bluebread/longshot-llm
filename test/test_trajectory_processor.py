@@ -347,7 +347,7 @@ class TestTrajectoryProcessor:
             base_formula = processor.reconstruct_base_formula(prefix_steps)
             
             # Verify the formula graph was created
-            assert hasattr(base_formula, 'gates') or hasattr(base_formula, 'num_gates')
+            assert hasattr(base_formula, 'size')
             
             print(f"✅ Base formula reconstruction completed successfully")
             print(f"   - Formula has gates: {hasattr(base_formula, 'gates')}")

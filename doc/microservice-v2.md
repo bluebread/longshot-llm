@@ -166,7 +166,7 @@ Update an existing node with integrated formula data in the V2 system.
 - **Response:**  
     ```json
     {
-        "message": "Success"
+        "message": "Node updated successfully"
     }
     ```
 - **Status Codes:**  
@@ -195,6 +195,7 @@ Retrieve IDs of likely isomorphic formulas.
 - **Response:**  
     ```json
     {
+        "wl_hash": "abcd1234...",
         "isomorphic_ids": ["f123", "f124"]
     }
     ```
@@ -312,7 +313,7 @@ Delete a trajectory.
 Retrieve the full definition of a formula by its ID.
 
 - **Query Parameters:**  
-    - `id` (string, required): Formula UUID.
+    - `node_id` (string, required): Formula node UUID.
 
 - **Response:**  
     ```json

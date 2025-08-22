@@ -114,3 +114,4 @@ The V2 architecture simplifies the original microservice design:
 - Microservices require infrastructure services (Docker Compose) to be running
 - V2 refactor is current architecture - older V1 components may be found in archive/
 - Tests expect specific database configurations - check service/docker-compose.yml for credentials
+- Every time you modify the service code and want to test, you must inform me to restart the service.

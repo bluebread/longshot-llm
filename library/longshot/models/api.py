@@ -137,6 +137,33 @@ class DownloadHyperNodesResponse(BaseModel):
     hypernodes: list[QueryHyperNodeInfo] = Field(..., description="List of hyper nodes with their average Q values and node IDs")
 
 
+# Dataset Response Models
+class EvolutionGraphEdge(BaseModel):
+    """Edge in the evolution graph."""
+    src: str = Field(..., description="Source node ID")
+    dst: str = Field(..., description="Target node ID")
+    type: str = Field(..., description="Type of edge (EVOLVED_TO or SAME_Q)")
+
+class EvolutionGraphDatasetResponse(BaseModel):
+    """Response model for complete evolution graph dataset."""
+    nodes: list[dict] = Field(..., description="All nodes in the evolution graph with selected fields")
+    edges: list[EvolutionGraphEdge] = Field(..., description="All edges in the evolution graph")
+
+class OptimizedTrajectoryStep(BaseModel):
+    """Optimized trajectory step as tuple (type, literals, cur_avgQ)."""
+    step: tuple[int, int, float] = Field(..., description="Trajectory step as (token_type, token_literals, cur_avgQ)")
+
+class OptimizedTrajectoryInfo(BaseModel):
+    """Optimized trajectory information with tuple-based steps."""
+    traj_id: str = Field(alias="_id", serialization_alias="traj_id")
+    timestamp: datetime
+    steps: list[tuple[int, int, float]] = Field(..., description="Steps as tuples of (token_type, token_literals, cur_avgQ)")
+
+class TrajectoryDatasetResponse(BaseModel):
+    """Response model for complete trajectory dataset."""
+    trajectories: list[OptimizedTrajectoryInfo] = Field(..., description="All trajectories in the dataset")
+
+
 # Generic response models
 class SuccessResponse(BaseModel):
     """Generic success response."""

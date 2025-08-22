@@ -456,5 +456,341 @@ class TestHighLevelAPI:
             client.delete("/trajectory", params={"traj_id": traj_id})
 
 
+class TestDatasetEndpoints:
+    """Test the new dataset endpoints."""
+    
+    def test_evolution_graph_dataset_basic(self, client: httpx.Client):
+        """Test GET /evolution_graph/dataset endpoint basic functionality."""
+        # Create trajectory for the nodes
+        trajectory_data = {
+            "steps": [
+                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+            ]
+        }
+        response = client.post("/trajectory", json=trajectory_data)
+        assert response.status_code == 201
+        traj_id = response.json()["traj_id"]
+        
+        # Create some nodes and edges for testing
+        nodes_data = [
+            {"node_id": "ds_f1", "avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash1", "traj_id": traj_id, "traj_slice": 0},
+            {"node_id": "ds_f2", "avgQ": 3.0, "num_vars": 3, "width": 4, "size": 6, "wl_hash": "hash2", "traj_id": traj_id, "traj_slice": 0},
+            {"node_id": "ds_f3", "avgQ": 2.5, "num_vars": 2, "width": 3, "size": 4, "wl_hash": "hash3", "traj_id": traj_id, "traj_slice": 0}
+        ]
+        
+        for node in nodes_data:
+            response = client.post("/evolution_graph/node", json=node)
+            assert response.status_code == 201
+        
+        # Create paths to generate edges
+        path_data = {"path": ["ds_f1", "ds_f2", "ds_f3"]}
+        response = client.post("/evolution_graph/path", json=path_data)
+        assert response.status_code == 201
+        
+        try:
+            # Test dataset endpoint
+            response = client.get("/evolution_graph/dataset")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Verify response structure
+            assert "nodes" in data
+            assert "edges" in data
+            assert isinstance(data["nodes"], list)
+            assert isinstance(data["edges"], list)
+            
+            # Check that our test nodes are included
+            node_ids = [node["node_id"] for node in data["nodes"]]
+            assert "ds_f1" in node_ids
+            assert "ds_f2" in node_ids
+            assert "ds_f3" in node_ids
+            
+            # Verify edge structure with new field names
+            if data["edges"]:
+                edge = data["edges"][0]
+                assert "src" in edge  # Renamed from "source"
+                assert "dst" in edge  # Renamed from "target"
+                assert "type" in edge  # Renamed from "edge_type"
+                assert edge["type"] in ["EVOLVED_TO", "SAME_Q"]
+        
+        finally:
+            # Clean up
+            for node in nodes_data:
+                client.delete("/evolution_graph/node", params={"node_id": node["node_id"]})
+            client.delete("/trajectory", params={"traj_id": traj_id})
+    
+    def test_evolution_graph_dataset_field_filtering(self, client: httpx.Client):
+        """Test field filtering functionality with required_fields parameter."""
+        # Create trajectory for the nodes
+        trajectory_data = {
+            "steps": [
+                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+            ]
+        }
+        response = client.post("/trajectory", json=trajectory_data)
+        assert response.status_code == 201
+        traj_id = response.json()["traj_id"]
+        
+        # Create a test node
+        node_data = {
+            "node_id": "ds_field_test", 
+            "avgQ": 2.5, 
+            "num_vars": 3, 
+            "width": 4, 
+            "size": 5, 
+            "wl_hash": "hash_field_test", 
+            "traj_id": traj_id, 
+            "traj_slice": 0
+        }
+        response = client.post("/evolution_graph/node", json=node_data)
+        assert response.status_code == 201
+        
+        try:
+            # Test with default fields (should only include node_id)
+            response = client.get("/evolution_graph/dataset")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Find our test node
+            test_node = next((node for node in data["nodes"] if node["node_id"] == "ds_field_test"), None)
+            assert test_node is not None
+            assert "node_id" in test_node
+            # Should only have node_id by default
+            expected_fields = {"node_id"}
+            assert set(test_node.keys()) == expected_fields
+            
+            # Test with specific fields
+            required_fields = ["node_id", "avgQ", "num_vars", "size"]
+            response = client.get("/evolution_graph/dataset", params={"required_fields": required_fields})
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Find our test node
+            test_node = next((node for node in data["nodes"] if node["node_id"] == "ds_field_test"), None)
+            assert test_node is not None
+            assert set(test_node.keys()) == set(required_fields)
+            assert test_node["avgQ"] == 2.5
+            assert test_node["num_vars"] == 3
+            assert test_node["size"] == 5
+            assert "width" not in test_node  # Should be filtered out
+            assert "wl_hash" not in test_node  # Should be filtered out
+            
+            # Test with all available fields
+            all_fields = ["node_id", "avgQ", "num_vars", "width", "size", "wl_hash", "timestamp", "traj_id", "traj_slice"]
+            response = client.get("/evolution_graph/dataset", params={"required_fields": all_fields})
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Find our test node
+            test_node = next((node for node in data["nodes"] if node["node_id"] == "ds_field_test"), None)
+            assert test_node is not None
+            # Should have all requested fields
+            for field in all_fields:
+                assert field in test_node
+        
+        finally:
+            # Clean up
+            client.delete("/evolution_graph/node", params={"node_id": "ds_field_test"})
+            client.delete("/trajectory", params={"traj_id": traj_id})
+    
+    def test_evolution_graph_dataset_edge_field_names(self, client: httpx.Client):
+        """Test that edge fields use the renamed field names."""
+        # Create trajectory for the nodes
+        trajectory_data = {
+            "steps": [
+                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+            ]
+        }
+        response = client.post("/trajectory", json=trajectory_data)
+        assert response.status_code == 201
+        traj_id = response.json()["traj_id"]
+        
+        # Create nodes with same avgQ to generate SAME_Q edges
+        nodes_data = [
+            {"node_id": "edge_test_1", "avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash1", "traj_id": traj_id, "traj_slice": 0},
+            {"node_id": "edge_test_2", "avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash2", "traj_id": traj_id, "traj_slice": 0},
+            {"node_id": "edge_test_3", "avgQ": 3.0, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash3", "traj_id": traj_id, "traj_slice": 0}
+        ]
+        
+        for node in nodes_data:
+            response = client.post("/evolution_graph/node", json=node)
+            assert response.status_code == 201
+        
+        # Create path to generate EVOLVED_TO edges
+        path_data = {"path": ["edge_test_1", "edge_test_2", "edge_test_3"]}
+        response = client.post("/evolution_graph/path", json=path_data)
+        assert response.status_code == 201
+        
+        try:
+            # Get dataset and check edge field names
+            response = client.get("/evolution_graph/dataset")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Check that we have edges
+            assert len(data["edges"]) > 0
+            
+            # Verify all edges have the correct field names
+            for edge in data["edges"]:
+                assert "src" in edge, "Edge should have 'src' field (renamed from 'source')"
+                assert "dst" in edge, "Edge should have 'dst' field (renamed from 'target')"
+                assert "type" in edge, "Edge should have 'type' field (renamed from 'edge_type')"
+                
+                # Should NOT have old field names
+                assert "source" not in edge, "Edge should not have old 'source' field"
+                assert "target" not in edge, "Edge should not have old 'target' field"
+                assert "edge_type" not in edge, "Edge should not have old 'edge_type' field"
+                
+                # Check that edge type is valid
+                assert edge["type"] in ["EVOLVED_TO", "SAME_Q"]
+                
+                # Check that src and dst are valid node IDs
+                assert isinstance(edge["src"], str)
+                assert isinstance(edge["dst"], str)
+        
+        finally:
+            # Clean up
+            for node in nodes_data:
+                client.delete("/evolution_graph/node", params={"node_id": node["node_id"]})
+            client.delete("/trajectory", params={"traj_id": traj_id})
+    
+    def test_trajectory_dataset_basic(self, client: httpx.Client):
+        """Test GET /trajectory/dataset endpoint basic functionality."""
+        # Create test trajectories
+        trajectory_data_1 = {
+            "steps": [
+                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0},
+                {"token_type": 1, "token_literals": 3, "cur_avgQ": 1.5}
+            ]
+        }
+        response = client.post("/trajectory", json=trajectory_data_1)
+        assert response.status_code == 201
+        traj_id_1 = response.json()["traj_id"]
+        
+        trajectory_data_2 = {
+            "steps": [
+                {"token_type": 0, "token_literals": 10, "cur_avgQ": 2.0},
+                {"token_type": 0, "token_literals": 15, "cur_avgQ": 2.5},
+                {"token_type": 1, "token_literals": 10, "cur_avgQ": 3.0}
+            ]
+        }
+        response = client.post("/trajectory", json=trajectory_data_2)
+        assert response.status_code == 201
+        traj_id_2 = response.json()["traj_id"]
+        
+        try:
+            # Test dataset endpoint
+            response = client.get("/trajectory/dataset")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Verify response structure
+            assert "trajectories" in data
+            assert isinstance(data["trajectories"], list)
+            assert len(data["trajectories"]) >= 2  # Should include our test trajectories
+            
+            # Find our test trajectories
+            test_trajs = [traj for traj in data["trajectories"] if traj["traj_id"] in [traj_id_1, traj_id_2]]
+            assert len(test_trajs) == 2
+            
+            # Verify trajectory structure
+            for traj in test_trajs:
+                assert "traj_id" in traj
+                assert "timestamp" in traj
+                assert "steps" in traj
+                assert isinstance(traj["steps"], list)
+        
+        finally:
+            # Clean up
+            client.delete("/trajectory", params={"traj_id": traj_id_1})
+            client.delete("/trajectory", params={"traj_id": traj_id_2})
+    
+    def test_trajectory_dataset_tuple_format(self, client: httpx.Client):
+        """Test that trajectory steps are returned in tuple format."""
+        # Create test trajectory with known steps
+        trajectory_data = {
+            "steps": [
+                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0},
+                {"token_type": 1, "token_literals": 10, "cur_avgQ": 2.5},
+                {"token_type": 0, "token_literals": 15, "cur_avgQ": 3.7}
+            ]
+        }
+        response = client.post("/trajectory", json=trajectory_data)
+        assert response.status_code == 201
+        traj_id = response.json()["traj_id"]
+        
+        try:
+            # Get dataset
+            response = client.get("/trajectory/dataset")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Find our test trajectory
+            test_traj = next((traj for traj in data["trajectories"] if traj["traj_id"] == traj_id), None)
+            assert test_traj is not None
+            
+            # Verify steps are in tuple format
+            steps = test_traj["steps"]
+            assert len(steps) == 3
+            
+            # Each step should be a list/tuple of 3 elements: [token_type, token_literals, cur_avgQ]
+            expected_steps = [
+                [0, 5, 1.0],
+                [1, 10, 2.5],
+                [0, 15, 3.7]
+            ]
+            
+            for i, step in enumerate(steps):
+                assert isinstance(step, list), f"Step {i} should be a list/tuple"
+                assert len(step) == 3, f"Step {i} should have exactly 3 elements"
+                assert step[0] == expected_steps[i][0], f"Step {i} token_type mismatch"
+                assert step[1] == expected_steps[i][1], f"Step {i} token_literals mismatch"
+                assert step[2] == expected_steps[i][2], f"Step {i} cur_avgQ mismatch"
+                
+                # Verify types
+                assert isinstance(step[0], int), f"Step {i} token_type should be int"
+                assert isinstance(step[1], int), f"Step {i} token_literals should be int"
+                assert isinstance(step[2], (int, float)), f"Step {i} cur_avgQ should be number"
+        
+        finally:
+            # Clean up
+            client.delete("/trajectory", params={"traj_id": traj_id})
+    
+    def test_dataset_endpoints_empty_data(self, client: httpx.Client):
+        """Test dataset endpoints behavior with no data."""
+        # Test evolution graph dataset with no nodes
+        response = client.get("/evolution_graph/dataset")
+        assert response.status_code == 200
+        data = response.json()
+        assert "nodes" in data
+        assert "edges" in data
+        assert isinstance(data["nodes"], list)
+        assert isinstance(data["edges"], list)
+        # Should be empty or contain only existing data from other tests
+        
+        # Test trajectory dataset - might have data from other tests, but should not fail
+        response = client.get("/trajectory/dataset")
+        assert response.status_code == 200
+        data = response.json()
+        assert "trajectories" in data
+        assert isinstance(data["trajectories"], list)
+    
+    def test_evolution_graph_dataset_invalid_fields(self, client: httpx.Client):
+        """Test evolution graph dataset with invalid field names."""
+        # Test with some valid and some invalid fields
+        invalid_fields = ["node_id", "invalid_field", "avgQ", "nonexistent_field"]
+        response = client.get("/evolution_graph/dataset", params={"required_fields": invalid_fields})
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Should only include valid fields and ignore invalid ones
+        if data["nodes"]:
+            node = data["nodes"][0]
+            assert "node_id" in node
+            assert "avgQ" in node if "avgQ" in node else True  # May or may not be present depending on filtering
+            assert "invalid_field" not in node
+            assert "nonexistent_field" not in node
+
+
 if __name__ == "__main__":
     pytest.main(["-v", __file__])

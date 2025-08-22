@@ -26,6 +26,10 @@ from longshot.models import (
     CreateNewPathRequest,
     DownloadNodesResponse,
     DownloadHyperNodesResponse,
+    EvolutionGraphDatasetResponse,
+    EvolutionGraphEdge,
+    TrajectoryDatasetResponse,
+    OptimizedTrajectoryInfo,
     SuccessResponse
 )
 
@@ -80,7 +84,7 @@ async def lifespan(app: FastAPI):
         """
         CREATE CONSTRAINT formula_id_unique IF NOT EXISTS
         FOR (n:FormulaNode)
-        REQUIRE n.formula_id IS UNIQUE
+        REQUIRE n.node_id IS UNIQUE
         """,
         """
         CREATE INDEX num_vars_index IF NOT EXISTS
@@ -207,12 +211,12 @@ async def delete_trajectory(traj_id: str = Query(..., description="Trajectory UU
 async def get_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
     """Retrieve a node in the evolution graph by its ID with integrated formula data."""
     query = """
-    MATCH   (n:FormulaNode {formula_id: $node_id})
+    MATCH   (n:FormulaNode {node_id: $node_id})
     OPTIONAL MATCH (n)--(m:FormulaNode)
     WITH    n, 
             sum(CASE WHEN m.avgQ < n.avgQ THEN 1 ELSE 0 END) AS in_degree,
             sum(CASE WHEN m.avgQ > n.avgQ THEN 1 ELSE 0 END) AS out_degree
-    RETURN  n.formula_id AS node_id,
+    RETURN  n.node_id AS node_id,
             n.avgQ AS avgQ,
             n.num_vars AS num_vars,
             n.width AS width,
@@ -242,7 +246,7 @@ async def get_evolution_graph_node(node_id: str = Query(..., description="Node U
 async def create_evolution_graph_node(node: CreateNodeRequest):
     """Add a new node to the evolution graph with integrated formula data."""
     query = """
-    MERGE (n:FormulaNode {formula_id: $node_id})
+    MERGE (n:FormulaNode {node_id: $node_id})
     ON CREATE SET n.avgQ = $avgQ,
                   n.num_vars = $num_vars,
                   n.width = $width,
@@ -251,7 +255,7 @@ async def create_evolution_graph_node(node: CreateNodeRequest):
                   n.traj_id = $traj_id,
                   n.traj_slice = $traj_slice,
                   n.timestamp = $timestamp
-    RETURN n.formula_id AS node_id
+    RETURN n.node_id AS node_id
     """
     node_data = node.model_dump()
     node_data["timestamp"] = datetime.now()
@@ -277,7 +281,7 @@ async def update_evolution_graph_node(node: UpdateNodeRequest):
     set_clauses = [f"n.{key} = ${key}" for key in update_data.keys()]
 
     query = f"""
-    MATCH   (n:FormulaNode {{formula_id: $node_id}})
+    MATCH   (n:FormulaNode {{node_id: $node_id}})
     SET     {', '.join(set_clauses)}
     RETURN  n
     """
@@ -297,8 +301,8 @@ async def update_evolution_graph_node(node: UpdateNodeRequest):
 async def delete_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
     """Delete a node and its relationships."""
     query = """
-    MATCH   (n:FormulaNode {formula_id: $node_id})
-    WITH    n, n.formula_id AS node_id
+    MATCH   (n:FormulaNode {node_id: $node_id})
+    WITH    n, n.node_id AS node_id
     DETACH  DELETE n
     RETURN  node_id
     """
@@ -316,7 +320,7 @@ async def get_formula_definition(node_id: str = Query(..., description="Node UUI
     """Retrieve the full definition of a formula by its ID using trajectory reconstruction."""
     # Get the formula node from Neo4j
     query = """
-    MATCH (n:FormulaNode {formula_id: $node_id})
+    MATCH (n:FormulaNode {node_id: $node_id})
     RETURN n.traj_id AS traj_id, n.traj_slice AS traj_slice
     """
     
@@ -363,8 +367,8 @@ async def create_new_path(request: CreateNewPathRequest):
     query = """
     WITH    $path AS nodes
     UNWIND  range(0, size(nodes) - 2) AS i
-    MERGE   (n:FormulaNode {formula_id: nodes[i]})
-    MERGE   (m:FormulaNode {formula_id: nodes[i + 1]})
+    MERGE   (n:FormulaNode {node_id: nodes[i]})
+    MERGE   (m:FormulaNode {node_id: nodes[i + 1]})
     MERGE   (n)-[:EVOLVED_TO]->(m)
     WITH    n, m
     WHERE   n.avgQ IS NOT NULL AND m.avgQ IS NOT NULL AND n.avgQ = m.avgQ
@@ -399,7 +403,7 @@ async def download_evolution_graph_nodes(
     WITH    n, 
             sum(CASE WHEN m.avgQ < n.avgQ THEN 1 ELSE 0 END) AS in_degree,
             sum(CASE WHEN m.avgQ > n.avgQ THEN 1 ELSE 0 END) AS out_degree
-    RETURN  n.formula_id AS node_id,
+    RETURN  n.node_id AS node_id,
             n.avgQ AS avgQ,
             n.num_vars AS num_vars,
             n.width AS width,
@@ -458,7 +462,7 @@ async def download_evolution_graph_hypernodes(
             gds.util.asNode(nodeId) AS node
     WHERE   {predicate}
     WITH    componentId,
-            collect(node.formula_id) AS nodes
+            collect(node.node_id) AS nodes
     WHERE   size(nodes) > 1
     RETURN  componentId AS hnid,
             nodes
@@ -475,6 +479,100 @@ async def download_evolution_graph_hypernodes(
         session.run(drop_cmd, gs=gs)
 
     return { "hypernodes": [record.data() for record in records] }
+
+
+@app.get("/evolution_graph/dataset", response_model=EvolutionGraphDatasetResponse)
+async def get_evolution_graph_dataset(
+    required_fields: list[str] = Query(["node_id"], description="List of required node fields to include")
+):
+    """Get the complete evolution graph dataset including all nodes and edges with optional field filtering."""
+    
+    # Build field selection - node_id is always required
+    available_fields = {
+        "node_id": "n.node_id",
+        "avgQ": "n.avgQ", 
+        "num_vars": "n.num_vars",
+        "width": "n.width",
+        "size": "n.size",
+        "wl_hash": "n.wl_hash",
+        "timestamp": "datetime(n.timestamp)",
+        "traj_id": "n.traj_id",
+        "traj_slice": "n.traj_slice"
+    }
+    
+    # Ensure node_id is always included
+    if "node_id" not in required_fields:
+        required_fields = ["node_id"] + required_fields
+    
+    # Filter valid fields and build select clause
+    valid_fields = [field for field in required_fields if field in available_fields]
+    select_fields = [f"{available_fields[field]} AS {field}" for field in valid_fields]
+    select_clause = ", ".join(select_fields)
+    
+    # Query to get all nodes with selected fields
+    nodes_query = f"""
+    MATCH   (n:FormulaNode)
+    RETURN  {select_clause}
+    """
+    
+    # Query to get all edges
+    edges_query = """
+    MATCH (n:FormulaNode)-[r]->(m:FormulaNode)
+    RETURN n.node_id AS src, m.node_id AS dst, type(r) AS type
+    """
+    
+    with neo4j_driver.session() as session:
+        # Get nodes
+        nodes_response = session.run(nodes_query)
+        nodes_records = list(nodes_response)
+        
+        # Get edges
+        edges_response = session.run(edges_query)
+        edges_records = list(edges_response)
+    
+    # Process nodes
+    nodes = []
+    for record in nodes_records:
+        data = record.data()
+        # Convert Neo4j DateTime to Python datetime if present
+        if "timestamp" in data and data["timestamp"] and hasattr(data["timestamp"], "to_native"):
+            data["timestamp"] = data["timestamp"].to_native()
+        nodes.append(data)
+    
+    # Process edges
+    edges = [EvolutionGraphEdge(**record.data()) for record in edges_records]
+    
+    return EvolutionGraphDatasetResponse(nodes=nodes, edges=edges)
+
+
+@app.get("/trajectory/dataset", response_model=TrajectoryDatasetResponse)
+async def get_trajectory_dataset():
+    """Get the complete trajectory dataset with all trajectories using optimized tuple format."""
+    
+    # Get all trajectories from MongoDB
+    trajectories_cursor = trajectory_table.find({})
+    trajectories = []
+    
+    for trajectory_doc in trajectories_cursor:
+        # Convert steps to tuple format (token_type, token_literals, cur_avgQ)
+        optimized_steps = [
+            (
+                step["token_type"],
+                step["token_literals"], 
+                step["cur_avgQ"]
+            )
+            for step in trajectory_doc.get("steps", [])
+        ]
+        
+        # Create optimized trajectory info
+        optimized_trajectory = OptimizedTrajectoryInfo(
+            _id=trajectory_doc["_id"],
+            timestamp=trajectory_doc["timestamp"],
+            steps=optimized_steps
+        )
+        trajectories.append(optimized_trajectory)
+    
+    return TrajectoryDatasetResponse(trajectories=trajectories)
 
 # Health check endpoint
 @app.get("/health")

@@ -81,7 +81,6 @@ class QueryEvolutionGraphNode(BaseModel):
 
 class CreateNodeRequest(BaseModel):
     """Request model for creating a node with integrated formula data."""
-    node_id: str
     avgQ: float
     num_vars: int
     width: int
@@ -189,20 +188,46 @@ class TopKArmsResponse(BaseModel):
     top_k_arms: list[ArmInfo]
 
 
+# V2 Trajectory Processing Models
+class TrajectoryProcessingContext(BaseModel):
+    """Context for V2 trajectory processing with embedded formula reconstruction."""
+    prefix_traj: list[TrajectoryInfoStep] = Field(..., description="Base formula reconstruction trajectory containing all steps to build initial state")
+    suffix_traj: list[TrajectoryInfoStep] = Field(..., description="New trajectory steps to be processed and analyzed")
+    base_formula_hash: str | None = Field(None, description="Hash of the base formula for duplicate detection")
+    processing_metadata: dict = Field(default_factory=dict, description="Additional metadata for processing")
+    
+    @model_validator(mode='after')
+    def validate_trajectories(self) -> 'TrajectoryProcessingContext':
+        """Validate trajectory data consistency."""
+        # Validate prefix trajectory tokens
+        for i, step in enumerate(self.prefix_traj):
+            if step.token_type not in {0, 1, 2}:
+                raise ValueError(f"Invalid token_type {step.token_type} in prefix_traj at step {i}")
+        
+        # Validate suffix trajectory tokens  
+        for i, step in enumerate(self.suffix_traj):
+            if step.token_type not in {0, 1, 2}:
+                raise ValueError(f"Invalid token_type {step.token_type} in suffix_traj at step {i}")
+        
+        return self
+
+
 # Weapon-related models
 class WeaponRolloutRequest(BaseModel):
-    """Request model for weapon rollout endpoint."""
+    """Request model for weapon rollout endpoint with V2 trajectory schema."""
     num_vars: int = Field(..., description="Number of variables in the formula")
     width: int = Field(..., description="Width of the formula")
     size: int = Field(..., description="Size of the formula (number of nodes)")
-    steps_per_trajectory: int  = Field(None, description="Number of steps per trajectory")
-    num_trajectories: int  = Field(None, description="Number of trajectories to collect")
-    initial_definition: list[int] = Field(..., description="Initial definition of the formula, represented as a list of integers representing gates")
-    initial_node_id: str | None = Field(None, description="ID of the initial node used as base for trajectories")
+    steps_per_trajectory: int = Field(None, description="Number of steps per trajectory")
+    num_trajectories: int = Field(None, description="Number of trajectories to collect")
+    prefix_traj: list[TrajectoryInfoStep] = Field(..., description="Base formula trajectory for reconstruction - contains complete formula building sequence")
     seed: int | None = Field(None, description="Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic")
 
 
 class WeaponRolloutResponse(BaseModel):
     """Response model for weapon rollout endpoint."""
     total_steps: int = Field(..., description="Number of steps actually run")
-    num_trajectories: int = Field(..., description="Number of trajectories actually collected") 
+    num_trajectories: int = Field(..., description="Number of trajectories actually collected")
+    processed_formulas: int = Field(default=0, description="Number of unique formulas processed")
+    new_nodes_created: int = Field(default=0, description="Number of new nodes created in the evolution graph")
+    base_formula_exists: bool = Field(default=False, description="Whether the base formula already exists in the database") 

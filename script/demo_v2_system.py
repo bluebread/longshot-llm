@@ -32,6 +32,7 @@ from typing import Dict, List, Any
 
 from longshot.agent import ClusterbombAgent, WarehouseAgent
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
+from longshot.circuit import Literals
 
 
 def create_output_directory() -> Path:
@@ -114,35 +115,52 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str) 
 
 
 def retrieve_trajectories(warehouse: WarehouseAgent) -> Dict[str, Any]:
-    """Retrieve trajectory data from warehouse."""
+    """Retrieve trajectory data from warehouse using dataset endpoint."""
     print("\n=== Retrieving Trajectory Data ===")
     
-    # Try to query trajectories from warehouse
+    # Use the new trajectory dataset endpoint
     try:
-        # Try to get trajectory list
-        response = warehouse._client.get("/trajectory/list")
+        response = warehouse._client.get("/trajectory/dataset")
         if response.status_code == 200:
-            trajectories = response.json()
+            dataset = response.json()
+            trajectories = dataset.get("trajectories", [])
             print(f"✓ Found {len(trajectories)} trajectories in warehouse")
-        elif response.status_code == 404:
-            print(f"⚠ Trajectory list endpoint not found (404)")
-            print("  The /trajectory/list endpoint needs to be implemented")
-            trajectories = []
+            
+            # Calculate statistics from actual data
+            total_steps = 0
+            for traj in trajectories:
+                steps = traj.get("steps", [])
+                total_steps += len(steps)
+            
+            trajectory_stats = {
+                "total_trajectories": len(trajectories),
+                "steps_per_trajectory": total_steps // len(trajectories) if trajectories else 0,
+                "total_steps": total_steps,
+                "timestamp": datetime.now().isoformat(),
+                "stored_trajectories": len(trajectories)
+            }
+            
         else:
             print(f"⚠ Failed to retrieve trajectories: HTTP {response.status_code}")
             print(f"  Response: {response.text[:200] if response.text else 'No response body'}")
             trajectories = []
+            trajectory_stats = {
+                "total_trajectories": 0,
+                "steps_per_trajectory": 0,
+                "total_steps": 0,
+                "timestamp": datetime.now().isoformat(),
+                "stored_trajectories": 0
+            }
     except Exception as e:
         print(f"⚠ Error retrieving trajectories: {e}")
         trajectories = []
-    
-    trajectory_stats = {
-        "total_trajectories": 10,
-        "steps_per_trajectory": 32,
-        "total_steps": 320,
-        "timestamp": datetime.now().isoformat(),
-        "stored_trajectories": len(trajectories)
-    }
+        trajectory_stats = {
+            "total_trajectories": 0,
+            "steps_per_trajectory": 0,
+            "total_steps": 0,
+            "timestamp": datetime.now().isoformat(),
+            "stored_trajectories": 0
+        }
     
     print("Trajectory Statistics:")
     for key, value in trajectory_stats.items():
@@ -152,57 +170,40 @@ def retrieve_trajectories(warehouse: WarehouseAgent) -> Dict[str, Any]:
 
 
 def retrieve_evolution_graph(warehouse: WarehouseAgent) -> nx.DiGraph:
-    """Retrieve and build evolution graph from warehouse."""
+    """Retrieve and build evolution graph from warehouse using dataset endpoint."""
     print("\n=== Building Evolution Graph ===")
     
     # Add a small delay to ensure processing is complete
     print("Waiting for processing to complete...")
     time.sleep(2)
     
-    # Download nodes for our configuration
+    # Use the new dataset endpoint to get complete graph data
     try:
-        nodes_response = warehouse._client.get("/evolution_graph/download_nodes", params={
-            "num_vars": 4,
-            "width": 3
+        # Request specific fields to optimize data transfer
+        dataset_response = warehouse._client.get("/evolution_graph/dataset", params={
+            "required_fields": ["node_id", "avgQ", "num_vars", "width", "size", "wl_hash"]
         })
-        if nodes_response.status_code == 200:
-            nodes_data = nodes_response.json()
-            nodes = nodes_data.get("nodes", [])
-            print(f"✓ Retrieved {len(nodes)} nodes from warehouse")
+        if dataset_response.status_code == 200:
+            dataset = dataset_response.json()
+            nodes = dataset.get("nodes", [])
+            edges = dataset.get("edges", [])
+            print(f"✓ Retrieved {len(nodes)} nodes and {len(edges)} edges from warehouse")
             if len(nodes) == 0:
                 print("  Note: No nodes found - trajectories may still be processing")
         else:
-            print(f"⚠ Failed to retrieve nodes: HTTP {nodes_response.status_code}")
-            print(f"  Response: {nodes_response.text[:200] if nodes_response.text else 'No response body'}")
+            print(f"⚠ Failed to retrieve graph dataset: HTTP {dataset_response.status_code}")
+            print(f"  Response: {dataset_response.text[:200] if dataset_response.text else 'No response body'}")
             nodes = []
+            edges = []
     except Exception as e:
-        print(f"⚠ Error retrieving nodes: {e}")
+        print(f"⚠ Error retrieving graph dataset: {e}")
         nodes = []
-    
-    # Download hypernodes (connected components)
-    try:
-        hypernodes_response = warehouse._client.get("/evolution_graph/download_hypernodes", params={
-            "num_vars": 4,
-            "width": 3
-        })
-        if hypernodes_response.status_code == 200:
-            hypernodes_data = hypernodes_response.json()
-            hypernodes = hypernodes_data.get("hypernodes", [])
-            print(f"✓ Retrieved {len(hypernodes)} hypernodes from warehouse")
-            if len(hypernodes) == 0:
-                print("  Note: No hypernodes found - graph may be empty")
-        else:
-            print(f"⚠ Failed to retrieve hypernodes: HTTP {hypernodes_response.status_code}")
-            print(f"  Response: {hypernodes_response.text[:200] if hypernodes_response.text else 'No response body'}")
-            hypernodes = []
-    except Exception as e:
-        print(f"⚠ Error retrieving hypernodes: {e}")
-        hypernodes = []
+        edges = []
     
     # Build NetworkX graph
     G = nx.DiGraph()
     
-    # Add nodes
+    # Add nodes with their attributes
     for node in nodes:
         G.add_node(
             node['node_id'],
@@ -210,21 +211,61 @@ def retrieve_evolution_graph(warehouse: WarehouseAgent) -> nx.DiGraph:
             size=node.get('size', 0),
             width=node.get('width', 0),
             num_vars=node.get('num_vars', 0),
-            wl_hash=node.get('wl_hash', ''),
-            in_degree=node.get('in_degree', 0),
-            out_degree=node.get('out_degree', 0)
+            wl_hash=node.get('wl_hash', '')
         )
     
-    # Add edges from hypernodes (which contain edge information)
-    for hypernode in hypernodes:
-        if 'edges' in hypernode:
-            for edge in hypernode['edges']:
-                if 'source' in edge and 'target' in edge:
-                    G.add_edge(edge['source'], edge['target'])
+    # Add edges using the new format (src, dst, type)
+    for edge in edges:
+        if 'src' in edge and 'dst' in edge:
+            G.add_edge(edge['src'], edge['dst'], edge_type=edge.get('type', 'EVOLVED_TO'))
     
     print(f"✓ Built graph with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
     
     return G
+
+
+def retrieve_detailed_node_info(warehouse: WarehouseAgent) -> List[Dict[str, Any]]:
+    """Retrieve detailed information for all nodes including definitions."""
+    print("\n=== Retrieving Detailed Node Information ===")
+    
+    # Get all node data with complete fields
+    try:
+        dataset_response = warehouse._client.get("/evolution_graph/dataset", params={
+            "required_fields": ["node_id", "avgQ", "num_vars", "width", "size", "wl_hash", "timestamp", "traj_id", "traj_slice"]
+        })
+        if dataset_response.status_code == 200:
+            dataset = dataset_response.json()
+            nodes = dataset.get("nodes", [])
+            print(f"✓ Retrieved detailed info for {len(nodes)} nodes")
+        else:
+            print(f"⚠ Failed to retrieve detailed node data: HTTP {dataset_response.status_code}")
+            return []
+    except Exception as e:
+        print(f"⚠ Error retrieving detailed node data: {e}")
+        return []
+    
+    # Enrich nodes with formula definitions
+    detailed_nodes = []
+    for node in nodes:
+        node_id = node.get('node_id')
+        if node_id:
+            try:
+                # Get formula definition for this node
+                def_response = warehouse._client.get("/formula/definition", params={"node_id": node_id})
+                if def_response.status_code == 200:
+                    def_data = def_response.json()
+                    node['definition'] = def_data.get('definition', [])
+                else:
+                    node['definition'] = []
+                    print(f"  ⚠ No definition found for node {node_id}")
+            except Exception as e:
+                print(f"  ⚠ Error getting definition for {node_id}: {e}")
+                node['definition'] = []
+        
+        detailed_nodes.append(node)
+    
+    print(f"✓ Enriched {len(detailed_nodes)} nodes with formula definitions")
+    return detailed_nodes
 
 
 def visualize_graph(G: nx.DiGraph, output_dir: Path):
@@ -251,6 +292,11 @@ def visualize_graph(G: nx.DiGraph, output_dir: Path):
     for node in G.nodes():
         avgQ = G.nodes[node].get('avgQ', 0)
         size = G.nodes[node].get('size', 1)
+        # Handle None values
+        if avgQ is None:
+            avgQ = 0
+        if size is None:
+            size = 1
         node_colors.append(avgQ)
         node_sizes.append(100 + size * 10)  # Scale node size by formula size
     
@@ -297,7 +343,7 @@ def visualize_graph(G: nx.DiGraph, output_dir: Path):
     
     # In-degree distribution
     plt.subplot(1, 2, 1)
-    in_degrees = [d for n, d in G.in_degree()]
+    in_degrees = [d for _, d in G.in_degree()]
     if in_degrees:
         plt.hist(in_degrees, bins=20, color='blue', alpha=0.7, edgecolor='black')
     plt.title('In-Degree Distribution')
@@ -307,7 +353,7 @@ def visualize_graph(G: nx.DiGraph, output_dir: Path):
     
     # Out-degree distribution
     plt.subplot(1, 2, 2)
-    out_degrees = [d for n, d in G.out_degree()]
+    out_degrees = [d for _, d in G.out_degree()]
     if out_degrees:
         plt.hist(out_degrees, bins=20, color='green', alpha=0.7, edgecolor='black')
     plt.title('Out-Degree Distribution')
@@ -322,6 +368,127 @@ def visualize_graph(G: nx.DiGraph, output_dir: Path):
     plt.savefig(degree_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"✓ Saved: {degree_path}")
+
+
+def convert_gate_definition_to_string(gate_int: int) -> str:
+    """Convert integer gate representation to human-readable string using Literals."""
+    try:
+        # Extract positive and negative literals from the 64-bit integer
+        # First 32 bits are positive literals, last 32 bits are negative literals
+        pos = gate_int & ((1 << 32) - 1)  # Extract lower 32 bits
+        neg = (gate_int >> 32) & ((1 << 32) - 1)  # Extract upper 32 bits
+        
+        # Create Literals object and convert to string
+        literals = Literals(pos=pos, neg=neg)
+        formula_str = str(literals)
+        
+        # Replace negation symbol ¬ with ~ for better display compatibility
+        formula_str = formula_str.replace('¬', '~')
+        
+        return formula_str
+    except Exception as e:
+        return f"[Error converting {gate_int}: {e}]"
+
+
+def format_definition_as_strings(definition: List[int]) -> List[str]:
+    """Convert a list of integer gate definitions to human-readable strings."""
+    if not definition:
+        return []
+    
+    return [convert_gate_definition_to_string(gate) for gate in definition]
+
+
+def generate_detailed_node_report(detailed_nodes: List[Dict[str, Any]], output_dir: Path):
+    """Generate detailed report with all node information including definitions."""
+    print("\n=== Generating Detailed Node Report ===")
+    
+    if not detailed_nodes:
+        print("⚠ No nodes to report")
+        return
+    
+    # Save detailed node report
+    node_report_path = output_dir / "detailed_node_report.txt"
+    with open(node_report_path, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write("DETAILED NODE INFORMATION REPORT\n")
+        f.write("=" * 80 + "\n\n")
+        
+        f.write(f"Generated: {datetime.now().isoformat()}\n")
+        f.write(f"Total nodes: {len(detailed_nodes)}\n\n")
+        
+        # Sort nodes by avgQ (best first)
+        sorted_nodes = sorted(detailed_nodes, key=lambda x: x.get('avgQ') or 0, reverse=True)
+        
+        for i, node in enumerate(sorted_nodes, 1):
+            f.write(f"NODE {i:02d}: {node.get('node_id', 'Unknown')}\n")
+            f.write("-" * 50 + "\n")
+            
+            # Basic attributes
+            f.write(f"Average Q-value: {node.get('avgQ', 'N/A')}\n")
+            f.write(f"Number of variables: {node.get('num_vars', 'N/A')}\n")
+            f.write(f"Width: {node.get('width', 'N/A')}\n")
+            f.write(f"Size: {node.get('size', 'N/A')}\n")
+            f.write(f"WL Hash: {node.get('wl_hash', 'N/A')}\n")
+            f.write(f"Timestamp: {node.get('timestamp', 'N/A')}\n")
+            f.write(f"Trajectory ID: {node.get('traj_id', 'N/A')}\n")
+            f.write(f"Trajectory Slice: {node.get('traj_slice', 'N/A')}\n")
+            
+            # Formula definition (convert integers to readable strings)
+            definition = node.get('definition', [])
+            if definition:
+                f.write(f"Formula Definition (raw): {definition}\n")
+                string_definition = format_definition_as_strings(definition)
+                f.write(f"Formula Definition (readable): {string_definition}\n")
+                f.write(f"Definition Length: {len(definition)} gates\n")
+            else:
+                f.write("Formula Definition: [Empty or not available]\n")
+            
+            f.write("\n")
+    
+    # Also create a JSON version for programmatic access
+    # Enrich the nodes with string representations for JSON export
+    enriched_nodes = []
+    for node in sorted_nodes:
+        enriched_node = node.copy()
+        definition = node.get('definition', [])
+        if definition:
+            enriched_node['definition_strings'] = format_definition_as_strings(definition)
+        else:
+            enriched_node['definition_strings'] = []
+        enriched_nodes.append(enriched_node)
+    
+    json_report_path = output_dir / "detailed_node_report.json"
+    with open(json_report_path, 'w') as f:
+        json.dump({
+            "timestamp": datetime.now().isoformat(),
+            "total_nodes": len(detailed_nodes),
+            "nodes": enriched_nodes
+        }, f, indent=2, default=str)
+    
+    print(f"✓ Detailed node report saved to: {node_report_path}")
+    print(f"✓ JSON node report saved to: {json_report_path}")
+    
+    # Print summary statistics
+    print("\nNode Summary Statistics:")
+    print(f"  - Total nodes analyzed: {len(detailed_nodes)}")
+    
+    # Count nodes with definitions
+    nodes_with_def = sum(1 for n in detailed_nodes if n.get('definition'))
+    print(f"  - Nodes with definitions: {nodes_with_def}")
+    
+    # avgQ statistics
+    avg_qs = [n.get('avgQ') for n in detailed_nodes if n.get('avgQ') is not None]
+    if avg_qs:
+        print(f"  - Best avgQ: {max(avg_qs):.4f}")
+        print(f"  - Average avgQ: {np.mean(avg_qs):.4f}")
+        print(f"  - Worst avgQ: {min(avg_qs):.4f}")
+    
+    # Size statistics
+    sizes = [n.get('size') for n in detailed_nodes if n.get('size') is not None]
+    if sizes:
+        print(f"  - Largest formula size: {max(sizes)}")
+        print(f"  - Average formula size: {np.mean(sizes):.2f}")
+        print(f"  - Smallest formula size: {min(sizes)}")
 
 
 def generate_summary_report(G: nx.DiGraph, trajectory_stats: Dict, output_dir: Path):
@@ -343,6 +510,8 @@ def generate_summary_report(G: nx.DiGraph, trajectory_stats: Dict, output_dir: P
         best_avgQ = -float('inf')
         for node in G.nodes():
             avgQ = G.nodes[node].get('avgQ', 0)
+            if avgQ is None:
+                avgQ = 0
             if avgQ > best_avgQ:
                 best_avgQ = avgQ
                 best_node = node
@@ -351,8 +520,8 @@ def generate_summary_report(G: nx.DiGraph, trajectory_stats: Dict, output_dir: P
         stats["best_avgQ"] = best_avgQ
         
         # Calculate average metrics
-        avg_sizes = [G.nodes[n].get('size', 0) for n in G.nodes()]
-        avg_Qs = [G.nodes[n].get('avgQ', 0) for n in G.nodes()]
+        avg_sizes = [G.nodes[n].get('size', 0) or 0 for n in G.nodes()]
+        avg_Qs = [G.nodes[n].get('avgQ', 0) or 0 for n in G.nodes()]
         
         stats["avg_formula_size"] = np.mean(avg_sizes) if avg_sizes else 0
         stats["max_formula_size"] = max(avg_sizes) if avg_sizes else 0
@@ -436,7 +605,7 @@ def main():
         initial_node_id = create_empty_formula(warehouse)
         
         # 4. Execute weapon rollout
-        rollout_result = execute_weapon_rollout(clusterbomb, initial_node_id)
+        execute_weapon_rollout(clusterbomb, initial_node_id)
         
         # 5. Retrieve trajectory data
         trajectory_stats = retrieve_trajectories(warehouse)
@@ -447,8 +616,14 @@ def main():
         # 7. Create visualizations
         visualize_graph(G, output_dir)
         
-        # 8. Generate summary report
-        stats = generate_summary_report(G, trajectory_stats, output_dir)
+        # 8. Retrieve detailed node information
+        detailed_nodes = retrieve_detailed_node_info(warehouse)
+        
+        # 9. Generate detailed node report
+        generate_detailed_node_report(detailed_nodes, output_dir)
+        
+        # 10. Generate summary report
+        generate_summary_report(G, trajectory_stats, output_dir)
         
         print("\n" + "=" * 60)
         print("DEMONSTRATION COMPLETE")

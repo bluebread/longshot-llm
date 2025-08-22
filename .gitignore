@@ -286,6 +286,10 @@ node_modules/
 */playground
 */jupyter
 *.txt
+*.png
+*.jpg
+*.jpeg
+output/
 !requirements.txt
 !rl/env
 doc/*/_generated

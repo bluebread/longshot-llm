@@ -309,6 +309,38 @@ Delete a trajectory.
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
 
+#### `DELETE /trajectory/purge`
+**DESTRUCTIVE OPERATION**: Completely purge all trajectory data from MongoDB. This operation cannot be undone.
+
+- **Request Body:** None
+- **Response:**  
+    ```json
+    {
+        "success": true,
+        "deleted_count": 1247,
+        "message": "Successfully purged 1247 trajectories from MongoDB",
+        "timestamp": "2025-01-21T14:30:45.123456"
+    }
+    ```
+- **Status Codes:**  
+    - `200 OK`, `500 Internal Server Error`
+
+#### `DELETE /formula/purge`
+**DESTRUCTIVE OPERATION**: Completely purge all formula data from Neo4j and Redis. This operation cannot be undone.
+
+- **Request Body:** None
+- **Response:**  
+    ```json
+    {
+        "success": true,
+        "deleted_count": 2856,
+        "message": "Successfully purged 1523 nodes from Neo4j and 1333 keys from Redis",
+        "timestamp": "2025-01-21T14:30:45.123456"
+    }
+    ```
+- **Status Codes:**  
+    - `200 OK`, `500 Internal Server Error`
+
 #### `GET /formula/definition`
 Retrieve the full definition of a formula by its ID.
 

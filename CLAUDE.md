@@ -51,6 +51,13 @@ python main.py  # Runs on localhost:8060
 python script/demo_v2_system.py
 ```
 
+### Database Management
+```bash
+# Clean up all databases (DESTRUCTIVE - use with caution!)
+python script/cleanup_databases.py --dry-run  # See what would be deleted
+python script/cleanup_databases.py --force    # Actually delete all data
+```
+
 ## Architecture
 
 ### Core Components

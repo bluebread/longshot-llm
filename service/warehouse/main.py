@@ -33,6 +33,16 @@ from longshot.models import (
     SuccessResponse
 )
 
+# Add purge response models
+from pydantic import BaseModel
+from datetime import datetime
+
+class PurgeResponse(BaseModel):
+    success: bool
+    deleted_count: int
+    message: str
+    timestamp: datetime = datetime.now()
+
 logging.basicConfig(
     level=logging.INFO, 
     filename="warehouse.log", 
@@ -578,6 +588,63 @@ async def get_trajectory_dataset():
         trajectories.append(optimized_trajectory)
     
     return TrajectoryDatasetResponse(trajectories=trajectories)
+
+# Database purge endpoints
+@app.delete("/trajectory/purge", response_model=PurgeResponse)
+async def purge_trajectories():
+    """Completely purge all trajectory data from MongoDB."""
+    try:
+        # Get count before deletion for reporting
+        count_before = trajectory_table.count_documents({})
+        
+        # Drop the entire trajectory collection
+        trajectory_table.drop()
+        
+        # Recreate the collection (empty)
+        mongodb.create_collection("TrajectoryTable")
+        
+        logger.info(f"Purged {count_before} trajectories from MongoDB")
+        
+        return PurgeResponse(
+            success=True,
+            deleted_count=count_before,
+            message=f"Successfully purged {count_before} trajectories from MongoDB",
+            timestamp=datetime.now()
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to purge trajectories: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to purge trajectories: {str(e)}")
+
+@app.delete("/formula/purge", response_model=PurgeResponse) 
+async def purge_formulas():
+    """Completely purge all formula data from Neo4j and Redis."""
+    try:
+        # Delete all FormulaNode labeled nodes from Neo4j and count them
+        with neo4j_driver.session() as session:
+            delete_result = session.run("MATCH (n:FormulaNode) DETACH DELETE n RETURN count(n) as deleted").single()
+            nodes_deleted = delete_result["deleted"] if delete_result else 0
+        
+        # Count Redis keys before deletion
+        redis_keys_before = isohash_table.dbsize()
+        
+        # Clear all Redis keys (isomorphism cache)
+        isohash_table.flushdb()
+        
+        total_deleted = nodes_deleted + redis_keys_before
+        
+        logger.info(f"Purged {nodes_deleted} nodes from Neo4j and {redis_keys_before} keys from Redis")
+        
+        return PurgeResponse(
+            success=True,
+            deleted_count=total_deleted,
+            message=f"Successfully purged {nodes_deleted} nodes from Neo4j and {redis_keys_before} keys from Redis",
+            timestamp=datetime.now()
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to purge formulas: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to purge formulas: {str(e)}")
 
 # Health check endpoint
 @app.get("/health")

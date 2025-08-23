@@ -532,7 +532,8 @@ Collects trajectories from the environment and processes them locally using V2 T
                 "cur_avgQ": 1.0
             }
         ],
-        "seed": 42
+        "seed": 42,
+        "early_stop": false
     }
     ```
 - Request Field Descriptions:
@@ -543,6 +544,7 @@ Collects trajectories from the environment and processes them locally using V2 T
     - `num_trajectories` (int): Number of trajectories to collect.
     - `prefix_traj` (list[TrajectoryStep]): **V2 REQUIRED** - Complete trajectory for base formula reconstruction. Contains all steps needed to build the initial state, eliminating the need for linked list traversal.
     - `seed` (int, optional): Random seed for reproducibility. Default: None.
+    - `early_stop` (bool, optional): If True, stop trajectory simulation when avgQ reaches 0. This affects the `total_steps` count in the response. Default: False.
 - TrajectoryStep Format:
     - `token_type` (int): Type of operation (0=ADD, 1=DEL, 2=EOS)
     - `token_literals` (int): 64-bit integer representation of literals (first 32 bits positive, last 32 bits negative)
@@ -558,7 +560,7 @@ Collects trajectories from the environment and processes them locally using V2 T
     }
     ```
 - Response Field Descriptions:
-    - `total_steps` (int): Total number of steps executed across all trajectories
+    - `total_steps` (int): Total number of steps actually executed across all trajectories (may be less than `steps_per_trajectory * num_trajectories` if `early_stop` is enabled)
     - `num_trajectories` (int): Number of trajectories actually collected
     - `processed_formulas` (int): **V2** - Number of unique formulas processed from trajectory segments
     - `new_nodes_created` (int): **V2** - Number of new nodes created in the evolution graph

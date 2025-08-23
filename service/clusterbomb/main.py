@@ -157,6 +157,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         v2_contexts = []  # V2 processing contexts
         total_processed_formulas = 0
         total_new_nodes = 0
+        total_actual_steps = 0  # Track actual steps taken (for early stopping)
         
         # Determine stopping condition and trajectory length
         steps_per_trajectory = request.steps_per_trajectory 
@@ -164,18 +165,20 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         
         while actual_trajectories < max_trajectories:
             current_trajectory = []
+            trajectory_steps = 0  # Track steps for this trajectory
             
             # Reset game for new trajectory
             if actual_trajectories > 0:
                 game.reset()
             
-            # Run exactly steps_per_trajectory steps for this trajectory
-            for _ in range(steps_per_trajectory):
+            # Run trajectory steps with optional early stopping
+            for step_num in range(steps_per_trajectory):
                 # Generate random action (token) using local RNG for coroutine safety
                 token = generate_random_token(request.num_vars, request.width, rng)
                 
                 # Take step in environment
                 reward = game.step(token)
+                trajectory_steps += 1
                 
                 # Record step for V2 trajectory format
                 step_data = {
@@ -184,6 +187,14 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                     "cur_avgQ": game.cur_avgQ
                 }
                 current_trajectory.append(step_data)
+                
+                # Early stopping: if avgQ reaches 0 and early_stop is enabled, break
+                if request.early_stop and game.cur_avgQ == 0:
+                    logger.info(f"Early stopping triggered at step {step_num + 1}/{steps_per_trajectory} (avgQ = 0)")
+                    break
+            
+            # Add trajectory steps to total
+            total_actual_steps += trajectory_steps
             
             # V2: Create TrajectoryProcessingContext with suffix trajectory
             suffix_steps = [
@@ -237,7 +248,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         # Don't fail the whole request if processing fails - just log it
         
     return WeaponRolloutResponse(
-        total_steps=request.steps_per_trajectory * actual_trajectories,
+        total_steps=total_actual_steps,
         num_trajectories=actual_trajectories,
         processed_formulas=total_processed_formulas,
         new_nodes_created=total_new_nodes,

@@ -222,6 +222,7 @@ class WeaponRolloutRequest(BaseModel):
     num_trajectories: int = Field(None, description="Number of trajectories to collect")
     prefix_traj: list[TrajectoryInfoStep] = Field(..., description="Base formula trajectory for reconstruction - contains complete formula building sequence")
     seed: int | None = Field(None, description="Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic")
+    early_stop: bool = Field(default=False, description="If True, stop trajectory simulation when avgQ reaches 0")
 
 
 class WeaponRolloutResponse(BaseModel):

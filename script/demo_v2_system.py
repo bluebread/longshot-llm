@@ -83,7 +83,7 @@ def create_empty_formula(warehouse: WarehouseAgent) -> str:
     return initial_node_id
 
 
-def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str) -> WeaponRolloutResponse:
+def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str, early_stop: bool = True) -> WeaponRolloutResponse:
     """Execute weapon rollout to generate trajectories."""
     print("\n=== Executing Weapon Rollout ===")
     print("Parameters:")
@@ -94,6 +94,7 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str) 
     print("  - num_trajectories: 10")
     print("  - seed: 42 (deterministic)")
     print(f"  - initial_node_id: {initial_node_id}")
+    print(f"  - early_stop: {early_stop}")
     
     start_time = time.time()
     
@@ -108,7 +109,8 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str) 
         steps_per_trajectory=32,
         num_trajectories=10,
         prefix_traj=empty_prefix_traj,  # V2: Use prefix trajectory
-        seed=42  # Deterministic seed
+        seed=42,  # Deterministic seed
+        early_stop=early_stop
     )
     
     elapsed = time.time() - start_time
@@ -839,7 +841,8 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python demo_v2_system.py                    # Run full demo
+  python demo_v2_system.py                    # Run full demo with early stopping (default)
+  python demo_v2_system.py --no-early-stop    # Run demo without early stopping
   python demo_v2_system.py --list-trajectories # Run demo + trajectory analysis
   python demo_v2_system.py --only-list-trajectories # Only trajectory analysis
         """
@@ -855,6 +858,20 @@ Examples:
         "--only-list-trajectories", 
         action="store_true",
         help="Only run trajectory analysis (skip demo, requires existing data)"
+    )
+    
+    parser.add_argument(
+        "--early-stop",
+        action="store_true",
+        default=True,
+        help="Enable early stopping when avgQ reaches 0 (default: True)"
+    )
+    
+    parser.add_argument(
+        "--no-early-stop",
+        action="store_false",
+        dest="early_stop",
+        help="Disable early stopping (run full trajectory length)"
     )
     
     return parser.parse_args()
@@ -890,7 +907,7 @@ def main():
             initial_node_id = create_empty_formula(warehouse)
             
             # 4. Execute weapon rollout
-            execute_weapon_rollout(clusterbomb, initial_node_id)
+            execute_weapon_rollout(clusterbomb, initial_node_id, args.early_stop)
             
             # 5. Retrieve trajectory data
             trajectory_stats = retrieve_trajectories(warehouse)

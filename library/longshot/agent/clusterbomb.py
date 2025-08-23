@@ -54,6 +54,7 @@ class ClusterbombAgent:
         num_trajectories: int,
         prefix_traj: list[TrajectoryInfoStep],
         seed: Optional[int] = None,
+        early_stop: bool = False,
     ) -> WeaponRolloutResponse:
         """
         Executes a weapon rollout operation to generate trajectories.
@@ -68,9 +69,9 @@ class ClusterbombAgent:
             size: Size (number of gates) in the initial formula.
             steps_per_trajectory: Number of transformation steps per trajectory.
             num_trajectories: Number of trajectories to generate.
-            initial_definition: Initial formula definition as a list of gate integers.
-            initial_node_id: Optional ID for the initial node in the evolution graph.
+            prefix_traj: Complete trajectory for base formula reconstruction.
             seed: Optional random seed for deterministic trajectory generation.
+            early_stop: If True, stop trajectory simulation when avgQ reaches 0.
             
         Returns:
             WeaponRolloutResponse: Response containing the total steps executed
@@ -87,6 +88,7 @@ class ClusterbombAgent:
             num_trajectories=num_trajectories,
             prefix_traj=prefix_traj,
             seed=seed,
+            early_stop=early_stop,
         )
         
         response = self._client.post("/weapon/rollout", json=request.model_dump(exclude_none=True))
@@ -150,9 +152,7 @@ class AsyncClusterbombAgent:
         num_trajectories: int,
         prefix_traj: list[TrajectoryInfoStep],
         seed: Optional[int] = None,
-        # Deprecated V1 fields for backward compatibility
-        initial_definition: Optional[list[int]] = None,
-        initial_node_id: Optional[str] = None,
+        early_stop: bool = False,
     ) -> WeaponRolloutResponse:
         """
         Executes a weapon rollout operation to generate trajectories.
@@ -167,9 +167,9 @@ class AsyncClusterbombAgent:
             size: Size (number of gates) in the initial formula.
             steps_per_trajectory: Number of transformation steps per trajectory.
             num_trajectories: Number of trajectories to generate.
-            initial_definition: Initial formula definition as a list of gate integers.
-            initial_node_id: Optional ID for the initial node in the evolution graph.
+            prefix_traj: Complete trajectory for base formula reconstruction.
             seed: Optional random seed for deterministic trajectory generation.
+            early_stop: If True, stop trajectory simulation when avgQ reaches 0.
             
         Returns:
             WeaponRolloutResponse: Response containing the total steps executed
@@ -186,9 +186,7 @@ class AsyncClusterbombAgent:
             num_trajectories=num_trajectories,
             prefix_traj=prefix_traj,
             seed=seed,
-            # Deprecated fields for backward compatibility
-            initial_definition=initial_definition,
-            initial_node_id=initial_node_id,
+            early_stop=early_stop,
         )
         
         response = await self._client.post("/weapon/rollout", json=request.model_dump(exclude_none=True))

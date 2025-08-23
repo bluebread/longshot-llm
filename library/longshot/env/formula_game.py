@@ -56,7 +56,7 @@ class FormulaGame:
             reward = self._kwargs.get('penalty', -1.0)
         elif ls in self._cur_f and token.type == 'ADD':
             reward = self._kwargs.get('penalty', -1.0)
-        elif ls not in self._cur_f and token.type == 'DELETE':
+        elif ls not in self._cur_f and token.type == 'DEL':
             reward = self._kwargs.get('penalty', -1.0)
         else:
             self._cur_f.toggle(ls)

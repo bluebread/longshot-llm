@@ -170,7 +170,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 game.reset()
             
             # Run exactly steps_per_trajectory steps for this trajectory
-            for i in range(steps_per_trajectory):
+            for _ in range(steps_per_trajectory):
                 # Generate random action (token) using local RNG for coroutine safety
                 token = generate_random_token(request.num_vars, request.width, rng)
                 
@@ -205,6 +205,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                     "size": request.size
                 }
             )
+            
             v2_contexts.append(context)
             
             actual_trajectories += 1

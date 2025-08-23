@@ -52,6 +52,25 @@ def parse_formula_definition(
     return formula
 
 
+def parse_gate_integer_representation(gate_int: int) -> Literals:
+    """
+    Parse a gate integer representation into a Literals object.
+    
+    Args:
+        gate_int: Integer representation where lower 32 bits are positive literals
+                 and upper 32 bits are negative literals
+                 
+    Returns:
+        Literals: Literals object created from the gate integer representation
+    """
+    # Lower 32 bits are positive literals, upper 32 bits are negative literals  
+    pos_bits = gate_int & 0xFFFFFFFF          # Extract lower 32 bits (0-31)
+    neg_bits = (gate_int >> 32) & 0xFFFFFFFF  # Extract upper 32 bits (32-63)
+    
+    # Create and return Literals object using the two-argument constructor
+    return Literals(pos_bits, neg_bits)
+
+
 def generate_random_token(num_vars: int, width: int, rng: random.Random = None) -> GateToken:
     """
     Generate a random GateToken for the RL environment.

@@ -75,8 +75,8 @@ class FormulaGraph:
         self.graph.add_nodes_from(new_pos_lits + new_neg_lits, label="literal")
         
         # Add edges from literals to variables
-        pos_var_edges = [(f"+x{i}", f"x{i}") for i in pos_vars if f"+x{i}" not in self.graph]
-        neg_var_edges = [(f"-x{i}", f"x{i}") for i in neg_vars if f"-x{i}" not in self.graph]
+        pos_var_edges = [(f"+x{i}", f"x{i}") for i in pos_vars]
+        neg_var_edges = [(f"-x{i}", f"x{i}") for i in neg_vars]
         self.graph.add_edges_from(pos_var_edges + neg_var_edges)
         
         # Add edges from literals to the gate
@@ -105,38 +105,41 @@ class FormulaGraph:
         self.graph.remove_node(gate)
         self._size -= 1
         
-        # Check if any variables are now unused
+        # Check if any literals or variables are now unused
         for var_idx in gate_vars:
             var_node = f"x{var_idx}"
             pos_lit = f"+x{var_idx}"
             neg_lit = f"-x{var_idx}"
             
-            # Check if this variable is still used by any other gate
-            var_still_used = False
-            
-            # Check positive literal connections to gates
+            # Check if positive literal is still used by any gate
+            pos_lit_used = False
             if pos_lit in self.graph:
                 for neighbor in self.graph.neighbors(pos_lit):
                     if isinstance(neighbor, int):  # It's a gate
-                        var_still_used = True
+                        pos_lit_used = True
                         break
             
-            # Check negative literal connections to gates if not already found
-            if not var_still_used and neg_lit in self.graph:
+            # Check if negative literal is still used by any gate
+            neg_lit_used = False
+            if neg_lit in self.graph:
                 for neighbor in self.graph.neighbors(neg_lit):
                     if isinstance(neighbor, int):  # It's a gate
-                        var_still_used = True
+                        neg_lit_used = True
                         break
             
-            # If variable is not used, remove it and its literals
-            if not var_still_used:
+            # Remove unused positive literal
+            if not pos_lit_used and pos_lit in self.graph:
+                self.graph.remove_node(pos_lit)
+            
+            # Remove unused negative literal
+            if not neg_lit_used and neg_lit in self.graph:
+                self.graph.remove_node(neg_lit)
+            
+            # Remove variable node if neither literal is used
+            if not pos_lit_used and not neg_lit_used:
                 self._used_variables.discard(var_idx)
                 if var_node in self.graph:
                     self.graph.remove_node(var_node)
-                if pos_lit in self.graph:
-                    self.graph.remove_node(pos_lit)
-                if neg_lit in self.graph:
-                    self.graph.remove_node(neg_lit)
     
     def from_definition(self, definition: List[int]) -> None:
         """
@@ -295,6 +298,14 @@ class FormulaGraph:
     def is_empty(self) -> bool:
         """Check if the graph is empty."""
         return self.graph.number_of_nodes() == 0
+    
+    @property
+    def gates(self) -> List[int]:
+        """Get all gates in the formula as a list of integers."""
+        return [
+            node for node in self.graph.nodes() 
+            if isinstance(node, int) and self.graph.nodes[node].get("label") == "gate"
+        ]
     
     def get_statistics(self) -> Dict[str, Any]:
         """

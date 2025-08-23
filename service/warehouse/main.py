@@ -362,7 +362,8 @@ async def get_formula_definition(node_id: str = Query(..., description="Node UUI
         else:
             raise HTTPException(status_code=500, detail=f"Unknown token type: {ttype}")
 
-    return QueryFormulaDefinitionResponse(node_id=node_id, definition=list(definition))
+    final_definition = list(definition)
+    return QueryFormulaDefinitionResponse(node_id=node_id, definition=final_definition)
 
 
 @app.post("/evolution_graph/path", response_model=SuccessResponse, status_code=201)

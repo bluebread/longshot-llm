@@ -14,7 +14,7 @@ class TrajectoryProcessor:
         self.traj_granularity: int = config.get("granularity", 20)  
         # Default number of summits to consider
         # `traj_num_summits` should be no more than `traj_granularity`
-        self.traj_num_summits: int = config.get("num_summits", 5)  
+        self.traj_num_summits: int = config.get("num_summits", 5)
 
     def retrieve_definition(self, formula_id: str | None) -> list[int]:
         """
@@ -61,13 +61,18 @@ class TrajectoryProcessor:
         
         isomorphic_ids = self.warehouse.get_likely_isomorphic(wl_hash)
         
+        # Check each candidate for isomorphism
         for fid in isomorphic_ids:
-            fdef = self.retrieve_definition(fid)
-            fg = FormulaGraph(fdef)
-            
-            if formula_graph.is_isomorphic_to(fg):
-                return fid  
-            
+            try:
+                fdef = self.retrieve_definition(fid)
+                fg = FormulaGraph(fdef)
+                
+                if formula_graph.is_isomorphic_to(fg):
+                    return fid
+                    
+            except Exception:
+                continue
+        
         return None
     
     def reconstruct_base_formula(self, prefix_traj: list[TrajectoryInfoStep]) -> FormulaGraph:

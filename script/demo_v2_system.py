@@ -8,14 +8,17 @@ This script demonstrates the complete workflow:
 3. Retrieve and display trajectory data
 4. Visualize the evolution graph
 5. Generate summary statistics
+6. List trajectories with detailed analysis (optional)
 """
 
 import os
 import sys
 import json
 import time
+import argparse
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
 
 # Add library to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'library'))
@@ -593,10 +596,279 @@ def generate_summary_report(G: nx.DiGraph, trajectory_stats: Dict, output_dir: P
     return stats
 
 
+def list_trajectories_with_analysis(warehouse: WarehouseAgent, output_dir: Path):
+    """Generate detailed trajectory analysis showing literal/complexity sequences and evolution paths."""
+    print("\n=== Trajectory Analysis and Listing ===")
+    
+    # Retrieve all trajectories and nodes from warehouse
+    try:
+        # Get trajectory dataset
+        traj_response = warehouse._client.get("/trajectory/dataset")
+        if traj_response.status_code == 200:
+            traj_dataset = traj_response.json()
+            trajectories = traj_dataset.get("trajectories", [])
+            print(f"✓ Retrieved {len(trajectories)} trajectories")
+        else:
+            print(f"⚠ Failed to retrieve trajectories: HTTP {traj_response.status_code}")
+            return
+        
+        # Get evolution graph dataset with trajectory linkage
+        node_response = warehouse._client.get("/evolution_graph/dataset", params={
+            "required_fields": ["node_id", "avgQ", "num_vars", "width", "size", "wl_hash", "traj_id", "traj_slice"]
+        })
+        if node_response.status_code == 200:
+            node_dataset = node_response.json()
+            nodes = node_dataset.get("nodes", [])
+            print(f"✓ Retrieved {len(nodes)} evolution graph nodes")
+        else:
+            print(f"⚠ Failed to retrieve nodes: HTTP {node_response.status_code}")
+            nodes = []
+        
+    except Exception as e:
+        print(f"⚠ Error retrieving data: {e}")
+        return
+    
+    if not trajectories:
+        print("⚠ No trajectories found to analyze")
+        return
+    
+    # Group nodes by trajectory ID and sort by traj_slice
+    traj_to_nodes = defaultdict(list)
+    for node in nodes:
+        traj_id = node.get('traj_id')
+        if traj_id:
+            traj_to_nodes[traj_id].append(node)
+    
+    # Sort nodes within each trajectory by traj_slice
+    for traj_id in traj_to_nodes:
+        traj_to_nodes[traj_id].sort(key=lambda x: x.get('traj_slice', 0))
+    
+    # Analyze trajectories
+    analysis_results = []
+    
+    for i, trajectory in enumerate(trajectories, 1):
+        traj_id = trajectory.get("traj_id", f"traj_{i}")
+        steps = trajectory.get("steps", [])
+        
+        print(f"Processing trajectory {i}/{len(trajectories)}: {traj_id}")
+        
+        # Extract literal sequences and avgQ from trajectory steps
+        literal_sequence = []
+        avgQ_sequence = []
+        
+        for step in steps:
+            # Step format: [token_type, token_literals, cur_avgQ]
+            if len(step) >= 3:
+                token_type = step[0]
+                token_literals = step[1]
+                cur_avgQ = step[2]
+                
+                # Convert token type to human-readable string
+                token_type_str = "ADD" if token_type == 0 else "DEL"
+                
+                # Convert token_literals to human-readable string using Literals tool
+                if isinstance(token_literals, int) and token_literals != 0:
+                    # Convert integer gate representation to string
+                    try:
+                        literals_str = convert_gate_definition_to_string(token_literals)
+                    except Exception:
+                        literals_str = f"[Error: {token_literals}]"
+                elif isinstance(token_literals, list) and token_literals:
+                    # Handle list of literals (convert each and join)
+                    try:
+                        literal_strs = [convert_gate_definition_to_string(lit) for lit in token_literals]
+                        literals_str = ".".join(literal_strs)
+                    except Exception:
+                        literals_str = f"[Error: {token_literals}]"
+                else:
+                    literals_str = "[Empty]"
+                
+                # Combine token type with literals
+                formatted_literal = f"{token_type_str} {literals_str}"
+                literal_sequence.append(formatted_literal)
+                
+                # Store avgQ values (avgQ represents complexity)
+                avgQ_sequence.append(cur_avgQ)
+            else:
+                # Handle malformed steps gracefully
+                literal_sequence.append("INVALID")
+                avgQ_sequence.append(0)
+        
+        # Build evolution path from linked nodes
+        evolution_path = []
+        linked_nodes = traj_to_nodes.get(traj_id, [])
+        
+        for node in linked_nodes:
+            evolution_path.append({
+                "node_id": node.get("node_id"),
+                "traj_slice": node.get("traj_slice", 0),
+                "avgQ": node.get("avgQ", 0)
+            })
+        
+        # Compile trajectory analysis
+        traj_analysis = {
+            "trajectory_id": traj_id,
+            "sequence_number": i,
+            "total_steps": len(steps),
+            "literal_sequence": literal_sequence,
+            "avgQ_sequence": avgQ_sequence,
+            "evolution_path": evolution_path,
+            "final_avgQ": avgQ_sequence[-1] if avgQ_sequence else 0,
+            "avgQ_improvement": (avgQ_sequence[-1] - avgQ_sequence[0]) if len(avgQ_sequence) > 1 else 0,
+            "linked_nodes_count": len(linked_nodes)
+        }
+        
+        analysis_results.append(traj_analysis)
+    
+    # Generate comprehensive report
+    generate_trajectory_analysis_report(analysis_results, output_dir)
+    
+    return analysis_results
+
+
+def generate_trajectory_analysis_report(analysis_results: List[Dict], output_dir: Path):
+    """Generate comprehensive trajectory analysis report."""
+    print("\n=== Generating Trajectory Analysis Report ===")
+    
+    if not analysis_results:
+        print("⚠ No trajectory analysis results to report")
+        return
+    
+    # Save detailed text report
+    report_path = output_dir / "trajectory_analysis_report.txt"
+    with open(report_path, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write("COMPREHENSIVE TRAJECTORY ANALYSIS REPORT\n")
+        f.write("=" * 80 + "\n\n")
+        
+        f.write(f"Generated: {datetime.now().isoformat()}\n")
+        f.write(f"Total trajectories analyzed: {len(analysis_results)}\n\n")
+        
+        # Summary statistics
+        total_steps = sum(r["total_steps"] for r in analysis_results)
+        total_nodes = sum(r["linked_nodes_count"] for r in analysis_results)
+        avg_final_avgQ = sum(r["final_avgQ"] for r in analysis_results) / len(analysis_results)
+        
+        f.write("SUMMARY STATISTICS\n")
+        f.write("-" * 50 + "\n")
+        f.write(f"Total steps across all trajectories: {total_steps}\n")
+        f.write(f"Total evolution graph nodes created: {total_nodes}\n")
+        f.write(f"Average final avgQ: {avg_final_avgQ:.4f}\n\n")
+        
+        # Sort trajectories by final avgQ (best first)
+        sorted_results = sorted(analysis_results, key=lambda x: x["final_avgQ"], reverse=True)
+        
+        # Detailed trajectory analysis
+        for result in sorted_results:
+            f.write("=" * 60 + "\n")
+            f.write(f"TRAJECTORY {result['sequence_number']}: {result['trajectory_id']}\n")
+            f.write("=" * 60 + "\n")
+            
+            f.write("TRAJECTORY OVERVIEW\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Total steps: {result['total_steps']}\n")
+            f.write(f"Final avgQ: {result['final_avgQ']:.4f}\n")
+            f.write(f"avgQ improvement: {result['avgQ_improvement']:+.4f}\n")
+            f.write(f"Linked evolution nodes: {result['linked_nodes_count']}\n\n")
+            
+            # Literal sequence analysis
+            f.write("LITERAL SEQUENCE (First 10 steps)\n")
+            f.write("-" * 30 + "\n")
+            for i, literals in enumerate(result["literal_sequence"][:10]):
+                f.write(f"Step {i+1:2d}: {literals}\n")
+            if len(result["literal_sequence"]) > 10:
+                f.write(f"... ({len(result['literal_sequence']) - 10} more steps)\n")
+            f.write("\n")
+            
+            # avgQ progression
+            f.write("AVGQ SEQUENCE (Every 4th step)\n")
+            f.write("-" * 30 + "\n")
+            avgQ_seq = result["avgQ_sequence"]
+            for i in range(0, len(avgQ_seq), 4):
+                step_num = i + 1
+                avgQ_val = avgQ_seq[i]
+                f.write(f"Step {step_num:2d}: {avgQ_val:8.4f}")
+                if i + 4 < len(avgQ_seq):
+                    f.write(f"    Step {i+5:2d}: {avgQ_seq[i+4]:8.4f}")
+                f.write("\n")
+            f.write("\n")
+            
+            # Evolution path
+            f.write("EVOLUTION PATH\n")
+            f.write("-" * 30 + "\n")
+            if result["evolution_path"]:
+                f.write("(node_id, traj_slice, avgQ)\n")
+                for path_entry in result["evolution_path"]:
+                    node_id = path_entry["node_id"]
+                    traj_slice = path_entry["traj_slice"]
+                    avgQ = path_entry["avgQ"]
+                    f.write(f"({node_id}, {traj_slice}, {avgQ:.4f})\n")
+            else:
+                f.write("No evolution path nodes found for this trajectory\n")
+            f.write("\n\n")
+    
+    # Save JSON report for programmatic access
+    json_report_path = output_dir / "trajectory_analysis_report.json"
+    with open(json_report_path, 'w') as f:
+        json.dump({
+            "timestamp": datetime.now().isoformat(),
+            "total_trajectories": len(analysis_results),
+            "summary_statistics": {
+                "total_steps": sum(r["total_steps"] for r in analysis_results),
+                "total_nodes": sum(r["linked_nodes_count"] for r in analysis_results),
+                "avg_final_avgQ": sum(r["final_avgQ"] for r in analysis_results) / len(analysis_results)
+            },
+            "trajectories": analysis_results
+        }, f, indent=2, default=str)
+    
+    print(f"✓ Trajectory analysis report saved to: {report_path}")
+    print(f"✓ JSON analysis report saved to: {json_report_path}")
+    
+    # Print summary to console
+    print("\nTrajectory Analysis Summary:")
+    print(f"  - Total trajectories analyzed: {len(analysis_results)}")
+    print(f"  - Best final avgQ: {max(r['final_avgQ'] for r in analysis_results):.4f}")
+    print(f"  - Average final avgQ: {sum(r['final_avgQ'] for r in analysis_results) / len(analysis_results):.4f}")
+    print(f"  - Total evolution path nodes: {sum(r['linked_nodes_count'] for r in analysis_results)}")
+
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="V2 System Demonstration and Analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python demo_v2_system.py                    # Run full demo
+  python demo_v2_system.py --list-trajectories # Run demo + trajectory analysis
+  python demo_v2_system.py --only-list-trajectories # Only trajectory analysis
+        """
+    )
+    
+    parser.add_argument(
+        "--list-trajectories",
+        action="store_true",
+        help="Generate detailed trajectory analysis after running the demo"
+    )
+    
+    parser.add_argument(
+        "--only-list-trajectories", 
+        action="store_true",
+        help="Only run trajectory analysis (skip demo, requires existing data)"
+    )
+    
+    return parser.parse_args()
+
+
 def main():
     """Main execution function."""
+    args = parse_arguments()
+    
     print("=" * 60)
-    print("V2 SYSTEM DEMONSTRATION")
+    if args.only_list_trajectories:
+        print("V2 TRAJECTORY ANALYSIS")
+    else:
+        print("V2 SYSTEM DEMONSTRATION")
     print("=" * 60)
     print(f"Started at: {datetime.now().isoformat()}\n")
     
@@ -605,46 +877,60 @@ def main():
         output_dir = create_output_directory()
         
         # 2. Initialize services
-        clusterbomb, warehouse = initialize_services()
+        if args.only_list_trajectories:
+            # Only initialize warehouse for trajectory analysis
+            warehouse = WarehouseAgent('localhost', 8000)
+            print("✓ Connected to Warehouse service")
+            clusterbomb = None
+        else:
+            clusterbomb, warehouse = initialize_services()
         
-        # 3. Create empty initial formula
-        initial_node_id = create_empty_formula(warehouse)
+        if not args.only_list_trajectories:
+            # 3. Create empty initial formula
+            initial_node_id = create_empty_formula(warehouse)
+            
+            # 4. Execute weapon rollout
+            execute_weapon_rollout(clusterbomb, initial_node_id)
+            
+            # 5. Retrieve trajectory data
+            trajectory_stats = retrieve_trajectories(warehouse)
+            
+            # 6. Retrieve and build evolution graph
+            G = retrieve_evolution_graph(warehouse)
+            
+            # 7. Create visualizations
+            visualize_graph(G, output_dir)
+            
+            # 8. Retrieve detailed node information
+            detailed_nodes = retrieve_detailed_node_info(warehouse)
+            
+            # 9. Generate detailed node report
+            generate_detailed_node_report(detailed_nodes, output_dir)
+            
+            # 10. Generate summary report
+            generate_summary_report(G, trajectory_stats, output_dir)
         
-        # 4. Execute weapon rollout
-        execute_weapon_rollout(clusterbomb, initial_node_id)
-        
-        # 5. Retrieve trajectory data
-        trajectory_stats = retrieve_trajectories(warehouse)
-        
-        # 6. Retrieve and build evolution graph
-        G = retrieve_evolution_graph(warehouse)
-        
-        # 7. Create visualizations
-        visualize_graph(G, output_dir)
-        
-        # 8. Retrieve detailed node information
-        detailed_nodes = retrieve_detailed_node_info(warehouse)
-        
-        # 9. Generate detailed node report
-        generate_detailed_node_report(detailed_nodes, output_dir)
-        
-        # 10. Generate summary report
-        generate_summary_report(G, trajectory_stats, output_dir)
+        # 11. Trajectory analysis (if requested)
+        if args.list_trajectories or args.only_list_trajectories:
+            list_trajectories_with_analysis(warehouse, output_dir)
         
         print("\n" + "=" * 60)
-        print("DEMONSTRATION COMPLETE")
+        if args.only_list_trajectories:
+            print("TRAJECTORY ANALYSIS COMPLETE")
+        else:
+            print("DEMONSTRATION COMPLETE")
         print("=" * 60)
         print(f"Finished at: {datetime.now().isoformat()}")
         
     except Exception as e:
-        print(f"\n✗ Error during demonstration: {e}")
+        print(f"\n✗ Error during execution: {e}")
         import traceback
         traceback.print_exc()
         return 1
     
     finally:
         # Clean up connections
-        if 'clusterbomb' in locals():
+        if 'clusterbomb' in locals() and clusterbomb:
             clusterbomb.close()
         if 'warehouse' in locals():
             warehouse._client.close()

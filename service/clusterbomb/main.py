@@ -223,7 +223,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     trajectories_processed = 0
     try:
         for context in v2_contexts:
-            result = processor.process_trajectory_v2(context)
+            result = processor.process_trajectory(context)
             total_processed_formulas += result["processed_formulas"]
             total_new_nodes += result["new_nodes_created"]
             trajectories_processed += 1

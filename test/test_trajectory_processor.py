@@ -141,90 +141,6 @@ class TestTrajectoryProcessor:
         response = processor.warehouse._client.delete("/formula/likely_isomorphic", params={"wl_hash": wl2})
         assert response.status_code == 200, f"Failed to delete isomorphic formula: {response.text}"
         
-    def test_process_trajectory(self, processor: TrajectoryProcessor):
-        """
-        Test the process_trajectory method with a valid trajectory.
-        """
-        processor.traj_granularity = 2
-        processor.traj_num_summits = 2
-        
-        ls = [((0,2),()), ((1,),()), ((2,),(1,)), ((0,1),()), ((),(1,2)), ((2,),())]
-        ls = [self.encode_literals(p, n) for p, n in ls]
-        qs = [0, 1, 2, 0, 0, 3]
-        rs = [0] * len(ls)
-        assert len(ls) == len(qs) and len(qs) == len(rs), "Lists must be of the same length"
-        
-        base_info = {
-            "num_vars": 4,
-            "width": 2,
-            "base_size": 0,
-            "timestamp": datetime.now(),
-        }
-        
-        msg1 = TrajectoryQueueMessage(
-            **base_info,
-            trajectory={
-                "base_formula_id": None,
-                "steps": [
-                    {
-                        "order": i,
-                        "token_type": "ADD",
-                        "token_literals": l,
-                        "avgQ": q,
-                        "reward": r,
-                    }
-                    for i, l, q, r in zip(range(len(ls[:3])), ls[:3], qs[:3], rs[:3])
-                ]
-            }
-        )
-        
-        msg2 = TrajectoryQueueMessage(
-            **base_info,
-            trajectory={
-                "base_formula_id": None,
-                "steps": [
-                    {
-                        "order": i,
-                        "token_type": "ADD",
-                        "token_literals": l,
-                        "avgQ": q,
-                        "reward": r,
-                    }
-                    for i, l, q, r in zip(range(len(ls)), ls, qs, rs)
-                ]
-            }
-        )
-        try:
-            # Note: process_trajectory is complex and may not work perfectly due to V2 changes
-            # This test primarily checks that it doesn't crash
-            processor.process_trajectory(msg1)
-            processor.process_trajectory(msg2)
-            
-            # TODO: The trajectory processing logic needs significant updates for V2
-            # For now, just verify no exceptions were raised
-            print("✅ TrajectoryProcessor.process_trajectory completed without errors")
-                
-        except Exception as e:
-            print(f"⚠️  TrajectoryProcessor.process_trajectory failed: {e}")
-            # This is expected until the method is fully updated for V2
-            
-        finally:
-            # Clean up any nodes that might have been created
-            # In V2, we need to clean up both trajectories and evolution graph nodes
-            try:
-                n = base_info["num_vars"]
-                w = base_info["width"]
-                nodes = processor.warehouse.download_nodes(n, w)
-                for node in nodes:
-                    try:
-                        processor.warehouse.delete_evolution_graph_node(node["node_id"])
-                        # Try to clean up associated trajectory if it exists
-                        if "traj_id" in node:
-                            processor.warehouse.delete_trajectory(node["traj_id"])
-                    except Exception:
-                        pass  # Ignore cleanup errors
-            except Exception:
-                pass  # Ignore if download fails
     
     def test_process_trajectory_v2(self, processor: TrajectoryProcessor):
         """Test the new V2 process_trajectory_v2 method."""
@@ -278,7 +194,7 @@ class TestTrajectoryProcessor:
         
         try:
             # Test V2 trajectory processing
-            result = processor.process_trajectory_v2(context)
+            result = processor.process_trajectory(context)
             
             # Verify result structure
             assert "new_formulas" in result

@@ -45,6 +45,9 @@ class FormulaGraph:
         Args:
             gate: The gate identifier (encoded as integer with positive and negative literals)
         """
+        if gate in self.graph:
+            return
+        
         self.graph.add_node(gate, label="gate")
         self._size += 1
         

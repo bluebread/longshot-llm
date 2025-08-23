@@ -207,8 +207,14 @@ class TrajectoryProcessor:
         for i, piece in enumerate(pieces):
             s, t = piece
             
+            # OPTIMIZATION: Save formula state before applying trajectory slice
+            nodes_before = fg.num_nodes
+            edges_before = fg.num_edges
+            gates_before = set(fg.gates)  # Create a copy of the gates set
+            
             # Apply suffix trajectory steps to the formula graph
-            for step in suffix_steps[s:t]:
+            slice_steps = suffix_steps[s:t]
+            for step in slice_steps:
                 if step.token_type == 0:  # ADD
                     fg.add_gate(step.token_literals)
                 elif step.token_type == 1:  # DEL
@@ -217,6 +223,17 @@ class TrajectoryProcessor:
                     pass
                 else:
                     raise ValueError(f"Unknown token type: {step.token_type}")
+            
+            # OPTIMIZATION: Check if formula structure unchanged (no-effect slice)
+            nodes_after = fg.num_nodes
+            edges_after = fg.num_edges
+            gates_after = set(fg.gates)
+            
+            if (nodes_before == nodes_after and 
+                edges_before == edges_after and 
+                gates_before == gates_after):
+                # No effect - skip expensive isomorphism check
+                continue
             
             # Check if the formula graph is a duplicate
             wl_hash = fg.wl_hash(iterations=self.hash_iterations)

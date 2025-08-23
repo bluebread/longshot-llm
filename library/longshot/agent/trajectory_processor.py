@@ -108,7 +108,6 @@ class TrajectoryProcessor:
         existing_id = self.isomorphic_to(base_formula, wl_hash)
         return (existing_id is not None, existing_id)
     
-    # TODO: remove the suffix "v2"
     def process_trajectory(self, context: TrajectoryProcessingContext) -> dict:
         """V2 trajectory processing with embedded formula reconstruction.
         

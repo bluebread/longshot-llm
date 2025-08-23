@@ -77,12 +77,21 @@ def generate_random_token(num_vars: int, width: int, rng: random.Random = None) 
     
     Args:
         num_vars: Number of variables in the formula
-        width: Maximum width constraint
+        width: Fixed width (exact number of literals to generate)
         rng: Optional random number generator instance. If None, uses global random module
         
     Returns:
         GateToken: Random token for the environment
+        
+    Raises:
+        ValueError: If width or num_vars are invalid
     """
+    # Validate inputs
+    if width <= 0:
+        raise ValueError(f"Width must be positive, got {width}")
+    if num_vars <= 0:
+        raise ValueError(f"num_vars must be positive, got {num_vars}")
+    
     # Use provided RNG or fall back to global random module
     if rng is None:
         rng = random
@@ -90,9 +99,9 @@ def generate_random_token(num_vars: int, width: int, rng: random.Random = None) 
     # Randomly choose ADD or DELETE operation
     token_type = rng.choice(['ADD', 'DEL'])
     
-    # Generate random literals within width constraint
-    num_literals = rng.randint(1, min(width, num_vars))
-    selected_vars = rng.sample(range(num_vars), num_literals)
+    # Generate fixed-width literals within constraint
+    effective_width = min(width, num_vars)
+    selected_vars = rng.sample(range(num_vars), effective_width)
     
     pos_bits = 0
     neg_bits = 0

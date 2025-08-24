@@ -184,12 +184,12 @@ class TestTrajectoryProcessor:
             assert isinstance(result["evo_path"], list)
             assert isinstance(result["base_formula_exists"], bool)
             assert isinstance(result["processed_formulas"], int)
-            assert isinstance(result["new_nodes_created"], int)
+            assert isinstance(result["new_nodes_created"], list)  # Now a list of node IDs
             
             print(f"✅ V2 trajectory processing completed successfully:")
             print(f"   - Base formula exists: {result['base_formula_exists']}")
             print(f"   - Processed formulas: {result['processed_formulas']}")
-            print(f"   - New nodes created: {result['new_nodes_created']}")
+            print(f"   - New nodes created: {len(result['new_nodes_created'])} nodes")
             print(f"   - Evolution path length: {len(result['evo_path'])}")
             
         except Exception as e:

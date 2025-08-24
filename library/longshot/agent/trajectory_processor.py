@@ -189,7 +189,7 @@ class TrajectoryProcessor:
         prefix_length = len(context.prefix_traj)
         
         new_formulas = []
-        new_nodes_created = 0
+        new_node_ids = []  # Track list of new node IDs instead of count
         
         # Process each piece of the suffix trajectory
         for i, piece in enumerate(pieces):
@@ -267,7 +267,7 @@ class TrajectoryProcessor:
             
             # Track new formulas and prepare for next iteration
             new_formulas.append(formula_data)
-            new_nodes_created += 1
+            new_node_ids.append(formula_data["node_id"])  # Add node ID to list
             evo_path.append(formula_data["node_id"])
         
         # Save the evolution path to the warehouse
@@ -280,5 +280,5 @@ class TrajectoryProcessor:
             "evo_path": evo_path,
             "base_formula_exists": base_exists,
             "processed_formulas": len(pieces),
-            "new_nodes_created": new_nodes_created
+            "new_nodes_created": new_node_ids  # Return list of node IDs instead of count
         }

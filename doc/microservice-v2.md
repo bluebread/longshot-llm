@@ -540,16 +540,24 @@ Collects trajectories from the environment and processes them locally using V2 T
         "total_steps": 1000,
         "num_trajectories": 10,
         "processed_formulas": 25,
-        "new_nodes_created": 12,
-        "base_formula_exists": false
+        "new_nodes_created": [
+            "550e8400-e29b-41d4-a716-446655440000",
+            "660e8400-e29b-41d4-a716-446655440001"
+        ],
+        "base_formula_exists": false,
+        "evopaths": [
+            ["node1", "node2", "node3"],
+            ["node4", "node5"]
+        ]
     }
     ```
 - Response Field Descriptions:
     - `total_steps` (int): Total number of steps actually executed across all trajectories (may be less than `steps_per_trajectory * num_trajectories` if `early_stop` is enabled)
     - `num_trajectories` (int): Number of trajectories actually collected
     - `processed_formulas` (int): **V2** - Number of unique formulas processed from trajectory segments
-    - `new_nodes_created` (int): **V2** - Number of new nodes created in the evolution graph
+    - `new_nodes_created` (list[str]): **V2** - List of node IDs for newly created nodes in the evolution graph
     - `base_formula_exists` (bool): **V2** - Whether the base formula (from prefix_traj) already exists in the database
+    - `evopaths` (list[list[str]]): **V2** - List of evolution paths (sequences of node IDs) generated during trajectory processing
 - Status Codes:
     - `200 OK`: Successfully collected trajectories and processed them using V2 schema.
     - `422 Unprocessable Entity`: Invalid request parameters. This includes:

@@ -149,7 +149,6 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         actual_trajectories = 0
         v2_contexts = []  # V2 processing contexts
         total_processed_formulas = 0
-        total_new_nodes = 0
         total_actual_steps = 0  # Track actual steps taken (for early stopping)
         
         # Determine stopping condition and trajectory length
@@ -170,7 +169,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 token = generate_random_token(request.num_vars, request.width, rng)
                 
                 # Take step in environment
-                reward = game.step(token)
+                _ = game.step(token)  # Reward not used in random exploration
                 trajectory_steps += 1
                 
                 # Record step for V2 trajectory format as tuple
@@ -219,15 +218,27 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     
     # V2: Process all trajectories using new trajectory processing
     trajectories_processed = 0
+    all_new_node_ids = []  # Collect all new node IDs
+    all_evopaths = []  # Collect all evolution paths
+    
     try:
         for context in v2_contexts:
             result = processor.process_trajectory(context)
             total_processed_formulas += result["processed_formulas"]
-            total_new_nodes += result["new_nodes_created"]
+            
+            # Collect new node IDs (now a list)
+            new_node_ids = result["new_nodes_created"]
+            all_new_node_ids.extend(new_node_ids)
+            
+            # Collect evolution path if it exists
+            evo_path = result.get("evo_path", [])
+            if evo_path and len(evo_path) > 1:  # Only add meaningful paths
+                all_evopaths.append(evo_path)
+            
             trajectories_processed += 1
-            logger.info(f"V2 Processed trajectory {trajectories_processed}/{len(v2_contexts)}: {result['new_nodes_created']} new nodes")
+            logger.info(f"V2 Processed trajectory {trajectories_processed}/{len(v2_contexts)}: {len(new_node_ids)} new nodes")
         
-        logger.info(f"Successfully processed {trajectories_processed} trajectories")
+        logger.info(f"Successfully processed {trajectories_processed} trajectories with {len(all_new_node_ids)} total new nodes")
         
     except Exception as process_error:
         logger.error(f"Error processing trajectories: {str(process_error)}", exc_info=True)
@@ -237,8 +248,9 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         total_steps=total_actual_steps,
         num_trajectories=actual_trajectories,
         processed_formulas=total_processed_formulas,
-        new_nodes_created=total_new_nodes,
-        base_formula_exists=base_formula_exists
+        new_nodes_created=all_new_node_ids,  # Return list of node IDs
+        base_formula_exists=base_formula_exists,
+        evopaths=all_evopaths  # Add evolution paths
     )
 
 if __name__ == "__main__":

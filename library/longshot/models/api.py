@@ -220,5 +220,6 @@ class WeaponRolloutResponse(BaseModel):
     total_steps: int = Field(..., description="Number of steps actually run")
     num_trajectories: int = Field(..., description="Number of trajectories actually collected")
     processed_formulas: int = Field(default=0, description="Number of unique formulas processed")
-    new_nodes_created: int = Field(default=0, description="Number of new nodes created in the evolution graph")
-    base_formula_exists: bool = Field(default=False, description="Whether the base formula already exists in the database") 
+    new_nodes_created: list[str] = Field(default_factory=list, description="List of node IDs for newly created nodes in the evolution graph")
+    base_formula_exists: bool = Field(default=False, description="Whether the base formula already exists in the database")
+    evopaths: list[list[str]] = Field(default_factory=list, description="List of evolution paths (node ID sequences) generated during processing") 

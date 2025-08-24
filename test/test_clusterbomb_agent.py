@@ -62,7 +62,9 @@ class TestClusterbombAgent:
         mock_response = Mock()
         mock_response.json.return_value = {
             "total_steps": 50,
-            "num_trajectories": 5
+            "num_trajectories": 5,
+            "new_nodes_created": ["node1", "node2"],
+            "evopaths": [["node1", "node2"]]
         }
         mock_response.raise_for_status = Mock()
         
@@ -90,6 +92,8 @@ class TestClusterbombAgent:
         assert isinstance(result, WeaponRolloutResponse)
         assert result.total_steps == 50
         assert result.num_trajectories == 5
+        assert result.new_nodes_created == ["node1", "node2"]
+        assert result.evopaths == [["node1", "node2"]]
         
         # Verify request was made correctly
         agent._client.post.assert_called_once()
@@ -113,7 +117,9 @@ class TestClusterbombAgent:
         mock_response = Mock()
         mock_response.json.return_value = {
             "total_steps": 30,
-            "num_trajectories": 3
+            "num_trajectories": 3,
+            "new_nodes_created": [],
+            "evopaths": []
         }
         mock_response.raise_for_status = Mock()
         
@@ -213,7 +219,9 @@ class TestAsyncClusterbombAgent:
         mock_response = Mock()
         mock_response.json.return_value = {
             "total_steps": 100,
-            "num_trajectories": 10
+            "num_trajectories": 10,
+            "new_nodes_created": ["async_node1"],
+            "evopaths": []
         }
         mock_response.raise_for_status = Mock()
         

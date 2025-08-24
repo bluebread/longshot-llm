@@ -118,7 +118,8 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str, 
     print(f"  - Generated {result.num_trajectories} trajectories")
     print(f"  - Total steps: {result.total_steps}")
     print(f"  - Processed formulas: {result.processed_formulas}")
-    print(f"  - New nodes created: {result.new_nodes_created}")
+    print(f"  - New nodes created: {len(result.new_nodes_created)} nodes")
+    print(f"  - Evolution paths: {len(result.evopaths)} paths")
     print(f"  - Base formula exists: {result.base_formula_exists}")
     
     return result

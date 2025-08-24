@@ -8,7 +8,7 @@ by simulating formula transformations in the RL environment.
 import httpx
 from typing import Any, Optional
 from ..models import WeaponRolloutRequest, WeaponRolloutResponse
-from ..models.api import TrajectoryInfoStep
+# TrajectoryInfoStep no longer used - using tuple format instead
 
 
 class ClusterbombAgent:
@@ -52,7 +52,7 @@ class ClusterbombAgent:
         size: int,
         steps_per_trajectory: int,
         num_trajectories: int,
-        prefix_traj: list[TrajectoryInfoStep],
+        prefix_traj: list[tuple[int, int, float]],
         seed: Optional[int] = None,
         early_stop: bool = False,
     ) -> WeaponRolloutResponse:
@@ -150,7 +150,7 @@ class AsyncClusterbombAgent:
         size: int,
         steps_per_trajectory: int,
         num_trajectories: int,
-        prefix_traj: list[TrajectoryInfoStep],
+        prefix_traj: list[tuple[int, int, float]],
         seed: Optional[int] = None,
         early_stop: bool = False,
     ) -> WeaponRolloutResponse:

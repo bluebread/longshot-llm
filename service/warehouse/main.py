@@ -157,7 +157,18 @@ async def get_trajectory(traj_id: str = Query(..., description="Trajectory UUID"
     """Retrieve a trajectory by its ID."""
     trajectory_doc = trajectory_table.find_one({"_id": traj_id})
     if trajectory_doc:
-        return QueryTrajectoryInfoResponse(**trajectory_doc)
+        # Steps are now stored as lists in MongoDB
+        # Convert to tuples for API response (Pydantic will serialize as JSON arrays)
+        steps_as_tuples = [
+            tuple(step) if isinstance(step, list) else 
+            (step["token_type"], step["token_literals"], step["cur_avgQ"])  # Handle legacy dict format
+            for step in trajectory_doc.get("steps", [])
+        ]
+        return QueryTrajectoryInfoResponse(
+            _id=trajectory_doc["_id"],
+            timestamp=trajectory_doc["timestamp"],
+            steps=steps_as_tuples
+        )
     raise HTTPException(status_code=404, detail="Trajectory not found")
 
 
@@ -165,9 +176,19 @@ async def get_trajectory(traj_id: str = Query(..., description="Trajectory UUID"
 async def create_trajectory(trajectory: CreateTrajectoryRequest):
     """Add a new trajectory."""
     new_id = str(uuid.uuid4())
-    trajectory_doc = trajectory.model_dump()
-    trajectory_doc["_id"] = new_id
-    trajectory_doc["timestamp"] = datetime.now().astimezone()
+    
+    # Store steps as lists in MongoDB for better BSON efficiency
+    # Lists are more efficient than dicts in BSON encoding
+    steps_as_lists = [
+        [step[0], step[1], step[2]]  # [token_type, token_literals, cur_avgQ]
+        for step in trajectory.steps
+    ]
+    
+    trajectory_doc = {
+        "_id": new_id,
+        "timestamp": datetime.now().astimezone(),
+        "steps": steps_as_lists
+    }
     
     trajectory_table.insert_one(trajectory_doc)
     
@@ -178,25 +199,19 @@ async def create_trajectory(trajectory: CreateTrajectoryRequest):
 async def update_trajectory(trajectory: UpdateTrajectoryRequest):
     """Update an existing trajectory."""
     trajectory_id = trajectory.traj_id
-    data = trajectory.model_dump(exclude_unset=True, exclude={"traj_id"})
-    update_data = {}
-
-    if not data:
+    
+    if not trajectory.steps:
         raise HTTPException(status_code=400, detail="No update data provided")
 
-    if "steps" in data:
-        update_data = {
-            f"steps.{step['order']}": {
-                "token_type": step["token_type"],
-                "token_literals": step["token_literals"],
-                "cur_avgQ": step["cur_avgQ"],
-            }
-            for step in data["steps"]
-        }
+    # Store steps as lists in MongoDB for better BSON efficiency
+    steps_as_lists = [
+        [step[0], step[1], step[2]]  # [token_type, token_literals, cur_avgQ]
+        for step in trajectory.steps
+    ]
         
     result = trajectory_table.update_one(
         {"_id": trajectory_id},
-        {"$set": update_data}
+        {"$set": {"steps": steps_as_lists}}
     )
 
     if result.matched_count == 0:
@@ -362,8 +377,13 @@ async def get_formula_definition(node_id: str = Query(..., description="Node UUI
         if i > traj_slice:
             break
             
-        ttype = step["token_type"]
-        literals = step["token_literals"]
+        # Handle both dict and tuple formats for backward compatibility
+        if isinstance(step, dict):
+            ttype = step["token_type"]
+            literals = step["token_literals"]
+        else:  # tuple format
+            ttype = step[0]
+            literals = step[1]
 
         if ttype == 0:  # ADD
             definition.add(literals)
@@ -570,12 +590,10 @@ async def get_trajectory_dataset():
     
     for trajectory_doc in trajectories_cursor:
         # Convert steps to tuple format (token_type, token_literals, cur_avgQ)
+        # Handle both list and dict formats for backward compatibility
         optimized_steps = [
-            (
-                step["token_type"],
-                step["token_literals"], 
-                step["cur_avgQ"]
-            )
+            tuple(step) if isinstance(step, list) else
+            (step["token_type"], step["token_literals"], step["cur_avgQ"])
             for step in trajectory_doc.get("steps", [])
         ]
         

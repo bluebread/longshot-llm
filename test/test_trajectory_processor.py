@@ -6,7 +6,7 @@ from datetime import datetime
 
 from longshot.agent import TrajectoryProcessor, WarehouseAgent
 from longshot.models import TrajectoryQueueMessage
-from longshot.models.api import TrajectoryProcessingContext, TrajectoryInfoStep
+from longshot.models.api import TrajectoryProcessingContext
 from longshot.env import FormulaGraph
 
 host = "localhost"
@@ -38,11 +38,7 @@ class TestTrajectoryProcessor:
         """
         response = warehouse.post("/trajectory", json={
             "steps": [
-                {
-                    "token_type": 0, 
-                    "token_literals": d,
-                    "cur_avgQ": 0.0
-                } 
+                (0, d, 0.0)  # (token_type, token_literals, cur_avgQ)
                 for d in definition
             ]
         })
@@ -149,35 +145,15 @@ class TestTrajectoryProcessor:
         
         # Create prefix trajectory (base formula construction)
         prefix_steps = [
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([0, 2], []),
-                cur_avgQ=0.0
-            ),
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([1], []),
-                cur_avgQ=0.5
-            )
+            (0, self.encode_literals([0, 2], []), 0.0),  # ADD
+            (0, self.encode_literals([1], []), 0.5)       # ADD
         ]
         
         # Create suffix trajectory (new steps)
         suffix_steps = [
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([2], [1]),
-                cur_avgQ=1.0
-            ),
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([0, 1], []),
-                cur_avgQ=2.0
-            ),
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([], [1, 2]),
-                cur_avgQ=3.0
-            )
+            (0, self.encode_literals([2], [1]), 1.0),      # ADD
+            (0, self.encode_literals([0, 1], []), 2.0),    # ADD
+            (0, self.encode_literals([], [1, 2]), 3.0)     # ADD
         ]
         
         # Create V2 processing context
@@ -241,21 +217,9 @@ class TestTrajectoryProcessor:
         
         # Create prefix trajectory that builds a specific formula
         prefix_steps = [
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([0, 1], []),
-                cur_avgQ=1.0
-            ),
-            TrajectoryInfoStep(
-                token_type=0,  # ADD
-                token_literals=self.encode_literals([2], [0]),
-                cur_avgQ=1.5
-            ),
-            TrajectoryInfoStep(
-                token_type=1,  # DEL - remove first gate
-                token_literals=self.encode_literals([0, 1], []),
-                cur_avgQ=1.2
-            )
+            (0, self.encode_literals([0, 1], []), 1.0),  # ADD
+            (0, self.encode_literals([2], [0]), 1.5),    # ADD
+            (1, self.encode_literals([0, 1], []), 1.2)   # DEL - remove first gate
         ]
         
         try:

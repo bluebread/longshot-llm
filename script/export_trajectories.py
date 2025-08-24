@@ -206,7 +206,7 @@ def transform_trajectory(trajectory: Dict[str, Any], logger: logging.Logger) -> 
         # Extract data from each step
         for i, step in enumerate(steps):
             if isinstance(step, dict):
-                # Handle dictionary format
+                # Handle dictionary format (legacy MongoDB format)
                 token_type = step.get("token_type", 0)  # Default to 0 if missing
                 token_literals = step.get("token_literals")
                 cur_avgQ = step.get("cur_avgQ")
@@ -218,6 +218,11 @@ def transform_trajectory(trajectory: Dict[str, Any], logger: logging.Logger) -> 
                 types.append(token_type)
                 litints.append(token_literals)
                 avgQs.append(cur_avgQ)
+            elif isinstance(step, (list, tuple)) and len(step) == 3:
+                # Handle tuple/list format (token_type, token_literals, cur_avgQ)
+                types.append(step[0])
+                litints.append(step[1])
+                avgQs.append(step[2])
             else:
                 logger.debug(f"Invalid step format in trajectory {trajectory_id}: {step}")
                 return None

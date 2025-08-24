@@ -10,7 +10,7 @@ import logging
 import random
 from datetime import datetime
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
-from longshot.models.api import TrajectoryProcessingContext, TrajectoryInfoStep
+from longshot.models.api import TrajectoryProcessingContext
 from longshot.agent import TrajectoryProcessor, WarehouseAgent
 import time
 from longshot.circuit import FormulaType
@@ -116,20 +116,13 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         
         # Save the complete prefix trajectory
         prefix_traj_id = processor.warehouse.post_trajectory(
-            steps=[
-                {
-                    "token_type": step.token_type,
-                    "token_literals": step.token_literals,
-                    "cur_avgQ": step.cur_avgQ,
-                }
-                for step in request.prefix_traj
-            ]
+            steps=request.prefix_traj  # Already in tuple format from request
         )
         
         # Calculate base formula properties
         base_wl_hash = base_formula_graph.wl_hash(iterations=processor.hash_iterations)
-        base_size = sum(1 for step in request.prefix_traj if step.token_type == 0) - sum(1 for step in request.prefix_traj if step.token_type == 1)
-        final_avgQ = request.prefix_traj[-1].cur_avgQ if request.prefix_traj else 0.0
+        base_size = sum(1 for step in request.prefix_traj if step[0] == 0) - sum(1 for step in request.prefix_traj if step[0] == 1)
+        final_avgQ = request.prefix_traj[-1][2] if request.prefix_traj else 0.0
         
         # Create evolution graph node for base formula
         base_formula_id = processor.warehouse.post_evolution_graph_node(
@@ -180,13 +173,13 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 reward = game.step(token)
                 trajectory_steps += 1
                 
-                # Record step for V2 trajectory format
-                step_data = {
-                    "token_type": token.type if isinstance(token.type, int) else (0 if token.type == 'ADD' else 1),
-                    "token_literals": int(token.literals),
-                    "cur_avgQ": game.cur_avgQ
-                }
-                current_trajectory.append(step_data)
+                # Record step for V2 trajectory format as tuple
+                step_tuple = (
+                    token.type if isinstance(token.type, int) else (0 if token.type == 'ADD' else 1),
+                    int(token.literals),
+                    game.cur_avgQ
+                )
+                current_trajectory.append(step_tuple)
                 
                 # Early stopping: if avgQ reaches 0 and early_stop is enabled, break
                 if request.early_stop and game.cur_avgQ == 0:
@@ -197,18 +190,11 @@ async def weapon_rollout(request: WeaponRolloutRequest):
             total_actual_steps += trajectory_steps
             
             # V2: Create TrajectoryProcessingContext with suffix trajectory
-            suffix_steps = [
-                TrajectoryInfoStep(
-                    token_type=step["token_type"],
-                    token_literals=step["token_literals"],
-                    cur_avgQ=step["cur_avgQ"]
-                )
-                for step in current_trajectory
-            ]
+            # current_trajectory is already in tuple format
             
             context = TrajectoryProcessingContext(
                 prefix_traj=request.prefix_traj,
-                suffix_traj=suffix_steps,
+                suffix_traj=current_trajectory,
                 base_formula_hash=None,  # Will be computed during processing
                 processing_metadata={
                     "num_vars": request.num_vars,

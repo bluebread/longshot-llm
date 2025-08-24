@@ -13,7 +13,7 @@ import pytest_asyncio
 import httpx
 from unittest.mock import Mock, patch, AsyncMock
 from longshot.agent import ClusterbombAgent, AsyncClusterbombAgent
-from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse, TrajectoryInfoStep
+from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
 
 
 class TestClusterbombAgent:
@@ -71,8 +71,8 @@ class TestClusterbombAgent:
         
         # Create prefix trajectory for V2 schema
         prefix_traj = [
-            TrajectoryInfoStep(token_type=0, token_literals=3, cur_avgQ=0.5),
-            TrajectoryInfoStep(token_type=0, token_literals=4, cur_avgQ=1.0)
+            (0, 3, 0.5),  # (token_type, token_literals, cur_avgQ)
+            (0, 4, 1.0)
         ]
         
         # Call weapon rollout
@@ -121,7 +121,7 @@ class TestClusterbombAgent:
         
         # Create minimal prefix trajectory
         prefix_traj = [
-            TrajectoryInfoStep(token_type=0, token_literals=1, cur_avgQ=0.0)
+            (0, 1, 0.0)  # (token_type, token_literals, cur_avgQ)
         ]
         
         # Call without optional params
@@ -221,8 +221,8 @@ class TestAsyncClusterbombAgent:
         
         # Create prefix trajectory for V2 schema
         prefix_traj = [
-            TrajectoryInfoStep(token_type=0, token_literals=5, cur_avgQ=1.5),
-            TrajectoryInfoStep(token_type=1, token_literals=6, cur_avgQ=2.0)
+            (0, 5, 1.5),  # ADD
+            (1, 6, 2.0)   # DELETE
         ]
         
         # Call weapon rollout
@@ -291,8 +291,8 @@ class TestClusterbombAgentIntegration:
             
             # Create test prefix trajectory
             prefix_traj = [
-                TrajectoryInfoStep(token_type=0, token_literals=3, cur_avgQ=0.5),
-                TrajectoryInfoStep(token_type=0, token_literals=4, cur_avgQ=1.0)
+                (0, 3, 0.5),  # (token_type, token_literals, cur_avgQ)
+                (0, 4, 1.0)
             ]
             
             # Try a small rollout

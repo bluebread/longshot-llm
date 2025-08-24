@@ -1,6 +1,6 @@
 import numpy as np
 from ..models import TrajectoryQueueMessage
-from ..models.api import TrajectoryProcessingContext, TrajectoryInfoStep
+from ..models.api import TrajectoryProcessingContext
 from ..env.formula_graph import FormulaGraph
 from . import WarehouseAgent
 
@@ -75,11 +75,11 @@ class TrajectoryProcessor:
         
         return None
     
-    def reconstruct_base_formula(self, prefix_traj: list[TrajectoryInfoStep]) -> FormulaGraph:
+    def reconstruct_base_formula(self, prefix_traj: list[tuple[int, int, float]]) -> FormulaGraph:
         """Reconstruct base formula from prefix trajectory instead of warehouse retrieval.
         
         Args:
-            prefix_traj: Complete trajectory steps to reconstruct the base formula
+            prefix_traj: Complete trajectory steps as tuples (token_type, token_literals, cur_avgQ)
             
         Returns:
             FormulaGraph: The reconstructed base formula graph
@@ -89,14 +89,17 @@ class TrajectoryProcessor:
         
         # Apply each step in the prefix trajectory to build the base formula
         for step in prefix_traj:
-            if step.token_type == 0:  # ADD
-                fg.add_gate(step.token_literals)
-            elif step.token_type == 1:  # DEL
-                fg.remove_gate(step.token_literals)
-            elif step.token_type == 2:  # EOS
+            token_type = step[0]
+            token_literals = step[1]
+            
+            if token_type == 0:  # ADD
+                fg.add_gate(token_literals)
+            elif token_type == 1:  # DEL
+                fg.remove_gate(token_literals)
+            elif token_type == 2:  # EOS
                 pass  # End of sequence, no action needed
             else:
-                raise ValueError(f"Unknown token type in prefix trajectory: {step.token_type}")
+                raise ValueError(f"Unknown token type in prefix trajectory: {token_type}")
         
         return fg
     
@@ -142,7 +145,7 @@ class TrajectoryProcessor:
                 "new_nodes_created": 0
             }
         
-        avgQs = [step.cur_avgQ for step in suffix_steps]
+        avgQs = [step[2] for step in suffix_steps]  # step[2] is cur_avgQ
         ns = self.traj_num_summits
         granu = self.traj_granularity
         pieces: list[tuple[int, int]] = []
@@ -178,23 +181,8 @@ class TrajectoryProcessor:
         evo_path: list[str] = [base_formula_id] if base_formula_id else []
         
         # V2: Save complete trajectory (prefix + suffix) once at the beginning
-        complete_trajectory_steps = []
-        
-        # Add all prefix trajectory steps
-        for step in context.prefix_traj:
-            complete_trajectory_steps.append({
-                "token_type": step.token_type,
-                "token_literals": step.token_literals,
-                "cur_avgQ": step.cur_avgQ,
-            })
-        
-        # Add all suffix trajectory steps
-        for step in suffix_steps:
-            complete_trajectory_steps.append({
-                "token_type": step.token_type,
-                "token_literals": step.token_literals,
-                "cur_avgQ": step.cur_avgQ,
-            })
+        # Both prefix_traj and suffix_traj are already in tuple format
+        complete_trajectory_steps = list(context.prefix_traj) + list(suffix_steps)
         
         # Post the complete trajectory to get traj_id
         complete_traj_id = self.warehouse.post_trajectory(steps=complete_trajectory_steps)
@@ -215,14 +203,17 @@ class TrajectoryProcessor:
             # Apply suffix trajectory steps to the formula graph
             slice_steps = suffix_steps[s:t]
             for step in slice_steps:
-                if step.token_type == 0:  # ADD
-                    fg.add_gate(step.token_literals)
-                elif step.token_type == 1:  # DEL
-                    fg.remove_gate(step.token_literals)
-                elif step.token_type == 2:  # EOS
+                token_type = step[0]
+                token_literals = step[1]
+                
+                if token_type == 0:  # ADD
+                    fg.add_gate(token_literals)
+                elif token_type == 1:  # DEL
+                    fg.remove_gate(token_literals)
+                elif token_type == 2:  # EOS
                     pass
                 else:
-                    raise ValueError(f"Unknown token type: {step.token_type}")
+                    raise ValueError(f"Unknown token type: {token_type}")
             
             # OPTIMIZATION: Check if formula structure unchanged (no-effect slice)
             nodes_after = fg.num_nodes
@@ -247,7 +238,7 @@ class TrajectoryProcessor:
             traj_slice = prefix_length + t - 1  # Position in complete trajectory
             
             # Get avgQ from the last step in this piece
-            final_avgQ = suffix_steps[t-1].cur_avgQ if t > 0 else 0.0
+            final_avgQ = suffix_steps[t-1][2] if t > 0 else 0.0  # step[2] is cur_avgQ
             
             formula_data = {
                 "avgQ": final_avgQ,

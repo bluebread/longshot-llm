@@ -99,7 +99,6 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str, 
     start_time = time.time()
     
     # Create empty prefix trajectory for V2 API
-    from longshot.models.api import TrajectoryInfoStep
     empty_prefix_traj = []  # Empty formula = no steps needed
     
     result = clusterbomb.weapon_rollout(

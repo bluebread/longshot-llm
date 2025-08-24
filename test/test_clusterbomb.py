@@ -13,7 +13,7 @@ import json
 import time
 from datetime import datetime
 from pydantic import ValidationError
-from longshot.models.api import WeaponRolloutRequest, WeaponRolloutResponse, TrajectoryInfoStep
+from longshot.models.api import WeaponRolloutRequest, WeaponRolloutResponse
 from longshot.models.trajectory import (
     TrajectoryQueueMessage, 
     TrajectoryMessageMultipleSteps, 
@@ -41,21 +41,21 @@ class TestClusterbombService:
         agent = WarehouseAgent(warehouse_host, warehouse_port)
         return agent
     
-    def create_test_prefix_traj(self, size: int = 2) -> list[TrajectoryInfoStep]:
+    def create_test_prefix_traj(self, size: int = 2) -> list[tuple[int, int, float]]:
         """Create a test prefix trajectory for V2 schema."""
         if size <= 2:
             return [
-                TrajectoryInfoStep(token_type=0, token_literals=3, cur_avgQ=0.5),  # x0 OR x1
-                TrajectoryInfoStep(token_type=0, token_literals=4, cur_avgQ=1.0)   # x2
+                (0, 3, 0.5),  # x0 OR x1
+                (0, 4, 1.0)   # x2
             ]
         else:
             # Create longer trajectory for larger formulas
             steps = []
             for i in range(size):
-                steps.append(TrajectoryInfoStep(
-                    token_type=0, 
-                    token_literals=i + 3, 
-                    cur_avgQ=0.5 + (i * 0.1)
+                steps.append((
+                    0,           # token_type
+                    i + 3,       # token_literals 
+                    0.5 + (i * 0.1)  # cur_avgQ
                 ))
             return steps
     
@@ -77,7 +77,7 @@ class TestClusterbombService:
             "size": 5,
             "steps_per_trajectory": 5,
             "num_trajectories": 2,
-            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()],
+            "prefix_traj": self.create_test_prefix_traj(),
             "seed": 42  # Deterministic for testing
         }
         
@@ -114,7 +114,7 @@ class TestClusterbombService:
             "size": 3,  
             "steps_per_trajectory": 3,
             "num_trajectories": 1,
-            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()]
+            "prefix_traj": self.create_test_prefix_traj()
             # No seed - should use non-deterministic randomness
         }
         
@@ -138,7 +138,7 @@ class TestClusterbombService:
             "size": 8,
             "steps_per_trajectory": 20,
             "num_trajectories": 5,
-            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj(8)],
+            "prefix_traj": self.create_test_prefix_traj(8),
             "seed": 123
         }
         
@@ -178,7 +178,7 @@ class TestClusterbombService:
             "size": 5,
             "steps_per_trajectory": 10,
             "num_trajectories": 2,
-            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()],
+            "prefix_traj": self.create_test_prefix_traj(),
         }
         
         response = client.post("/weapon/rollout", json=invalid_types_request)
@@ -304,7 +304,7 @@ class TestClusterbombService:
             "size": 5,
             "steps_per_trajectory": 3,
             "num_trajectories": 1,
-            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj()],
+            "prefix_traj": self.create_test_prefix_traj(),
             "seed": 999
         }
         
@@ -336,7 +336,7 @@ class TestClusterbombService:
             "size": size,
             "steps_per_trajectory": 5,
             "num_trajectories": 2,
-            "prefix_traj": [step.model_dump() for step in self.create_test_prefix_traj(size)],
+            "prefix_traj": self.create_test_prefix_traj(min(2, width)),  # Use width-appropriate prefix
             "seed": 42
         }
         

@@ -51,11 +51,7 @@ class TestTrajectory:
         # Test post
         trajectory_data = {
             "steps": [
-                {
-                    "token_type": 0,
-                    "token_literals": 5,
-                    "cur_avgQ": 7/3
-                }
+                (0, 5, 7/3)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -69,12 +65,7 @@ class TestTrajectory:
         update_data = {
             "traj_id": trajectory_id,
             "steps": [
-                {
-                    "order": 0,
-                    "token_type": 1,
-                    "token_literals": 3,
-                    "cur_avgQ": 9/7
-                }
+                (1, 3, 9/7)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.put("/trajectory", json=update_data)
@@ -89,9 +80,10 @@ class TestTrajectory:
         assert data["traj_id"] == trajectory_id
         assert len(data["steps"]) == 1
         step = data["steps"][0]
-        assert step["token_type"] == 1
-        assert step["token_literals"] == 3
-        assert step["cur_avgQ"] == 9/7
+        # Step is now a tuple/list: [token_type, token_literals, cur_avgQ]
+        assert step[0] == 1  # token_type
+        assert step[1] == 3  # token_literals
+        assert step[2] == 9/7  # cur_avgQ
 
         # Test delete
         response = client.delete("/trajectory", params={"traj_id": trajectory_id})
@@ -101,20 +93,17 @@ class TestTrajectory:
 
     def test_code_422(self, client: httpx.Client):
         """Test 422 error for invalid trajectory."""
-        # Test post with invalid data
+        # Test post with invalid data - tuple with wrong type
         invalid_data = {
             "steps": [
-                {
-                    "token_type": "not_an_int",  # Invalid type
-                    "token_literals": 5,
-                    "cur_avgQ": 7/3
-                }
+                ("not_an_int", 5, 7/3)  # First element should be int, not string
             ]
         }
         response = client.post("/trajectory", json=invalid_data)
         assert response.status_code == 422
         data = response.json()
-        assert data["detail"][0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
+        # The error message will be about invalid tuple format
+        assert "Input should be a valid" in data["detail"][0]["msg"]
 
     def test_code_404(self, client: httpx.Client):
         """Test 404 error for non-existent trajectory."""
@@ -138,7 +127,7 @@ class TestEvolutionGraphNode:
         # First create a trajectory for the node
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 2.5}
+                (0, 5, 2.5)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -255,8 +244,8 @@ class TestHighLevelAPI:
             # Create trajectories with V2 schema (cur_avgQ instead of reward)
             trajectory_data = {
                 "steps": [
-                    {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0},
-                    {"token_type": 1, "token_literals": 10, "cur_avgQ": 1.5}
+                    (0, 5, 1.0),   # ADD
+                    (1, 10, 1.5)   # DELETE
                 ]
             }
             response = client.post("/trajectory", json=trajectory_data)
@@ -302,7 +291,7 @@ class TestHighLevelAPI:
         # Create a trajectory for the nodes
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+                (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -343,7 +332,7 @@ class TestHighLevelAPI:
         # Create trajectory for the nodes
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+                (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -396,7 +385,7 @@ class TestHighLevelAPI:
         # Create trajectory for the nodes
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+                (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -467,7 +456,7 @@ class TestDatasetEndpoints:
         # Create trajectory for the nodes
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+                (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -528,7 +517,7 @@ class TestDatasetEndpoints:
         # Create trajectory for the nodes
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+                (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -602,7 +591,7 @@ class TestDatasetEndpoints:
         # Create trajectory for the nodes
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0}
+                (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)
@@ -663,8 +652,8 @@ class TestDatasetEndpoints:
         # Create test trajectories
         trajectory_data_1 = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0},
-                {"token_type": 1, "token_literals": 3, "cur_avgQ": 1.5}
+                (0, 5, 1.0),   # ADD
+                (1, 3, 1.5)    # DELETE
             ]
         }
         response = client.post("/trajectory", json=trajectory_data_1)
@@ -673,9 +662,9 @@ class TestDatasetEndpoints:
         
         trajectory_data_2 = {
             "steps": [
-                {"token_type": 0, "token_literals": 10, "cur_avgQ": 2.0},
-                {"token_type": 0, "token_literals": 15, "cur_avgQ": 2.5},
-                {"token_type": 1, "token_literals": 10, "cur_avgQ": 3.0}
+                (0, 10, 2.0),  # ADD
+                (0, 15, 2.5),  # ADD
+                (1, 10, 3.0)   # DELETE
             ]
         }
         response = client.post("/trajectory", json=trajectory_data_2)
@@ -714,9 +703,9 @@ class TestDatasetEndpoints:
         # Create test trajectory with known steps
         trajectory_data = {
             "steps": [
-                {"token_type": 0, "token_literals": 5, "cur_avgQ": 1.0},
-                {"token_type": 1, "token_literals": 10, "cur_avgQ": 2.5},
-                {"token_type": 0, "token_literals": 15, "cur_avgQ": 3.7}
+                (0, 5, 1.0),   # ADD
+                (1, 10, 2.5),  # DELETE
+                (0, 15, 3.7)   # ADD
             ]
         }
         response = client.post("/trajectory", json=trajectory_data)

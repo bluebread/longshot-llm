@@ -24,38 +24,28 @@ class LikelyIsomorphicRequest(BaseModel):
 
 
 # Trajectory-related models
-class TrajectoryInfoStep(BaseModel):
-    """A single step in a trajectory."""
-    token_type: int
-    token_literals: int
-    cur_avgQ: float
+# TrajectoryInfoStep is now deprecated - using tuple format (int, int, float) instead
+# Tuple format: (token_type, token_literals, cur_avgQ)
 
 
 class QueryTrajectoryInfoResponse(BaseModel):
     """Trajectory information model."""
     traj_id: str = Field(alias="_id", serialization_alias="traj_id")
     timestamp: datetime
-    steps: list[TrajectoryInfoStep]
+    steps: list[tuple[int, int, float]] = Field(..., description="Steps as tuples of (token_type, token_literals, cur_avgQ)")
     
 
 
 class CreateTrajectoryRequest(BaseModel):
     """Request model for creating a trajectory."""
-    steps: list[TrajectoryInfoStep]
+    steps: list[tuple[int, int, float]] = Field(..., description="Steps as tuples of (token_type, token_literals, cur_avgQ)")
 
 
 # Trajectory-related models
-class UpdateTrajectoryStep(BaseModel):
-    """A single step in a trajectory."""
-    order: int
-    token_type: int
-    token_literals: int
-    cur_avgQ: float
-
 class UpdateTrajectoryRequest(BaseModel):
     """Request model for updating a trajectory."""
     traj_id: str
-    steps: list[UpdateTrajectoryStep] | None = None
+    steps: list[tuple[int, int, float]] | None = Field(None, description="Steps as tuples of (token_type, token_literals, cur_avgQ)")
 
 
 class TrajectoryResponse(BaseModel):
@@ -191,8 +181,8 @@ class TopKArmsResponse(BaseModel):
 # V2 Trajectory Processing Models
 class TrajectoryProcessingContext(BaseModel):
     """Context for V2 trajectory processing with embedded formula reconstruction."""
-    prefix_traj: list[TrajectoryInfoStep] = Field(..., description="Base formula reconstruction trajectory containing all steps to build initial state")
-    suffix_traj: list[TrajectoryInfoStep] = Field(..., description="New trajectory steps to be processed and analyzed")
+    prefix_traj: list[tuple[int, int, float]] = Field(..., description="Base formula reconstruction trajectory as tuples (token_type, token_literals, cur_avgQ)")
+    suffix_traj: list[tuple[int, int, float]] = Field(..., description="New trajectory steps as tuples (token_type, token_literals, cur_avgQ)")
     base_formula_hash: str | None = Field(None, description="Hash of the base formula for duplicate detection")
     processing_metadata: dict = Field(default_factory=dict, description="Additional metadata for processing")
     
@@ -201,13 +191,13 @@ class TrajectoryProcessingContext(BaseModel):
         """Validate trajectory data consistency."""
         # Validate prefix trajectory tokens
         for i, step in enumerate(self.prefix_traj):
-            if step.token_type not in {0, 1, 2}:
-                raise ValueError(f"Invalid token_type {step.token_type} in prefix_traj at step {i}")
+            if step[0] not in {0, 1, 2}:
+                raise ValueError(f"Invalid token_type {step[0]} in prefix_traj at step {i}")
         
         # Validate suffix trajectory tokens  
         for i, step in enumerate(self.suffix_traj):
-            if step.token_type not in {0, 1, 2}:
-                raise ValueError(f"Invalid token_type {step.token_type} in suffix_traj at step {i}")
+            if step[0] not in {0, 1, 2}:
+                raise ValueError(f"Invalid token_type {step[0]} in suffix_traj at step {i}")
         
         return self
 
@@ -220,7 +210,7 @@ class WeaponRolloutRequest(BaseModel):
     size: int = Field(..., description="Size of the formula (number of nodes)")
     steps_per_trajectory: int = Field(None, description="Number of steps per trajectory")
     num_trajectories: int = Field(None, description="Number of trajectories to collect")
-    prefix_traj: list[TrajectoryInfoStep] = Field(..., description="Base formula trajectory for reconstruction - contains complete formula building sequence")
+    prefix_traj: list[tuple[int, int, float]] = Field(..., description="Base formula trajectory as tuples (token_type, token_literals, cur_avgQ)")
     seed: int | None = Field(None, description="Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic")
     early_stop: bool = Field(default=False, description="If True, stop trajectory simulation when avgQ reaches 0")
 

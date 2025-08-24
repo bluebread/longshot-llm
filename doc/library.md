@@ -42,20 +42,8 @@
             2. `decode_base64_to_float64(value: str) -> float`: Decodes a base64 string to a float64 value.
             3. `class Float64Base64`: A Pydantic model that validates base64-encoded float64 strings.
 
-3. Ranking Module: **ArmRanker**
-    - Local module responsible for filtering and selecting the best arms (formulas) based on the trajectories and the evolution graph.
-    - Maintains access to the evolution graph of formulas and implements policies for arm selection, such as the Upper Confidence Bound (UCB) algorithm.
-    - Main functions:
-        1. `longshot.ranking.get_topk_arms(num_vars: int, width: int, k: int, size: int = None) -> List[Dict]`:
-            - Returns the current best top-K arms based on the latest trajectories and evolution graph.
-            - If parameter `size` is provided, it will return only the formulas of size less than or equal to `size`.
-            - Current implementation ranks the arms based on a scoring function that considers the average-case deterministic query complexity and considers in-degree and out-degree of the nodes for improved ranking.
-            - Parameters:
-                - `num_vars` (int): The number of variables in the formula
-                - `width` (int): The width of the formula
-                - `k` (int): The number of top arms to return
-                - `size` (int, optional): The maximum size of the formula. Default: None
-            - Returns: List of dictionaries containing `formula_id` and `definition` fields
+3. [Removed] ~~Ranking Module: **ArmRanker**~~
+    - This module has been removed from the project as it is no longer needed.
 
 4. Processing Module: **TrajectoryProcessor**
     - Local class that processes trajectories and updates the databases.

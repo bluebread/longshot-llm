@@ -96,15 +96,20 @@ python script/cleanup_databases.py --force    # Actually delete all data
 ### V2 System Refactor
 
 The V2 architecture simplifies the original microservice design:
-- Removes separate trajproc and ranker services
+- Removes separate trajproc and ranker services (ArmRanker module deleted)
 - Integrates processing directly into weapon services (clusterbomb)
 - Consolidates formula and graph data in single Neo4j nodes
 - Uses unified trajectory storage in MongoDB with cur_avgQ field
+- **Trajectory Format Migration**: Steps now stored as tuples `(token_type, token_literals, cur_avgQ)` for efficiency
+- **BSON Optimization**: MongoDB stores steps as lists instead of dicts (45.9% size reduction)
 
 ### Database Schema
 
 - **Neo4j**: Evolution graph with FormulaNode labels containing integrated formula data
-- **MongoDB**: Trajectories with simplified schema including cur_avgQ per step
+- **MongoDB**: 
+  - Trajectories with simplified schema including cur_avgQ per step
+  - Steps stored as lists `[token_type, token_literals, cur_avgQ]` for BSON efficiency
+  - Backward compatible with legacy dict format
 - **Redis**: WL hash → formula ID mappings for isomorphism detection
 
 ### Key Files for Development
@@ -121,4 +126,13 @@ The V2 architecture simplifies the original microservice design:
 - Microservices require infrastructure services (Docker Compose) to be running
 - V2 refactor is current architecture - older V1 components may be found in archive/
 - Tests expect specific database configurations - check service/docker-compose.yml for credentials
-- Every time you modify the service code and want to test, you must inform me to restart the service.
+- Every time you modify the service code and want to test, you must inform me to restart the service
+
+## Recent Changes (2025)
+
+- **Trajectory Schema Migration**: Migrated from dict-based to tuple-based trajectory steps
+  - API format: `(token_type: int, token_literals: int, cur_avgQ: float)`
+  - MongoDB storage: Lists `[token_type, token_literals, cur_avgQ]` for 45.9% BSON reduction
+  - Backward compatibility maintained for legacy data
+- **ArmRanker Removal**: Deleted deprecated ArmRanker module and tests (no longer needed)
+- **ClusterbombAgent Addition**: New client for weapon rollout operations

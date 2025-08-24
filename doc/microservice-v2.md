@@ -49,16 +49,18 @@ Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_
 |------------------|:----------:|--------------------------------------------------|
 | traj_id               | UUID     | Primary key                                      |
 | timestamp        | datetime | The time when the trajectory was generated       |
-| steps            | list     | **V2**: Complete trajectory steps including both prefix (base formula) and suffix (new exploration) |
-| step.token_type       | int   | The type of the token, 0 for ADD, 1 for DELETE    |
-| step.token_literals   | int   | The binary representation for the literals of the token |
-| step.cur_avgQ    | float    | **V2**: Current average Q-value for this specific step (required for all steps) |
+| steps            | list[list] | **V2**: Complete trajectory steps stored as lists `[token_type, token_literals, cur_avgQ]` |
+| step[0]          | int      | The type of the token, 0 for ADD, 1 for DELETE    |
+| step[1]          | int      | The binary representation for the literals of the token |
+| step[2]          | float    | **V2**: Current average Q-value for this specific step |
 
 **V2 Key Changes**:
 - **Complete Trajectories**: No more partial/linked trajectories - each record contains full reconstruction sequence
 - **Embedded Base Formulas**: Prefix trajectory steps embedded within each trajectory record
 - **Direct Reconstruction**: Formula definitions reconstructed directly from trajectory steps without database lookups
 - **Consistent avgQ**: All steps include `cur_avgQ` field for trajectory analysis
+- **Optimized Storage**: Steps stored as lists `[token_type, token_literals, cur_avgQ]` for 45.9% BSON size reduction
+- **Tuple API Format**: API returns steps as tuples `(token_type, token_literals, cur_avgQ)` for efficiency
 
 ### Isomorphism Hash Table (Redis)
 
@@ -240,15 +242,12 @@ Retrieve a trajectory by its ID.
     {
         "traj_id": "t456",
         "steps": [
-            {
-                "token_type": 0,
-                "token_literals": 5,
-                "cur_avgQ": 2.3
-            }
+            [0, 5, 2.3]
         ],
         "timestamp": "2025-07-21T12:00:00Z"
     }
     ```
+    Note: Steps are returned as tuples `[token_type, token_literals, cur_avgQ]` for reduced data redundancy.
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
 
@@ -259,14 +258,11 @@ Add a new trajectory. The fields `traj_id` and `timestamp` are automatically gen
     ```json
     {
         "steps": [
-            {
-                "token_type": 0,
-                "token_literals": 5,
-                "cur_avgQ": 2.3
-            }
+            [0, 5, 2.3]
         ]
     }
     ```
+    Note: Steps must be provided as tuples `[token_type, token_literals, cur_avgQ]`.
 - **Response:**  
     ```json
     {
@@ -284,15 +280,11 @@ Update an existing trajectory.
     {
         "traj_id": "t456",
         "steps": [
-            {
-                "order": 3,
-                "token_type": 1,
-                "token_literals": 3,
-                "cur_avgQ": 2.8
-            }
+            [1, 3, 2.8]
         ]
     }
     ```
+    Note: Steps must be provided as tuples `[token_type, token_literals, cur_avgQ]`.
 - **Response:**  
     - Success message.
 - **Status Codes:**  
@@ -521,16 +513,8 @@ Collects trajectories from the environment and processes them locally using V2 T
         "steps_per_trajectory": 100,
         "num_trajectories": 10,
         "prefix_traj": [
-            {
-                "token_type": 0,
-                "token_literals": 3,
-                "cur_avgQ": 0.5
-            },
-            {
-                "token_type": 0,
-                "token_literals": 4,
-                "cur_avgQ": 1.0
-            }
+            [0, 3, 0.5],
+            [0, 4, 1.0]
         ],
         "seed": 42,
         "early_stop": false
@@ -546,9 +530,10 @@ Collects trajectories from the environment and processes them locally using V2 T
     - `seed` (int, optional): Random seed for reproducibility. Default: None.
     - `early_stop` (bool, optional): If True, stop trajectory simulation when avgQ reaches 0. This affects the `total_steps` count in the response. Default: False.
 - TrajectoryStep Format:
-    - `token_type` (int): Type of operation (0=ADD, 1=DEL, 2=EOS)
-    - `token_literals` (int): 64-bit integer representation of literals (first 32 bits positive, last 32 bits negative)
-    - `cur_avgQ` (float): Average Q-value after this step
+    - Steps are provided as tuples `[token_type, token_literals, cur_avgQ]` where:
+        - `token_type` (int): Type of operation (0=ADD, 1=DEL, 2=EOS)
+        - `token_literals` (int): 64-bit integer representation of literals (first 32 bits positive, last 32 bits negative)
+        - `cur_avgQ` (float): Average Q-value after this step
 - Response:
     ```json
     {
@@ -610,6 +595,9 @@ Collects trajectories from the environment and processes them locally using V2 T
 ### Migration Notes
 
 - **Backward Compatibility**: V1 fields (`initial_definition`, `initial_node_id`) are deprecated but temporarily supported
-- **Required Migration**: New integrations must use `prefix_traj` field
-- **Performance Benefits**: V2 eliminates O(n) traversal costs for formula definition retrieval
+- **Required Migration**: New integrations must use `prefix_traj` field with tuple format
+- **Performance Benefits**: 
+    - V2 eliminates O(n) traversal costs for formula definition retrieval
+    - Tuple storage format provides 45.9% BSON size reduction in MongoDB
 - **Data Consistency**: V2 prevents empty formula initialization problems in demo scripts
+- **Trajectory Format**: All trajectory steps now use tuple format `[token_type, token_literals, cur_avgQ]` across APIs and storage

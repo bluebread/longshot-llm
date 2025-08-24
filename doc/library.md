@@ -21,13 +21,21 @@
             3. `put_X()`: Updates data in the warehouse.
             4. `delete_X()`: Deletes data from the warehouse.
         - This class is a local module, which is accessible for any other components in the RL system.
-    3. **Environment Agent**
-        - Manages environments. 
-        - Transforms data in Tensor/TensorDict format. 
+    3. `class ClusterbombAgent`:
+        - Client for the Clusterbomb microservice.
+        - Provides methods for weapon rollout operations.
         - Main functions:
-            1. `replace_arms()`: Replaces all arms/environments using the arm filter. 
-            2. `reset()`: Resets formula games and saves trajectories to the trajectory queue (except the first time calling `reset()`). 
-            3. `step()`: Executes a step of formula games. 
+            1. `weapon_rollout()`: Triggers trajectory generation with specified parameters.
+            2. `health_check()`: Checks the health status of the Clusterbomb service.
+        - Supports both synchronous and asynchronous operations.
+    4. `class TrajectoryProcessor`:
+        - Processes trajectories and updates the warehouse databases.
+        - Operates locally within services that generate trajectories.
+        - Main functions:
+            1. `process_trajectory()`: Processes trajectory with V2 context (prefix + suffix).
+            2. `reconstruct_base_formula()`: Rebuilds formula from prefix trajectory.
+            3. `check_base_formula_exists()`: Verifies if formula already exists.
+            4. `isomorphic_to()`: Checks for isomorphic formulas using WL hashes. 
 
 2. Environment Module: **Formula Game**
     - Implements the RL environment that simulates the process of adding/deleting gates in a normal formed formula. 
@@ -45,18 +53,22 @@
 3. [Removed] ~~Ranking Module: **ArmRanker**~~
     - This module has been removed from the project as it is no longer needed.
 
-4. Processing Module: **TrajectoryProcessor**
-    - Local class that processes trajectories and updates the databases.
-    - Responsible for managing the data flow between trajectory collection and the warehouse.
-    - Stateless and operates as a local class.
+4. Circuit Module: **FormulaGraph**
+    - Implements graph representation of boolean formulas.
+    - Provides methods for formula manipulation and analysis.
     - Main functions:
-        1. `longshot.processing.TrajectoryProcessor(**config)`:
-            - Constructor that takes configuration parameters for the processor
-        2. `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> dict[str, Any]`:
-            - Processes a single trajectory and updates the evolution graph accordingly.
-            - Called when a new trajectory is collected and tries to break down the trajectory into smaller parts if necessary.
-            - Current implementation processes the trajectory by extracting the formulas with top `traj_num_summits` avgQ values and breaking the trajectory into parts smaller than the number `granularity` defined in the configuration.
-            - If a formula is isomorphic to an existing formula in the warehouse, it will not be added to the evolution graph, and the corresponding trajectory piece would be merged into the next one.
-            - Parameters:
-                - `trajectory` (dict): The trajectory data to process
-            - Returns: Dictionary containing `new_formulas` list and `evo_path` list
+        1. `FormulaGraph(gates)`: Constructor accepting gate definitions.
+        2. `wl_hash()`: Computes Weisfeiler-Lehman hash for isomorphism detection.
+        3. `add_gate()`: Adds a new gate to the formula.
+        4. `delete_gate()`: Removes a gate from the formula.
+        5. `cur_avgQ`: Property returning average-case query complexity.
+
+5. Models Module:
+    - **API Models**: Pydantic models for API data structures.
+        - `TrajectoryInfo`: Trajectory data with steps as tuples `(token_type, token_literals, cur_avgQ)`.
+        - `TrajectoryProcessingContext`: V2 context for processing (prefix + suffix trajectories).
+        - `WeaponRolloutRequest/Response`: Models for weapon rollout operations.
+    - **Data Format**:
+        - Trajectory steps stored as tuples for efficiency: `list[tuple[int, int, float]]`
+        - MongoDB storage uses lists for BSON optimization.
+        - Backward compatibility maintained for legacy dict format.

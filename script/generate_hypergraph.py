@@ -114,6 +114,7 @@ class HypergraphProcessor:
         self.evolved_to_edges: List[Tuple[str, str]] = []
         self.hypernodes: Dict[str, Dict[str, Any]] = {}
         self.nge_q_edges: Set[Tuple[str, str]] = set()
+        self.skipped_nodes_count = 0  # Track nodes skipped due to missing avgQ
     
     def connect_to_neo4j(self) -> None:
         """Establish connection to Neo4j database."""
@@ -219,11 +220,20 @@ class HypergraphProcessor:
             
             # Get avgQ from the first member (all should have same avgQ)
             first_member = members[0]
-            avgQ = self.nodes[first_member]["avgQ"]
+            avgQ = self.nodes[first_member].get("avgQ")
+            
+            # Skip nodes without avgQ values
+            if avgQ is None:
+                logger.warning(f"Skipping hypernode {h_id}: no avgQ value for nodes {members}")
+                self.skipped_nodes_count += len(members)  # Count all members as skipped
+                continue
             
             # Verify all members have same avgQ (sanity check)
             for member in members:
-                member_avgQ = self.nodes[member]["avgQ"]
+                member_avgQ = self.nodes[member].get("avgQ")
+                if member_avgQ is None:
+                    logger.warning(f"Node {member} in hypernode {h_id} has no avgQ value")
+                    continue
                 if abs(member_avgQ - avgQ) > 1e-9:
                     logger.warning(
                         f"avgQ mismatch in hypernode {h_id}: "
@@ -242,6 +252,8 @@ class HypergraphProcessor:
                 self.node_to_hypernode[member] = h_id
         
         logger.info(f"Created {len(self.hypernodes)} hypernodes from {len(self.nodes)} nodes")
+        if self.skipped_nodes_count > 0:
+            logger.info(f"Skipped {self.skipped_nodes_count} nodes due to missing avgQ values")
         
         # Log statistics
         sizes = [len(h["members"]) for h in self.hypernodes.values()]
@@ -272,6 +284,10 @@ class HypergraphProcessor:
         
         # Create NGE_Q edges based on avgQ comparison
         for (src_h, dst_h), original_edges in edge_candidates.items():
+            # Skip if either hypernode doesn't exist (could happen if nodes were skipped due to missing avgQ)
+            if src_h not in self.hypernodes or dst_h not in self.hypernodes:
+                continue
+                
             src_avgQ = self.hypernodes[src_h]["avgQ"]
             dst_avgQ = self.hypernodes[dst_h]["avgQ"]
             
@@ -377,12 +393,17 @@ class HypergraphProcessor:
             print("PROCESSING SUMMARY")
             print("="*60)
             print(f"Original nodes: {len(self.nodes)}")
+            if self.skipped_nodes_count > 0:
+                print(f"Skipped nodes (no avgQ): {self.skipped_nodes_count}")
+                print(f"Processed nodes: {len(self.nodes) - self.skipped_nodes_count}")
             print(f"Original SAME_Q edges: {len(self.same_q_edges)}")
             print(f"Original EVOLVED_TO edges: {len(self.evolved_to_edges)}")
             print(f"Hypernodes created: {len(self.hypernodes)}")
             print(f"NGE_Q edges created: {len(self.nge_q_edges)}")
             if self.nodes:
-                print(f"Compression ratio: {len(self.hypernodes)/len(self.nodes):.3f}")
+                effective_nodes = len(self.nodes) - self.skipped_nodes_count
+                if effective_nodes > 0:
+                    print(f"Compression ratio: {len(self.hypernodes)/effective_nodes:.3f}")
             print(f"Output file: {output_file}")
             print("="*60)
             

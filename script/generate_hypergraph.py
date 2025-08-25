@@ -303,34 +303,7 @@ class HypergraphProcessor:
         
         logger.info(f"Created {len(self.nge_q_edges)} NGE_Q edges")
         
-        # Find hypernode with avgQ = 0.0
-        zero_avgq_hypernode = None
-        for h_id, h_data in self.hypernodes.items():
-            if abs(h_data["avgQ"]) == 0.0:  # Check for avgQ ≈ 0.0
-                zero_avgq_hypernode = h_id
-                break
-        
-        # Add edges from zero avgQ hypernode to nodes with 0 in-degree
-        if zero_avgq_hypernode:
-            # Calculate in-degrees
-            in_degrees = defaultdict(int)
-            for src, dst in self.nge_q_edges:
-                in_degrees[dst] += 1
-            
-            # Find hypernodes with 0 in-degree (except the zero avgQ node itself)
-            zero_indegree_nodes = []
-            for h_id in self.hypernodes:
-                if h_id != zero_avgq_hypernode and in_degrees[h_id] == 0:
-                    zero_indegree_nodes.append(h_id)
-            
-            # Add edges from zero avgQ node to zero in-degree nodes
-            for target_node in zero_indegree_nodes:
-                # Only add edge if target has higher avgQ (which it should)
-                if self.hypernodes[target_node]["avgQ"] > 0:
-                    self.nge_q_edges.add((zero_avgq_hypernode, target_node))
-                    logger.info(f"Added edge from {zero_avgq_hypernode} (avgQ=0.0) to {target_node} (0 in-degree)")
-        
-        # Log edge statistics (recalculate after adding new edges)
+        # Log edge statistics
         out_degrees = defaultdict(int)
         in_degrees = defaultdict(int)
         for src, dst in self.nge_q_edges:

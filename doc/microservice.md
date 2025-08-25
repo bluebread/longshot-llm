@@ -1,360 +1,77 @@
 # Microservice Documentation
 
-This document outlines the structure and content of the API documentation for the microservices of this project. It serves as a guide for developers to understand how to use the API effectively.
+This document outlines the structure and content of the API documentation for the microservices of this project in Version 2. It serves as a guide for developers to understand how to use the simplified API architecture effectively.
 
 ## Overview
 
-1. **Trajectory Queue**
-    - RabbitMQ interface.
-    - Handles the queuing of trajectories for processing.
-
-2. **Warehouse**
-    - Manages the storage and retrieval of data. It hides the complexity of data management and provides a simple interface for data access.
+1. **Warehouse**
+    - Manages the storage and retrieval of data with simplified schema. 
     - Contains the following tables:
-        1. *Isomorphism Hash Table*: Maps a WL hash to IDs of all isomorphic formuals in the formula table. 
-        2. *Formula Table*: Each entry records (ID, timestamp, BaseFormulaID, TrajectoryID, complexity, hash, #vars, width, size, NodeID, FullTrajectoryID). 
-        3. *Trajectory Tables*: Each tables contains entries of (order, token_type, token_literals, reward). 
-        4. *Evolution Graph Database*:
-            - nodes: (FormulaTableID, visited_counter, ...)
-            - edges: (BaseFormulaID, NewFormulaID)
-    - Low-level API:
-        - `GET /formula/info`: Retrieves information about a formula by its ID.
-        - `POST /formula/info`: Adds a new formula entry to the formula table.
-        - `PUT /formula/info`: Updates an existing formula entry in the formula table.
-        - `DELETE /formula/info`: Deletes a formula entry from the formula table.
-        - `GET /formula/likely_isomorphic`: Retrieves likely isomorphic formulas' IDs.
-        - `POST /formula/likely_isomorphic`: Adds a likely isomorphic formula.
-        - `GET /trajectory`: Retrieves a trajectory by its ID.
-        - `POST /trajectory`: Adds a new trajectory to the warehouse.
-        - `PUT /trajectory`: Updates an existing trajectory in the warehouse.
-        - `DELETE /trajectory`: Deletes a trajectory from the warehouse.
-        - `GET /evolution_graph/node`: Retrieves a node in the evolution graph by its ID.
-        - `POST /evolution_graph/node`: Adds a new node to the evolution graph.
-        - `PUT /evolution_graph/node`: Updates an existing node in the evolution graph.
-        - `DELETE /evolution_graph/node`: Deletes a node from the evolution graph.
-    - High-level API:
-        - `GET /formula/definition`: Retrieves the full definition of a formula by its ID.
-        - `POST /evolution_graph/path`: Adds a new path to the evolution graph.
-        - `GET /evolution_graph/download_nodes`: Retrieves the evolution subgraph of nodes satisfying the given conditions.
-        - `GET /evolution_graph/download_hypernodes`: Retrieves the hypernodes of the evolution graph.
+        1. *Isomorphism Hash Table*: Maps a WL hash to IDs of all isomorphic formulas in the evolution graph.
+        2. *Evolution Graph Database*: Combined formula and graph data in single nodes.
+        3. *Trajectory Tables*: Simplified entries with cur_avgQ field.
 
-3. **Trajectory Processor**
-    - Processes incoming trajectories and updates the warehouse with new data.
-    - Extracts relevant information from trajectories and stores it in the appropriate tables.
-
-4. **Arm Ranker**
-    - Filters and selects the best arms (formulas) based on the trajectories and the evolution graph.
-    - Maintains the evolution graph of formulas.
-    - Implements policies for arm selection (e.g., UCB algorithm).
-    - Main API:
-        - `GET /topk_arms`: Return the current best top-K arms.
-
-5. **Weapons**
-    - Collect trajectories, and push them to the trajectory queue. 
+2. **Weapons**
+    - Collect trajectories and process them locally using library components.
     - Public API:
         - `POST /weapon/rollout`: Given the number of steps and the initial formula's definition, it will run the environment for the specified number of steps and collect trajectories.
     - Including the following types of weapons:
-        - **Cluster Bomb**: Randomly collects trajectories from the environment and pushes them to the trajectory queue.
-        - **Guided Missile**: Collects trajectories from the environment through RL policy and pushes them to the trajectory queue.
+        - **Cluster Bomb**: Randomly collects trajectories from the environment and processes them locally.
+        - **Guided Missile**: Collects trajectories from the environment through RL policy and processes them locally.
 
-        
 ## Database Schema
 
-Because MongoDB does not have a native UUID type, we use UUIDs as strings in the database. 
+**V2 Schema Changes**: The V2 architecture eliminates linked list structures in trajectory data by embedding complete formula reconstruction information within each trajectory record.
 
-### Formula Table (MongoDB)
+Because MongoDB does not have a native UUID type, we use UUIDs as strings in the database.
 
-In the database, the formula table is labeled as `FormulaTable`. Each entry in the formula table represents a formula and contains the following columns:
+### Evolution Graph (Neo4j)
 
-| Column Name       | Type        | Description                          |
-|:------------------|:-----------:|:--------------------------------------|
-| id                | UUID        | Primary key                                 |
-| base_formula_id   | UUID         | Parent formula ID (can be NULL)                            |
-| trajectory_id     | UUID         | Associated trajectory table ID (can be NULL)           |
-| avgQ              | float       | Average-case deterministic query complexity                             |
-| wl_hash           | string      | Weisfeiler-Lehman hash value              |
-| num_vars          | int         | Number of variables                               |
-| width             | int         | Formula width                               |
-| size              | int         | Formula size (number of nodes)                     |
-| timestamp         | datetime    | Insertion time                               |
-| node_id         | UUID        | Node ID in the evolution graph  |
+Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_TO`. If the two adjacent nodes have the same avgQ value, they will be connected with an edge labeled `SAME_Q`. Nodes now contain integrated formula data:
 
-A entry represents a empty formula if `base_formula_id` and `trajectory_id` are both NULL.
-
-<!-- ### Definition Cache Table (Redis)
-
-- Key (*UUID*): the ID of the formula.
-- Value (*List[UUID]*): the indices of trajectories that can be used to reconstruct the full definition of the formula. -->
+| Attribute   | Type   | Description                   |
+| ---------------- | :----: | ----------------------------- |
+| node\_id      | UUID   | The node's ID, corresponding to the formula ID (used as unique index)    |
+| num\_vars      | int    | The number of variables in the formula represented by this node |
+| width         | int    | The width of the formula represented by this node |
+| size        | int    | The size of the formula represented by this node (number of nodes) |
+| avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
+| wl_hash      | string | Weisfeiler-Lehman hash value |
+| timestamp    | datetime | Insertion time |
+| traj_id | UUID | Trajectory ID from which this formula/node can be reconstructed |
+| traj_slice | int | **V2**: Index pointing to the final step in the complete trajectory (prefix + suffix) that represents this formula state |
 
 ### Trajectory Table (MongoDB)
 
-Each trajectory is either a partial trajectory or the full definition of a formula, and its table ID must be recorded somewhere in the formula table.
+**V2 Schema**: Each trajectory contains the COMPLETE formula construction sequence, combining both base formula reconstruction (prefix) and new exploration steps (suffix). This eliminates the linked list structure and enables direct formula reconstruction.
 
 | Column Name      | Type     | Description                                      |
 |------------------|:----------:|--------------------------------------------------|
-| id               | UUID     | Primary key                                      |
-| base_formula_id | UUID     | The ID of the base formula, corresponding to the primary key of FormulaTable |
+| traj_id               | UUID     | Primary key                                      |
 | timestamp        | datetime | The time when the trajectory was generated       |
-| steps            | list     | List of steps in the trajectory, each step is a dictionary with the following fields: |
-| step.token_type       | int   | The type of the token, 0 for ADD, 1 for DELETE    |
-| step.token_literals   | int   | The binary representation for the literals of the token |
-| step.reward           | float    | The immediate reward received after this step                      |
+| steps            | list[list] | **V2**: Complete trajectory steps stored as lists `[token_type, token_literals, cur_avgQ]` |
+| step[0]          | int      | The type of the token, 0 for ADD, 1 for DELETE    |
+| step[1]          | int      | The binary representation for the literals of the token |
+| step[2]          | float    | **V2**: Current average Q-value for this specific step |
 
+**V2 Key Changes**:
+- **Complete Trajectories**: No more partial/linked trajectories - each record contains full reconstruction sequence
+- **Embedded Base Formulas**: Prefix trajectory steps embedded within each trajectory record
+- **Direct Reconstruction**: Formula definitions reconstructed directly from trajectory steps without database lookups
+- **Consistent avgQ**: All steps include `cur_avgQ` field for trajectory analysis
+- **Optimized Storage**: Steps stored as lists `[token_type, token_literals, cur_avgQ]` for 45.9% BSON size reduction
+- **Tuple API Format**: API returns steps as tuples `(token_type, token_literals, cur_avgQ)` for efficiency
 
 ### Isomorphism Hash Table (Redis)
 
 - Key (*string*): WL hash value of a formula.
 - Value (*List[UUID]*): the indices of probably isomorphic formulas with the same WL hash value.
 
-### Evolution Graph (Neo4j)
-
-Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_TO`. If the two adjacent nodes have the same avgQ value, they will be connected with an edge labeled `SAME_Q`. Nodes have the following attributes:
-
-
-| Attribute   | Type   | Description                   |
-| ---------------- | :----: | ----------------------------- |
-| formula\_id      | UUID   | The node's ID, corresponding to the primary key of the FormulaTable (used as unique index)    |
-| num\_vars      | int    | The number of variables in the formula represented by this node |
-| width         | int    | The width of the formula represented by this node |
-| size        | int    | The size of the formula represented by this node (number of nodes) |
-| avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
-| visited\_counter | int    | The number of times this node has been touched by a trajectory                   |
-
 ## API Endpoints
-
-### Trajectory Queue
-
-The Trajectory Queue is a RabbitMQ queue used for temporarily buffering trajectories generated by the reinforcement learning (RL) environment. This allows asynchronous decoupling between the environment that produces trajectories and the components (e.g., training workers or data processors) that consume them.
-
-It provides a reliable mechanism for pushing and popping serialized trajectory data for downstream processing.
-
-
-
-#### Message Queue Definition
-
-| Property | 	Value |
-| -------- | ------- |
-| Queue Name | trajectory.queue |
-| Exchange | trajectory.exchange |
-| Exchange Type | direct |
-| Routing Key | trajectory.push |
-| Durable | true |
-| Auto-delete | false |
-| Ack Mode | Manual acknowledgment |
-| Content Type | application/json |
-
-
-#### Message Schema (JSON)
-
-```json
-{
-  "num_vars": 3,
-  "width": 2,
-  "size": 5,
-  "timestamp": "2025-07-21T12:00:00Z",
-  "trajectory": {
-    "base_formula_id": "f123",
-    "steps": [
-      {
-        "order": 0,
-        "token_type": "ADD",
-        "token_literals": 53456,
-        "reward": 0.1,
-        "avgQ": 2.5
-      },
-      {
-        "order": 1,
-        "token_type": "DEL",
-        "token_literals": 358768,
-        "reward": -0.05,
-        "avgQ": 3.0
-      }
-    ]
-  }
-}
-```
-
-
-##### Field Descriptions
-
-| Field                 | Type   | Description                                                 |
-| --------------------- | :------: | ----------------------------------------------------------- |
-| `num_vars`            | int    | Number of variables in the formula                          |
-| `width`               | int    | Width of the formula                                        |
-| `base_size`               | int    | Size of the base formula (number of nodes)                       |
-| `timestamp`           | string | ISO 8601 timestamp of when the trajectory was generated   |
-| `trajectory`        | object | Contains the trajectory data                                |
-| `base_formula_id`    | string | The unique ID of the base formula that the trajectory applies to |
-| `steps`               | array  | List of step objects in the trajectory                      |
-| `step.order`          | int    | The position of the action in the sequence                  |
-| `step.token_type`     | string | One of `"ADD"`, `"DEL"`, `"EOS"`                                     |
-| `step.token_literals` | int  | The binary representation for literals involved in the operation                          |
-| `step.reward`         | float  | The reward received at this step                            |
-| `step.avgQ`           | float  | The average-case deterministic query complexity of the formula after this step |
-
-
-#### Message Consuming Setting (Pop) 
-
-| Property | 	Value |
-| -------- | ------- |
-|	Queue | trajectory.queue
-|	Auto Ack | false
-|	Expected Content Type | application/json
-
-
-#### Example (Push)
-
-```python
-# Push a trajectory to the RabbitMQ queue
-address = pika.ConnectionParameters('localhost')
-connection = pika.BlockingConnection(address)
-channel = connection.channel()
-
-# Declare the exchange and queue
-channel.exchange_declare(
-    exchange='trajectory.exchange', 
-    exchange_type='direct'
-    )
-channel.queue_declare(
-    queue='trajectory.queue',
-    auto_delete=False,
-    durable=True
-    )
-
-# Push a trajectory
-message = json.dumps(trajectory)
-channel.basic_publish(
-    exchange='trajectory.exchange',
-    routing_key='trajectory.push',
-    body=message,
-    properties=pika.BasicProperties(
-        content_type='application/json',
-        delivery_mode=2  # make message persistent
-    ))
-
-print(" [x] Sent trajectory")
-connection.close()
-```
-
-#### Example (Pop)
-
-```python
-# Receive and process messages from the RabbitMQ queue
-address = pika.ConnectionParameters('localhost')
-connection = pika.BlockingConnection(address)
-channel = connection.channel()
-
-# Declare the queue
-channel.queue_declare(queue='trajectory.queue', durable=True)
-
-# Set up the callback function to process messages
-def callback(ch, method, properties, body):
-    data = json.loads(body)
-    print(" [x] Received data:", data)
-    # Acknowledge the message
-    ch.basic_ack(delivery_tag=method.delivery_tag)  
-
-channel.basic_consume(
-    queue='trajectory.queue', 
-    on_message_callback=callback,
-    auto_ack=False  # Set to False to manually acknowledge messages
-    )
-
-print(' [*] Waiting for messages. To exit press CTRL+C')
-channel.start_consuming()
-```
-
----
-
-### Trajectory Processor
-
-
-The `TrajectoryProcessor` class processes trajectories and updates the databases. It is responsible for managing the data flow between the trajectory queue and the warehouse. It is stateless and has no endpoints. 
-
-#### Current Implementation
-
-The current implementation processes the trajectory by extracting the formulas with top `traj_num_summits` avgQ values and breaking the trajectory into parts smaller than the number `granularity` defined in the configuration. If a formula is isomorphic to an existing formula in the warehouse, it will not be added to the evolution graph, and the corresponding trajectory piece would be merged into the next one. The final piece would be just discarded if the formula is duplicate.  
-
-<!-- 
-### `Class TrajectoryProcessor(**config)`
-
-
-The `TrajectoryProcessor` class processes trajectories and updates the evolution graph. It is responsible for managing the data flow between the trajectory queue and the evolution graph.
-
-#### Constructor Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `config`  | dict   | Configuration parameters for the processor    |
-
-
-#### `TrajectoryProcessor.isomorphic_to(self, formula_graph: networkx.Graph, wl_hash: str | None = None) -> str | None`
-
-Returns the ID of an existing formula in the warehouse that is isomorphic to the given formula graph. If no isomorphic formula is found, it returns `None`. 
-This method uses the Weisfeiler-Lehman hash to determine if the formula is a duplicate. If the `wl_hash` is provided, it will be used to check for isomorphism; otherwise, the hash will be computed from the `formula_graph`.
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `formula_graph` | networkx.Graph | The graph representation of the formula to check for isomorphism |
-| `wl_hash` | str | The Weisfeiler-Lehman hash of the formula (optional) |
-
-##### Returns
-
-| Type    | Description                                   |
-| :------: | --------------------------------------------- |
-| str  | The ID of the isomorphic formula if found, otherwise `None` |
-
-
-#### `TrajectoryProcessor.process_trajectory(self, trajectory: dict) -> dict[str, Any]`
-
-Processes a single trajectory and updates the evolution graph accordingly. This method is called when a new trajectory is received from the trajectory queue and would try to break down the trajectory into smaller parts if necessary. The result is then saved to the warehouse and also returned as a list of new formulas' information.
-
-##### Current Implementation
-
-The current implementation processes the trajectory by extracting the formulas with top `traj_num_summits` avgQ values and breaking the trajectory into parts smaller than the number `granularity` defined in the configuration. If a formula is isomorphic to an existing formula in the warehouse, it will not be added to the evolution graph, and the corresponding trajectory piece would be merged into the next one. The final piece would be just discarded if the formula is duplicate.  
-
-##### Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| `data`    | dict   | The trajectory data to process in the message schema (JSON) defined in Trajectory Queue.                  |
-
-##### Returns
-
-```JSON
-{
-    "new_formulas": [
-        {
-            "id": "f123",
-            "base_formula_id": "f122",
-            "trajectory_id": "t456",
-            "avgQ": 1.5,
-            "num_vars": 3,
-            "width": 2,
-            "size": 5,
-            "wl_hash": "abcd1234...",
-        },
-    ],
-    "evo_path": [
-        "f46", "f27", "f68", "f16"
-    ]
-}
-```
-
-| Attribute | Type    | Description                                   |
-| :------: | :------: | --------------------------------------------- |
-| new_formulas | `list[dict]`  | A list of dictionaries representing the new formulas' information, each containing the formula ID, base formula ID, trajectory ID, average-case deterministic query complexity, number of variables, width, size and wl-hash value.  |
-| evo_path | `list[str]` | A list of formula IDs representing the evolution path of the formulas in the trajectory. This is used to track the evolution of formulas over time. | 
--->
-
-
----
 
 ### Warehouse
 
-The Warehouse is a microservice that manages the storage and retrieval of data related to formulas, trajectories, and the evolution graph. It abstracts the complexity of data management and provides a simple interface for data access. 
+The Warehouse is a microservice that manages the storage and retrieval of data related to formulas, trajectories, and the evolution graph. It abstracts the complexity of data management and provides a simple interface for data access.
 
 #### Data Format
 
@@ -362,86 +79,114 @@ When request is not passed in a correct format, the server will return a `422 Un
 
 For every token literals in the request body, it should be represented as a 64-bits integer, the first 32 bits for the positive literals and the last 32 bits for the negative literals.
 
-#### `GET /formula/info`
-Retrieve information about a formula by its ID.
+#### `GET /evolution_graph/node`
+Retrieve a node in the evolution graph by its formula ID. Returns integrated formula and graph data.
 
 - **Query Parameters:**  
-    - `id` (string, required): Formula UUID.
+    - `id` (string, required): Node UUID.
 
 - **Response:**  
     ```json
     {
-        "id": "f123",
-        "base_formula_id": "f122",
-        "trajectory_id": "t456",
-        "avgQ": 1.5,
-        "wl_hash": "abcd1234...",
+        "node_id": "f123",
+        "avgQ": 6.3,
         "num_vars": 3,
         "width": 2,
         "size": 5,
+        "in_degree": 2,
+        "out_degree": 3,
+        "wl_hash": "abcd1234...",
         "timestamp": "2025-07-21T12:00:00Z",
-        "node_id": "n789",
+        "traj_id": "t456",
+        "traj_slice": 3
     }
     ```
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
 
-
-#### `POST /formula/info`
-Add a new formula entry to the formula table. The fields `id` and `timestamp` are automatically generated by the server. The fields ``base_formula_id`` and ``trajectory_id`` can be NULL if the formula is an empty formula.
-
+#### `POST /evolution_graph/node`
+Add a new node to the evolution graph with integrated formula data. The node_id is automatically generated by the system using UUID4.
 
 - **Request Body:**  
     ```json
     {
-        "base_formula_id": "f122",
-        "trajectory_id": "t456",
-        "avgQ": 1.5,
-        "wl_hash": "abcd1234...",
+        "avgQ": 2.75,
         "num_vars": 3,
         "width": 2,
         "size": 5,
-        "node_id": "n789"
+        "wl_hash": "abc123def456",
+        "traj_id": "67890abcdef",
+        "traj_slice": 3
     }
     ```
+- **Constraints:**
+    - All fields are required:
+        - `avgQ` (float): Average Q-value complexity metric
+        - `num_vars` (int): Number of variables in the formula
+        - `width` (int): Width constraint of the formula
+        - `size` (int): Size (number of gates) of the formula
+        - `wl_hash` (string): Weisfeiler-Lehman hash for isomorphism detection
+        - `traj_id` (string): ID of the associated trajectory
+        - `traj_slice` (int): Slice position within the trajectory
 - **Response:**  
     ```json
     {
-        "id": "f123"
+        "node_id": "550e8400-e29b-41d4-a716-446655440000"
     }
     ```
 - **Status Codes:**  
-    - `201 Created`, `422 Unprocessable Entity`
+    - `201 Created`: Node created successfully
+    - `422 Unprocessable Entity`: Invalid request data
+    - `500 Internal Server Error`: Failed to create node
 
-
-#### `PUT /formula/info`
-Update an existing formula entry.
+#### `PUT /evolution_graph/node`
+Update an existing node with integrated formula data in the V2 system.
 
 - **Request Body:**  
     ```json
     {
-        "id": "f123",
-        "avgQ": 1.5,
-        "size": 6
+        "node_id": "node_f123e456_7",
+        "avgQ": 2.75,
+        "num_vars": 3,
+        "width": 2,
+        "size": 8,
+        "wl_hash": "abc123def456",
+        "traj_id": "67890abcdef",
+        "traj_slice": 5
     }
     ```
+- **Constraints**:
+    - `node_id` (string) is required to identify the node to be updated.
+    - All other fields are optional and can be updated independently:
+        - `avgQ` (float): Average Q-value complexity metric
+        - `num_vars` (int): Number of variables in the formula
+        - `width` (int): Width constraint of the formula
+        - `size` (int): Size (number of gates) of the formula
+        - `wl_hash` (string): Weisfeiler-Lehman hash for isomorphism detection
+        - `traj_id` (string): ID of the associated trajectory
+        - `traj_slice` (int): Slice position within the trajectory
 - **Response:**  
-    - Success message or updated formula object.
+    ```json
+    {
+        "message": "Node updated successfully"
+    }
+    ```
 - **Status Codes:**  
-    - `200 OK`, `422 Unprocessable Entity`, `404 Not Found`
+    - `200 OK`: Node updated successfully
+    - `400 Bad Request`: No update data provided
+    - `404 Not Found`: Node with specified ID not found
+    - `422 Unprocessable Entity`: Invalid request data
 
-
-#### `DELETE /formula/info`
-Delete a formula entry.
+#### `DELETE /evolution_graph/node`
+Delete a node.
 
 - **Query Parameters:**  
-    - `id` (string, required): Formula UUID.
+    - `node_id` (string, required): Node UUID.
 
 - **Response:**  
     - Success message.
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
-
 
 #### `GET /formula/likely_isomorphic`
 Retrieve IDs of likely isomorphic formulas.
@@ -452,12 +197,12 @@ Retrieve IDs of likely isomorphic formulas.
 - **Response:**  
     ```json
     {
+        "wl_hash": "abcd1234...",
         "isomorphic_ids": ["f123", "f124"]
     }
     ```
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
-
 
 #### `POST /formula/likely_isomorphic`
 
@@ -467,7 +212,7 @@ Add a likely isomorphic formula. If the WL hash already exists, the formula ID w
     ```json
     {
         "wl_hash": "abcd1234...",
-        "formula_id": "f125"
+        "node_id": "f125"
     }
     ```
 - **Response:**  
@@ -490,52 +235,42 @@ Delete the specified key.
 Retrieve a trajectory by its ID.
 
 - **Query Parameters:**  
-    - `id` (string, required): Trajectory UUID.
+    - `traj_id` (string, required): Trajectory UUID.
 
 - **Response:**  
     ```json
     {
-        "id": "t456",
-        "base_formula_id": "f123",
+        "traj_id": "t456",
         "steps": [
-            {
-                "token_type": 0,
-                "token_literals": 5,
-                "reward": 1.0,
-            }
-        ]
+            [0, 5, 2.3]
+        ],
+        "timestamp": "2025-07-21T12:00:00Z"
     }
     ```
+    Note: Steps are returned as tuples `[token_type, token_literals, cur_avgQ]` for reduced data redundancy.
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
 
-
 #### `POST /trajectory`
-Add a new trajectory. The fields `id` and `timestamp` are automatically generated by the server. The field `base_formula_id` can be NULL if the trajectory is not associated with any formula.
-
+Add a new trajectory. The fields `traj_id` and `timestamp` are automatically generated by the server.
 
 - **Request Body:**  
     ```json
     {
-        "base_formula_id": "f123",
         "steps": [
-            {
-                "token_type": 0,
-                "token_literals": 5,
-                "reward": 1.0,
-            }
+            [0, 5, 2.3]
         ]
     }
     ```
+    Note: Steps must be provided as tuples `[token_type, token_literals, cur_avgQ]`.
 - **Response:**  
     ```json
     {
-        "id": "t456"
+        "traj_id": "t456"
     }
     ```
 - **Status Codes:**  
     - `201 Created`, `422 Unprocessable Entity`
-
 
 #### `PUT /trajectory`
 Update an existing trajectory.
@@ -543,155 +278,90 @@ Update an existing trajectory.
 - **Request Body:**  
     ```json
     {
-        "id": "t456",
-        "base_formula_id": "f123",
+        "traj_id": "t456",
         "steps": [
-            {
-                "order": 3, // 0-based
-                "token_type": 1,
-                "token_literals": 3,
-                "reward": 1.0
-            }
+            [1, 3, 2.8]
         ]
     }
     ```
+    Note: Steps must be provided as tuples `[token_type, token_literals, cur_avgQ]`.
 - **Response:**  
     - Success message.
 - **Status Codes:**  
     - `200 OK`, `422 Unprocessable Entity`, `404 Not Found`
-
 
 #### `DELETE /trajectory`
 Delete a trajectory.
 
 - **Query Parameters:**  
-    - `id` (string, required): Trajectory UUID.
+    - `traj_id` (string, required): Trajectory UUID.
 
 - **Response:**  
     - Success message.
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
 
+#### `DELETE /trajectory/purge`
+**DESTRUCTIVE OPERATION**: Completely purge all trajectory data from MongoDB. This operation cannot be undone.
 
-#### `GET /evolution_graph/node`
-Retrieve a node in the evolution graph by its formula ID.
-
-- **Query Parameters:**  
-    - `id` (string, required): Node UUID.
-
+- **Request Body:** None
 - **Response:**  
     ```json
     {
-        "formula_id": "f123",
-        "avgQ": 6.3,
-        "num_vars": 3,
-        "width": 2,
-        "size": 5,
-        "visited_counter": 10,
-        "in_degree": 2,
-        "out_degree": 3
+        "success": true,
+        "deleted_count": 1247,
+        "message": "Successfully purged 1247 trajectories from MongoDB",
+        "timestamp": "2025-01-21T14:30:45.123456"
     }
     ```
 - **Status Codes:**  
-    - `200 OK`, `404 Not Found`
+    - `200 OK`, `500 Internal Server Error`
 
+#### `DELETE /formula/purge`
+**DESTRUCTIVE OPERATION**: Completely purge all formula data from Neo4j and Redis. This operation cannot be undone.
 
-#### `POST /evolution_graph/node`
-Add a new node to the evolution graph. The visited counter is set to 0, and the inactive flag is set to false by default.
-
-- **Request Body:**  
-    ```json
-    {
-        "formula_id": "f123",
-        "avgQ": 6.3,
-        "num_vars": 3,
-        "width": 2,
-        "size": 5
-    }
-    ```
+- **Request Body:** None
 - **Response:**  
     ```json
     {
-        "formula_id": "f123"
+        "success": true,
+        "deleted_count": 2856,
+        "message": "Successfully purged 1523 nodes from Neo4j and 1333 keys from Redis",
+        "timestamp": "2025-01-21T14:30:45.123456"
     }
     ```
 - **Status Codes:**  
-    - `201 Created`, `422 Unprocessable Entity`
-
-
-#### `PUT /evolution_graph/node`
-Update an existing node. 
-
-- **Request Body:**  
-    ```json
-    {
-        "formula_id": "f123",
-        "inc_visited_counter": 11,
-        "avgQ": 4.56
-    }
-    ```
-- **Constraints**:
-    - `inc_visited_counter` (int, optional): Increment the visited counter by this amount.
-    - `visited_counter` and `inc_visited_counter` are mutually exclusive.
-    - `formula_id` (string) is required to identify the node to be updated.
-    - `avgQ`, `num_vars`, `width`, and `size` are optional fields that can be updated.
-- **Response:**  
-    - Success message.
-- **Status Codes:**  
-    - `200 OK`, `422 Unprocessable Entity`, `404 Not Found`
-
-
-#### `DELETE /evolution_graph/node`
-Delete a node.
-
-- **Query Parameters:**  
-    - `formula_id` (string, required): Node UUID.
-
-- **Response:**  
-    - Success message.
-- **Status Codes:**  
-    - `200 OK`, `404 Not Found`
-
+    - `200 OK`, `500 Internal Server Error`
 
 #### `GET /formula/definition`
 Retrieve the full definition of a formula by its ID.
 
 - **Query Parameters:**  
-    - `id` (string, required): Formula UUID.
+    - `node_id` (string, required): Formula node UUID.
 
 - **Response:**  
     ```json
     {
-        "formula_id": "f123",
+        "node_id": "f123",
         "definition": [
-            ["x1", "x2", "x3"],
-            ["x4", "x5"]
+            5431, 53, 54
         ]
     }
     ```
 - **Status Codes:**  
     - `200 OK`, `404 Not Found`
 
-
-##### TODO: Lazy Reconstruction and Caching
-- Warehouse does not store the full definition of each formula initially.
-- Instead, formulas are reconstructed recursively using `BaseFormulaID` and `TrajectoryID`.
-- A lazy caching system is adopted: once a formula is reconstructed, its `FullTrajectoryID` may be stored for future faster access.
-- Periodic or opportunistic checkpointing can be applied to avoid long chains of reconstruction.
-- How frequently to reconstruct and cache is a design choice that can be tuned based on performance needs.
-
-
 #### `POST /evolution_graph/path`
 
-Add a new path to the evolution graph. The path is a list of formula IDs that represent the evolution path of the formulas in the trajectory. To accelerate the process of obtaining the hypernodes, it would check if the adjacent nodes have the same `avgQ` value, and if so, it will connect them with an edge labeled `SAME_Q`.
+Add a new path to the evolution graph. The path is a list of formula IDs that represent the evolution path of the formulas in the trajectory. Adjacent nodes on the path would be connected by EVOLVED_TO edge. When the two adjacent nodes have the same avgQ, they wil be connected a SAME_Q edge. 
 
 - **Request Body:**  
     ```json
     {
         "path": [
             "f123",
-            "f124",
-            "f125",
+            "f124", 
+            "f125"
         ]
     }
     ```
@@ -700,11 +370,9 @@ Add a new path to the evolution graph. The path is a list of formula IDs that re
 - **Status Codes:**  
     - `201 Created`, `422 Unprocessable Entity`
 
-
 #### `GET /evolution_graph/download_nodes`
 
-Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_vars`, `width`, etc.). The subgraph is a list of nodes and edges that represent the evolution of formulas over time.
-
+Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_vars`, `width`, etc.). Returns nodes with integrated formula data.
 
 - **Query Parameters:**  
     - `num_vars` (int): The number of variables in the formula.
@@ -715,20 +383,23 @@ Get the evolution subgraph of nodes satisfying the given conditions (e.g. `num_v
     {
         "nodes": [
             {
-                "formula_id": "f123",
+                "node_id": "f123",
                 "avgQ": "QAkh+1RBF0Q=",
-                "visited_counter": 10,
                 "num_vars": 3,
                 "width": 2,
+                "size": 5,
                 "in_degree": 2,
-                "out_degree": 3
-            },
+                "out_degree": 3,
+                "wl_hash": "abcd1234...",
+                "timestamp": "2025-07-21T12:00:00Z",
+                "traj_id": "t456",
+                "traj_slice": 3
+            }
         ]
     }
     ```
 - **Status Codes:**
     - `200 OK`, `422 Unprocessable Entity`
-
 
 #### `GET /evolution_graph/download_hypernodes`
 
@@ -757,83 +428,81 @@ Get the hypernodes of the evolution graph. A hypernode is a connected component 
 - **Status Codes:**
     - `200 OK`, `422 Unprocessable Entity`
 
+#### `GET /evolution_graph/dataset`
 
----
+Get the complete evolution graph dataset including all nodes and edges with optional field filtering to reduce data redundancy.
 
-### Arm Ranker
+- **Query Parameters:**
+    - `required_fields` (list[str], optional): List of required node fields to include. Default: `["node_id"]`. Available fields: `node_id`, `avgQ`, `num_vars`, `width`, `size`, `wl_hash`, `timestamp`, `traj_id`, `traj_slice`. Note: `node_id` is always included.
 
-
-The Arm Ranker is a microservice responsible for filtering and selecting the best arms (formulas) based on the trajectories and the evolution graph. It maintains the evolution graph of formulas and implements policies for arm selection, such as the Upper Confidence Bound (UCB) algorithm.
-
-#### `GET /topk_arms`
-
-##### Description
-
-Returns the current best top-K arms based on the latest trajectories and evolution graph. If parameter `size` is provided, it will return only the formulas of size less than or equal to `size`. If `size` is not provided, it will return the formulas of any size.
-
-##### Current Implementation
-
-The current implementation ranks the arms based on a scoring function that considers the average-case deterministic query complexity, and visited counter. It has not implemented the mechanism filtering out the less promising arms, so it downloads all the nodes and hypernodes from the evolution graph, and then rank them based on the score. Moreover, score calculation does not consider in-degree and out-degree of the nodes yet, which is a TODO item.
-
-##### Endpoint
-```
-GET /topk_arms
-```
-
-##### Query Parameters
-
-| Parameter | Type   | Description                                   |
-| --------- | :-----: | --------------------------------------------- |
-| num_vars | int | The number of variables in the formula  |
-| width    | int | The width of the formula           |
-| k       | int | The number of top arms to return  |
-| size     | int | The maximum size of the formula. Default: None |
-
-
-##### Response (Success)
-
-```json
-{
-  "top_k_arms": [
+- **Response:**
+    ```json
     {
-      "formula_id": "f123",
-      "definition": [
-        246, 123, 456
-      ]
-    },
-    {
-      "formula_id": "f124",
-      "definition": [
-        683, 234, 567
-      ],
+        "nodes": [
+            {
+                "node_id": "f123",
+                "avgQ": 0.85,
+                "num_vars": 3,
+                "width": 2,
+                "size": 5,
+                "wl_hash": "abc123",
+                "timestamp": "2023-01-01T00:00:00Z",
+                "traj_id": "t456",
+                "traj_slice": 10
+            }
+        ],
+        "edges": [
+            {
+                "src": "f123",
+                "dst": "f124",
+                "type": "EVOLVED_TO"
+            },
+            {
+                "src": "f123",
+                "dst": "f125",
+                "type": "SAME_Q"
+            }
+        ]
     }
-  ]
-}
-```
+    ```
+- **Status Codes:**
+    - `200 OK`
 
-##### Response Field Descriptions
+#### `GET /trajectory/dataset`
 
-| Field          | Type   | Description                                   |
-| -------------- | :-----: | --------------------------------------------- |
-| `top_k_arms`   | array  | List of top-K arms                             |
-| `arm.formula_id`   | string | The unique ID of the formula                   |
-| `arm.definition`   | list[int]  | The definition of the formula, represented as a list of lists of literals (represented by integers) |
+Get the complete trajectory dataset with all trajectories using optimized tuple format for steps.
 
+- **Query Parameters:** None
 
-##### Status Codes
+- **Response:**
+    ```json
+    {
+        "trajectories": [
+            {
+                "traj_id": "t456",
+                "timestamp": "2023-01-01T00:00:00Z",
+                "steps": [
+                    [0, 5, 0.75],
+                    [1, 3, 0.85]
+                ]
+            }
+        ]
+    }
+    ```
+    Note: Each step is represented as a tuple `[token_type, token_literals, cur_avgQ]` for reduced data redundancy.
 
-* `200 OK`: Successfully returned top-K arms
-* `422 Unprocessable Entity`: Missing required parameters or invalid values
+- **Status Codes:**
+    - `200 OK`
 
 ---
 
 ### Weapons
 
-The Weapons microservice is responsible for collecting trajectories and pushing them to the trajectory queue. It provides a public API for external clients to interact with the system and collect trajectories from the environment.
+The Weapons microservice is responsible for collecting trajectories and processing them locally using the integrated library components. It provides a public API for external clients to interact with the system and collect trajectories from the environment.
 
 #### `POST /weapon/rollout`
 
-Collects trajectories from the environment and pushes them to the trajectory queue. The request should specify the number of steps to run and the initial formula's definition.
+Collects trajectories from the environment and processes them locally using V2 TrajectoryProcessor with embedded formula reconstruction. The V2 schema eliminates the linked list structure by providing complete trajectory data for base formula reconstruction.
 
 - Request Body:
     ```json
@@ -843,11 +512,12 @@ Collects trajectories from the environment and pushes them to the trajectory que
         "size": 10,
         "steps_per_trajectory": 100,
         "num_trajectories": 10,
-        "initial_formula_id": "f123",
-        "initial_definition": [
-            1, 2, 3,
+        "prefix_traj": [
+            [0, 3, 0.5],
+            [0, 4, 1.0]
         ],
         "seed": 42,
+        "early_stop": false
     }
     ```
 - Request Field Descriptions:
@@ -856,20 +526,86 @@ Collects trajectories from the environment and pushes them to the trajectory que
     - `size` (int): Size of the formula (number of nodes).
     - `steps_per_trajectory` (int): Number of steps to run in a single trajectory.
     - `num_trajectories` (int): Number of trajectories to collect.
-    - `initial_formula_id` (string): ID of the initial formula to start with. If not provided, a random formula will be used.
-    - `initial_definition` (list[int]): Initial definition of the formula, represented as a list of lists of literals (represented by integers).
+    - `prefix_traj` (list[TrajectoryStep]): **V2 REQUIRED** - Complete trajectory for base formula reconstruction. Contains all steps needed to build the initial state, eliminating the need for linked list traversal.
     - `seed` (int, optional): Random seed for reproducibility. Default: None.
+    - `early_stop` (bool, optional): If True, stop trajectory simulation when avgQ reaches 0. This affects the `total_steps` count in the response. Default: False.
+- TrajectoryStep Format:
+    - Steps are provided as tuples `[token_type, token_literals, cur_avgQ]` where:
+        - `token_type` (int): Type of operation (0=ADD, 1=DEL, 2=EOS)
+        - `token_literals` (int): 64-bit integer representation of literals (first 32 bits positive, last 32 bits negative)
+        - `cur_avgQ` (float): Average Q-value after this step
 - Response:
     ```json
     {
         "total_steps": 1000,
         "num_trajectories": 10,
+        "processed_formulas": 25,
+        "new_nodes_created": [
+            "550e8400-e29b-41d4-a716-446655440000",
+            "660e8400-e29b-41d4-a716-446655440001"
+        ],
+        "base_formula_exists": false,
+        "evopaths": [
+            ["node1", "node2", "node3"],
+            ["node4", "node5"]
+        ]
     }
     ```
+- Response Field Descriptions:
+    - `total_steps` (int): Total number of steps actually executed across all trajectories (may be less than `steps_per_trajectory * num_trajectories` if `early_stop` is enabled)
+    - `num_trajectories` (int): Number of trajectories actually collected
+    - `processed_formulas` (int): **V2** - Number of unique formulas processed from trajectory segments
+    - `new_nodes_created` (list[str]): **V2** - List of node IDs for newly created nodes in the evolution graph
+    - `base_formula_exists` (bool): **V2** - Whether the base formula (from prefix_traj) already exists in the database
+    - `evopaths` (list[list[str]]): **V2** - List of evolution paths (sequences of node IDs) generated during trajectory processing
 - Status Codes:
-    - `200 OK`: Successfully collected trajectories and pushed to the queue.
+    - `200 OK`: Successfully collected trajectories and processed them using V2 schema.
     - `422 Unprocessable Entity`: Invalid request parameters. This includes:
-        - Missing required fields or invalid data types
-        - Formula parameter conflicts (e.g., `initial_definition` incompatible with specified `width` or `size` constraints)
-        - Formula definition that results in a width greater than the specified `width` parameter
-    - `500 Internal Server Error`: Unexpected server issues (e.g., queue connection failures).
+        - Missing required `prefix_traj` field
+        - Invalid trajectory step format
+        - Formula parameter conflicts
+    - `500 Internal Server Error`: Unexpected server issues (e.g., warehouse connection failures).
+
+##### Clusterbomb Algorithm
+
+1. Reconstruct base formula from prefix trajectory. Initialize temporary processor for base formula reconstruction. 
+2. Check if base formula already exists in database. If not, it would be saved to the warehouse. 
+3. Initialize the RL environment (FormulaGame), warehouse agent and trajectory processor.
+4. Run the environment simulation.
+5. Process all trajectories.
+
+
+## V2 Architecture Changes
+
+### Trajectory Schema Evolution
+
+**V1 Problems (Deprecated)**:
+- Trajectories formed a linked list structure via `initial_node_id` references
+- Required complex backtracking to reconstruct formula definitions
+- Empty formula initialization caused database consistency issues
+- Performance degradation due to recursive formula retrieval
+
+**V2 Solutions**:
+- **Embedded Reconstruction**: Each trajectory contains complete `prefix_traj` for base formula reconstruction
+- **No Linked Lists**: Eliminates dependency chains and backtracking requirements
+- **Complete Trajectories**: Combined prefix + suffix stored as single trajectory record
+- **Improved Performance**: Direct formula reconstruction without warehouse queries
+- **Database Consistency**: Base formula existence checking prevents orphaned references
+
+### Processing Flow
+
+1. **Base Formula Reconstruction**: Use `prefix_traj` to rebuild initial formula state locally
+2. **Duplicate Detection**: Check if base formula already exists in database
+3. **Trajectory Segmentation**: Process `suffix_traj` in granulated pieces as before
+4. **Complete Storage**: Store combined (prefix + suffix) trajectory with correct `traj_slice` references
+5. **Node Creation**: Create evolution graph nodes with proper trajectory references
+
+### Migration Notes
+
+- **Backward Compatibility**: V1 fields (`initial_definition`, `initial_node_id`) are deprecated but temporarily supported
+- **Required Migration**: New integrations must use `prefix_traj` field with tuple format
+- **Performance Benefits**: 
+    - V2 eliminates O(n) traversal costs for formula definition retrieval
+    - Tuple storage format provides 45.9% BSON size reduction in MongoDB
+- **Data Consistency**: V2 prevents empty formula initialization problems in demo scripts
+- **Trajectory Format**: All trajectory steps now use tuple format `[token_type, token_literals, cur_avgQ]` across APIs and storage

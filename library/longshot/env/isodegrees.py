@@ -1,6 +1,6 @@
 from ..utils import parse_gate_integer_representation
 
-class FormulaFeature:
+class FormulaIsodegrees:
     """Extract isomorphism-invariant feature vector from boolean formulas.
     
     This class converts a boolean formula into a canonical feature representation
@@ -56,7 +56,7 @@ class FormulaFeature:
         """Return hash of the canonical feature representation."""
         return hash(self.feature)
     
-    def __eq__(self, other: 'FormulaFeature'):
+    def __eq__(self, other: 'FormulaIsodegrees'):
         """Check equality between two FormulaFeature instances.
         
         Two FormulaFeature objects are equal if their canonical feature 

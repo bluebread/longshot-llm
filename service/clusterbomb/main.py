@@ -71,6 +71,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         logger.info("No seed provided - using non-deterministic randomness")
     
     # 1. V2: Reconstruct base formula from prefix trajectory
+    # TODO: need parse_trajectory_to_definition uility to bypass this
     # Initialize temporary processor for base formula reconstruction
     temp_processor = TrajectoryProcessor(None)
     base_formula_graph = temp_processor.reconstruct_base_formula(request.prefix_traj)
@@ -110,6 +111,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     base_formula_exists, base_formula_id = processor.check_base_formula_exists(base_formula_graph)
     logger.info(f"Base formula exists in database: {base_formula_exists}, ID: {base_formula_id}")
     
+    # TODO: saving base formula to warehouse should be the duty of TrajectoryPrcoessor
     # If base formula doesn't exist, save it to warehouse
     if not base_formula_exists:
         logger.info("Base formula not found, creating new node in warehouse")

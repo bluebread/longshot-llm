@@ -178,8 +178,11 @@ class TrajectoryProcessor:
             fg = FormulaGraph(list(base_formula.gates))
         else:
             raise ValueError("FormulaGraph object missing expected attributes")
+        
+        # TODO: evo_path would be never empty if base_formula is saved in warehouse
         evo_path: list[str] = [base_formula_id] if base_formula_id else []
         
+        # TODO: save the trajectory at the beginning 
         # V2: Save complete trajectory (prefix + suffix) once at the beginning
         # Both prefix_traj and suffix_traj are already in tuple format
         complete_trajectory_steps = list(context.prefix_traj) + list(suffix_steps)
@@ -188,8 +191,12 @@ class TrajectoryProcessor:
         complete_traj_id = self.warehouse.post_trajectory(steps=complete_trajectory_steps)
         prefix_length = len(context.prefix_traj)
         
+        # TODO: save base_formula to warehouse if not exists
+        
         new_formulas = []
         new_node_ids = []  # Track list of new node IDs instead of count
+        
+        # TODO: add `fisod` (FormulaIsodegrees)
         
         # Process each piece of the suffix trajectory
         for i, piece in enumerate(pieces):
@@ -206,6 +213,7 @@ class TrajectoryProcessor:
                 token_type = step[0]
                 token_literals = step[1]
                 
+                # TODO: incrementally update isodegrees
                 if token_type == 0:  # ADD
                     fg.add_gate(token_literals)
                 elif token_type == 1:  # DEL
@@ -246,6 +254,7 @@ class TrajectoryProcessor:
                 "num_vars": context.processing_metadata.get("num_vars", 4),  # Default or from context
                 "width": context.processing_metadata.get("width", 3),      # Default or from context
                 "size": fg.size, 
+                # TODO: add `isodegrees` field
             }
             
             # Post a new evolution graph node to the warehouse (V2 integrated approach)

@@ -37,9 +37,22 @@ Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_
 | size        | int    | The size of the formula represented by this node (number of nodes) |
 | avgQ         | float  | The average-case deterministic query complexity of the formula represented by this node |
 | wl_hash      | string | Weisfeiler-Lehman hash value |
+| isodegrees   | list[list[int]] | **V2**: Isomorphism-invariant degree sequence feature vector. Stored flattened as list[int] with length 2×num_vars, unflattened to list[list[int]] on retrieval |
 | timestamp    | datetime | Insertion time |
 | traj_id | UUID | Trajectory ID from which this formula/node can be reconstructed |
 | traj_slice | int | **V2**: Index pointing to the final step in the complete trajectory (prefix + suffix) that represents this formula state |
+
+**Important Notes on Variable Numbering**:
+- `num_vars` represents the **maximum variable index space** available for trajectory collection, not the actual number of variables used in the formula
+- During trajectory collection, `num_vars` is assigned based on the parameter configuration (e.g., 4 variables = indices 0-3)
+- The actual formula may use fewer variables than `num_vars` (e.g., a formula might only use variables 0, 2 for num_vars=4)
+- The `isodegrees` field length is always `2×num_vars` to maintain consistent feature vector dimensions
+- Unused variable positions in `isodegrees` will have zero counts: `[0, 0]`
+
+**Storage Implementation**:
+- Neo4j cannot store nested arrays, so `isodegrees` is **flattened** for storage: `[[a,b],[c,d]] → [a,b,c,d]`
+- On retrieval, the warehouse service **unflattens** the data back to nested format
+- The flattening/unflattening is transparent to API consumers
 
 ### Trajectory Table (MongoDB)
 
@@ -96,6 +109,7 @@ Retrieve a node in the evolution graph by its formula ID. Returns integrated for
         "in_degree": 2,
         "out_degree": 3,
         "wl_hash": "abcd1234...",
+        "isodegrees": [[2, 1], [0, 3], [1, 0]],
         "timestamp": "2025-07-21T12:00:00Z",
         "traj_id": "t456",
         "traj_slice": 3
@@ -115,6 +129,7 @@ Add a new node to the evolution graph with integrated formula data. The node_id 
         "width": 2,
         "size": 5,
         "wl_hash": "abc123def456",
+        "isodegrees": [[2, 1], [0, 3], [1, 0]],
         "traj_id": "67890abcdef",
         "traj_slice": 3
     }
@@ -126,6 +141,7 @@ Add a new node to the evolution graph with integrated formula data. The node_id 
         - `width` (int): Width constraint of the formula
         - `size` (int): Size (number of gates) of the formula
         - `wl_hash` (string): Weisfeiler-Lehman hash for isomorphism detection
+        - `isodegrees` (list[list[int]]): Isomorphism-invariant degree sequence feature vector with length equal to num_vars
         - `traj_id` (string): ID of the associated trajectory
         - `traj_slice` (int): Slice position within the trajectory
 - **Response:**  
@@ -151,6 +167,7 @@ Update an existing node with integrated formula data in the V2 system.
         "width": 2,
         "size": 8,
         "wl_hash": "abc123def456",
+        "isodegrees": [[2, 1], [0, 3], [1, 0]],
         "traj_id": "67890abcdef",
         "traj_slice": 5
     }

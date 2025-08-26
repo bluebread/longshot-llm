@@ -118,7 +118,7 @@ The V2 architecture simplifies the original microservice design:
 - `service/warehouse/main.py`: Main data service API
 - `service/clusterbomb/main.py`: Trajectory generation service
 - `script/demo_v2_system.py`: Complete system demonstration
-- `doc/microservice-v2.md`: Detailed V2 API specification
+- `doc/microservice.md`: Detailed V2 API specification
 
 ## Development Notes
 

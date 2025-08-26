@@ -42,9 +42,15 @@ class FormulaFeature:
         """
         self._posc = [0] * num_vars
         self._negc = [0] * num_vars
+        self.gates = set(gates)
         
-        for g in gates:
-            self.add_gate(g)
+        for g in self.gates:
+            ld = parse_gate_integer_representation(g).to_dict()
+            
+            for i in ld['pos']:
+                self._posc[i] += 1
+            for i in ld['neg']:
+                self._negc[i] += 1
     
     def __hash__(self):
         """Return hash of the canonical feature representation."""
@@ -76,12 +82,44 @@ class FormulaFeature:
         Args:
             gate: Integer representation of a gate/clause containing literals
         """
+        if gate in self.gates:
+            return
+        
         ld = parse_gate_integer_representation(gate).to_dict()
         
         for i in ld['pos']:
             self._posc[i] += 1
         for i in ld['neg']:
             self._negc[i] += 1
+            
+        self.gates.add(gate)
+        
+    def remove_gate(self, gate: int) -> None:
+        """Remove a gate from the formula feature representation.
+        
+        Decrements the occurrence counts for all literals present in the gate
+        only if the gate exists in the formula. This safely updates both positive
+        and negative literal counters based on the gate's integer representation.
+        
+        Args:
+            gate: Integer representation of the gate to remove. The gate is
+                parsed to extract its positive and negative literal indices.
+        
+        Note:
+            This method is safe to call even if the gate doesn't exist in the
+            formula - it will simply return without modifying any counts.
+        """
+        if gate not in self.gates:
+            return
+        
+        ld = parse_gate_integer_representation(gate).to_dict()
+        
+        for i in ld['pos']:
+            self._posc[i] -= 1
+        for i in ld['neg']:
+            self._negc[i] -= 1
+        
+        self.gates.remove(gate)
         
     @property
     def feature(self):

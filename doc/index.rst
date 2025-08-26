@@ -12,4 +12,5 @@ Longshot RL Documentation
 
    microservice.md
    library.md
+   map-elites.md
    reference/index.rst

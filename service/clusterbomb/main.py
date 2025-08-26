@@ -15,7 +15,12 @@ from longshot.agent import TrajectoryProcessor, WarehouseAgent
 import time
 from longshot.circuit import FormulaType
 from longshot.env import FormulaGame
-from longshot.utils import parse_formula_definition, generate_random_token
+from longshot.utils import (
+    parse_formula_definition, 
+    generate_random_token,
+    parse_trajectory_to_definition, 
+    reconstruct_formula_from_trajectory
+)
 from longshot.error import LongshotError
 
 warehouse_host = 'localhost'
@@ -70,15 +75,9 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         rng = random.Random()
         logger.info("No seed provided - using non-deterministic randomness")
     
-    # 1. V2: Reconstruct base formula from prefix trajectory
-    # TODO: need parse_trajectory_to_definition uility to bypass this
-    # Initialize temporary processor for base formula reconstruction
-    temp_processor = TrajectoryProcessor(None)
-    base_formula_graph = temp_processor.reconstruct_base_formula(request.prefix_traj)
-    
-    # Convert FormulaGraph to NormalFormFormula for game initialization
-    # Extract gates from the reconstructed formula graph
-    base_gates = list(base_formula_graph.gates) if hasattr(base_formula_graph, 'gates') else []
+    # 1. Reconstruct base formula from prefix trajectory
+    # Use utility function for efficient trajectory parsing
+    base_gates = parse_trajectory_to_definition(request.prefix_traj)
     initial_formula = parse_formula_definition(
         base_gates,
         request.num_vars,
@@ -87,7 +86,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     
     logger.info(f"Reconstructed base formula from prefix trajectory with {initial_formula.num_gates} gates")
     
-    # 2. Initialize the RL environment (FormulaGame) - Validation errors return 422
+    # 2. Initialize the RL environment with reconstructed formula - Validation errors return 422
     try:
         game = FormulaGame(
             initial_formula, 
@@ -103,50 +102,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                    f"The initial_definition may not be compatible with the specified width ({request.width}) or size ({request.size}) constraints."
         )
     
-    # 3. Initialize warehouse agent and trajectory processor
-    warehouse = WarehouseAgent(warehouse_host, warehouse_port)
-    processor = TrajectoryProcessor(warehouse)
-    
-    # V2: Check if base formula already exists in database
-    base_formula_exists, base_formula_id = processor.check_base_formula_exists(base_formula_graph)
-    logger.info(f"Base formula exists in database: {base_formula_exists}, ID: {base_formula_id}")
-    
-    # TODO: saving base formula to warehouse should be the duty of TrajectoryPrcoessor
-    # If base formula doesn't exist, save it to warehouse
-    if not base_formula_exists:
-        logger.info("Base formula not found, creating new node in warehouse")
-        
-        # Save the complete prefix trajectory
-        prefix_traj_id = processor.warehouse.post_trajectory(
-            steps=request.prefix_traj  # Already in tuple format from request
-        )
-        
-        # Calculate base formula properties
-        base_wl_hash = base_formula_graph.wl_hash(iterations=processor.hash_iterations)
-        base_size = sum(1 for step in request.prefix_traj if step[0] == 0) - sum(1 for step in request.prefix_traj if step[0] == 1)
-        final_avgQ = request.prefix_traj[-1][2] if request.prefix_traj else 0.0
-        
-        # Create evolution graph node for base formula
-        base_formula_id = processor.warehouse.post_evolution_graph_node(
-            avgQ=final_avgQ,
-            num_vars=request.num_vars,
-            width=request.width,
-            size=base_size,
-            wl_hash=base_wl_hash,
-            traj_id=prefix_traj_id,
-            traj_slice=len(request.prefix_traj) - 1
-        )
-        
-        # Add to isomorphism hash table
-        processor.warehouse.post_likely_isomorphic(
-            wl_hash=base_wl_hash,
-            formula_id=base_formula_id
-        )
-        
-        base_formula_exists = True  # Now it exists
-        logger.info(f"Created new base formula node: {base_formula_id}")
-        
-    # 4. Run the environment simulation - Server errors return 500
+    # 3. Run the environment simulation to collect trajectories - Server errors return 500
     try:
         actual_trajectories = 0
         v2_contexts = []  # V2 processing contexts
@@ -218,15 +174,24 @@ async def weapon_rollout(request: WeaponRolloutRequest):
         
     logger.info(f"Collected {len(v2_contexts)} trajectories for processing")
     
-    # V2: Process all trajectories using new trajectory processing
+    # 4. Process all collected trajectories
     trajectories_processed = 0
     all_new_node_ids = []  # Collect all new node IDs
     all_evopaths = []  # Collect all evolution paths
+    base_formula_exists = False  # Will be updated from first trajectory result
+    
+    # Initialize warehouse agent and trajectory processor for processing phase
+    warehouse = WarehouseAgent(warehouse_host, warehouse_port)
+    processor = TrajectoryProcessor(warehouse)
     
     try:
-        for context in v2_contexts:
+        for i, context in enumerate(v2_contexts):
             result = processor.process_trajectory(context)
             total_processed_formulas += result["processed_formulas"]
+            
+            # Get base_formula_exists from first trajectory result
+            if i == 0:
+                base_formula_exists = result.get("base_formula_exists", False)
             
             # Collect new node IDs (now a list)
             new_node_ids = result["new_nodes_created"]

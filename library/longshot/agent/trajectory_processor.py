@@ -7,7 +7,7 @@ from . import WarehouseAgent
 
 class TrajectoryProcessor:
     def __init__(self, warehouse: WarehouseAgent, **config):
-        self.warehouse = warehouse # TODO
+        self.warehouse = warehouse
         self.config = config
         # Default number of iterations for WL hash
         self.hash_iterations: int = config.get("iterations", 5)  
@@ -129,18 +129,63 @@ class TrajectoryProcessor:
         Returns:
             dict: Processing results including new formulas and metadata
         """
+        # V2: Save complete trajectory (prefix + suffix) once at the beginning
+        # Both prefix_traj and suffix_traj are already in tuple format
+        complete_trajectory_steps = list(context.prefix_traj) + list( context.suffix_traj)
+        
+        # Post the complete trajectory to get traj_id
+        complete_traj_id = self.warehouse.post_trajectory(steps=complete_trajectory_steps)
+        prefix_length = len(context.prefix_traj)
+        
         # Reconstruct base formula from prefix trajectory (no warehouse dependency)
-        base_formula = self.reconstruct_base_formula(context.prefix_traj)
+        base_formula_graph = self.reconstruct_base_formula(context.prefix_traj)
+        
+        # Get num_vars early for use in base formula processing
+        num_vars = context.processing_metadata.get("num_vars", 4)
+        
+        # Initialize FormulaIsodegrees with base formula gates for tracking
+        fisod = FormulaIsodegrees(num_vars, list(base_formula_graph.gates) if hasattr(base_formula_graph, 'gates') else [])
         
         # Check if base formula already exists in database
-        base_exists, base_formula_id = self.check_base_formula_exists(base_formula)
+        base_exists, base_formula_id = self.check_base_formula_exists(base_formula_graph)
+        
+        # Save base_formula to warehouse if not exists
+        if not base_exists:
+            # Check if base formula exists in warehouse
+            base_wl_hash = base_formula_graph.wl_hash(iterations=self.hash_iterations)
+            
+            # Calculate base formula properties from prefix trajectory
+            base_size = sum(1 for step in context.prefix_traj if step[0] == 0) - sum(1 for step in context.prefix_traj if step[0] == 1)
+            final_avgQ = context.prefix_traj[-1][2] if context.prefix_traj else 0.0
+            
+            # Create evolution graph node for base formula
+            # Use the already-posted complete trajectory, with slice pointing to end of prefix
+            base_formula_id = self.warehouse.post_evolution_graph_node(
+                avgQ=final_avgQ,
+                num_vars=num_vars,
+                width=context.processing_metadata.get("width", 3),
+                size=base_size,
+                wl_hash=base_wl_hash,
+                isodegrees=list(fisod.feature),  # Include isodegrees for base formula
+                traj_id=complete_traj_id,  # Use the complete trajectory we just posted
+                traj_slice=prefix_length - 1  # Point to the last step of prefix
+            )
+            
+            # Add to isomorphism hash table
+            self.warehouse.post_likely_isomorphic(
+                wl_hash=base_wl_hash,
+                formula_id=base_formula_id
+            )
+            
+        # Initialize evolution path with base formula ID (will be updated if base formula is saved)
+        evo_path: list[str] = [base_formula_id]
         
         # Extract avgQ values from suffix trajectory for processing
         suffix_steps = context.suffix_traj
         if not suffix_steps:
             return {
                 "new_formulas": [],
-                "evo_path": [base_formula_id] if base_formula_id else [],
+                "evo_path": evo_path,
                 "base_formula_exists": base_exists,
                 "processed_formulas": 0,
                 "new_nodes_created": 0
@@ -172,31 +217,13 @@ class TrajectoryProcessor:
             pieces = [(0, summit), (summit, len(avgQs))]
         
         # Start with reconstructed base formula - use proper deep copy
-        if hasattr(base_formula, 'copy'):
-            fg = base_formula.copy()
-        elif hasattr(base_formula, 'gates'):
+        if hasattr(base_formula_graph, 'copy'):
+            fg = base_formula_graph.copy()
+        elif hasattr(base_formula_graph, 'gates'):
             # Deep copy the gates to avoid modifying the original
-            fg = FormulaGraph(list(base_formula.gates))
+            fg = FormulaGraph(list(base_formula_graph.gates))
         else:
             raise ValueError("FormulaGraph object missing expected attributes")
-        
-        # Initialize FormulaIsodegrees with base formula gates
-        num_vars = context.processing_metadata.get("num_vars", 4)
-        fisod = FormulaIsodegrees(num_vars, list(base_formula.gates) if hasattr(base_formula, 'gates') else [])
-        
-        # TODO: evo_path would be never empty if base_formula is saved in warehouse
-        evo_path: list[str] = [base_formula_id] if base_formula_id else []
-        
-        # TODO: save the trajectory at the beginning 
-        # V2: Save complete trajectory (prefix + suffix) once at the beginning
-        # Both prefix_traj and suffix_traj are already in tuple format
-        complete_trajectory_steps = list(context.prefix_traj) + list(suffix_steps)
-        
-        # Post the complete trajectory to get traj_id
-        complete_traj_id = self.warehouse.post_trajectory(steps=complete_trajectory_steps)
-        prefix_length = len(context.prefix_traj)
-        
-        # TODO: save base_formula to warehouse if not exists
         
         new_formulas = []
         new_node_ids = []  # Track list of new node IDs instead of count

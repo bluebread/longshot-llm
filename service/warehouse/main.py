@@ -247,6 +247,7 @@ async def get_evolution_graph_node(node_id: str = Query(..., description="Node U
             n.width AS width,
             n.size AS size,
             n.wl_hash AS wl_hash,
+            n.isodegrees AS isodegrees,
             datetime(n.timestamp) AS timestamp,
             n.traj_id AS traj_id,
             n.traj_slice AS traj_slice,
@@ -264,6 +265,13 @@ async def get_evolution_graph_node(node_id: str = Query(..., description="Node U
     if data["timestamp"] and hasattr(data["timestamp"], "to_native"):
         data["timestamp"] = data["timestamp"].to_native()
     
+    # Unflatten isodegrees from Neo4j storage (reconstruct nested structure)
+    if data.get("isodegrees") is not None and isinstance(data["isodegrees"], list):
+        # Convert flat list back to list of pairs
+        flat = data["isodegrees"]
+        if len(flat) % 2 == 0:  # Should be even number of elements
+            data["isodegrees"] = [[flat[i], flat[i+1]] for i in range(0, len(flat), 2)]
+    
     return QueryEvolutionGraphNode(**data)
 
 
@@ -280,6 +288,7 @@ async def create_evolution_graph_node(node: CreateNodeRequest):
         n.width = $width,
         n.size = $size,
         n.wl_hash = $wl_hash,
+        n.isodegrees = $isodegrees,
         n.traj_id = $traj_id,
         n.traj_slice = $traj_slice,
         n.timestamp = $timestamp
@@ -288,6 +297,17 @@ async def create_evolution_graph_node(node: CreateNodeRequest):
     node_data = node.model_dump()
     node_data["node_id"] = node_id
     node_data["timestamp"] = datetime.now()
+    
+    # Flatten isodegrees for Neo4j storage (Neo4j can't store nested arrays)
+    if node_data.get("isodegrees") is not None:
+        # Flatten nested list to single-level list
+        flattened = []
+        for item in node_data["isodegrees"]:
+            if isinstance(item, (list, tuple)):
+                flattened.extend(item)
+            else:
+                flattened.append(item)
+        node_data["isodegrees"] = flattened
     
     with neo4j_driver.session() as session:
         result = session.run(query, **node_data).single()
@@ -444,6 +464,7 @@ async def download_evolution_graph_nodes(
             n.width AS width,
             n.size AS size,
             n.wl_hash AS wl_hash,
+            n.isodegrees AS isodegrees,
             datetime(n.timestamp) AS timestamp,
             n.traj_id AS traj_id,
             n.traj_slice AS traj_slice,
@@ -461,6 +482,14 @@ async def download_evolution_graph_nodes(
         # Convert Neo4j DateTime to Python datetime
         if data["timestamp"] and hasattr(data["timestamp"], "to_native"):
             data["timestamp"] = data["timestamp"].to_native()
+        
+        # Unflatten isodegrees from Neo4j storage (reconstruct nested structure)
+        if data.get("isodegrees") is not None and isinstance(data["isodegrees"], list):
+            # Convert flat list back to list of pairs
+            flat = data["isodegrees"]
+            if len(flat) % 2 == 0:  # Should be even number of elements
+                data["isodegrees"] = [[flat[i], flat[i+1]] for i in range(0, len(flat), 2)]
+        
         nodes.append(data)
 
     return {"nodes": nodes}

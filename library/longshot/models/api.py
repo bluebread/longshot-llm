@@ -64,6 +64,7 @@ class QueryEvolutionGraphNode(BaseModel):
     in_degree: int
     out_degree: int
     wl_hash: str
+    isodegrees: list | None = Field(None, description="Isomorphism-invariant degree sequence")
     timestamp: datetime
     traj_id: str
     traj_slice: int
@@ -76,6 +77,7 @@ class CreateNodeRequest(BaseModel):
     width: int
     size: int
     wl_hash: str
+    isodegrees: list | None = Field(None, description="Isomorphism-invariant degree sequence")
     traj_id: str
     traj_slice: int
     
@@ -88,6 +90,7 @@ class UpdateNodeRequest(BaseModel):
     width: int | None = None
     size: int | None = None
     wl_hash: str | None = None
+    isodegrees: list | None = Field(None, description="Isomorphism-invariant degree sequence")
     traj_id: str | None = None
     traj_slice: int | None = None
 

@@ -2,6 +2,7 @@ import numpy as np
 from ..models import TrajectoryQueueMessage
 from ..models.api import TrajectoryProcessingContext
 from ..env.formula_graph import FormulaGraph
+from ..env.isodegrees import FormulaIsodegrees
 from . import WarehouseAgent
 
 class TrajectoryProcessor:
@@ -179,6 +180,10 @@ class TrajectoryProcessor:
         else:
             raise ValueError("FormulaGraph object missing expected attributes")
         
+        # Initialize FormulaIsodegrees with base formula gates
+        num_vars = context.processing_metadata.get("num_vars", 4)
+        fisod = FormulaIsodegrees(num_vars, list(base_formula.gates) if hasattr(base_formula, 'gates') else [])
+        
         # TODO: evo_path would be never empty if base_formula is saved in warehouse
         evo_path: list[str] = [base_formula_id] if base_formula_id else []
         
@@ -196,8 +201,6 @@ class TrajectoryProcessor:
         new_formulas = []
         new_node_ids = []  # Track list of new node IDs instead of count
         
-        # TODO: add `fisod` (FormulaIsodegrees)
-        
         # Process each piece of the suffix trajectory
         for i, piece in enumerate(pieces):
             s, t = piece
@@ -213,11 +216,13 @@ class TrajectoryProcessor:
                 token_type = step[0]
                 token_literals = step[1]
                 
-                # TODO: incrementally update isodegrees
+                # Incrementally update both FormulaGraph and FormulaIsodegrees
                 if token_type == 0:  # ADD
                     fg.add_gate(token_literals)
+                    fisod.add_gate(token_literals)
                 elif token_type == 1:  # DEL
                     fg.remove_gate(token_literals)
+                    fisod.remove_gate(token_literals)
                 elif token_type == 2:  # EOS
                     pass
                 else:
@@ -253,8 +258,8 @@ class TrajectoryProcessor:
                 "wl_hash": wl_hash,
                 "num_vars": context.processing_metadata.get("num_vars", 4),  # Default or from context
                 "width": context.processing_metadata.get("width", 3),      # Default or from context
-                "size": fg.size, 
-                # TODO: add `isodegrees` field
+                "size": fg.size,
+                "isodegrees": list(fisod.feature),  # Convert tuple to list for storage
             }
             
             # Post a new evolution graph node to the warehouse (V2 integrated approach)
@@ -264,6 +269,7 @@ class TrajectoryProcessor:
                 width=formula_data["width"],
                 size=formula_data["size"],
                 wl_hash=wl_hash,
+                isodegrees=formula_data["isodegrees"],  # Include isodegrees
                 traj_id=complete_traj_id,  # Use the complete trajectory ID
                 traj_slice=traj_slice,     # Correct position in complete trajectory
             )

@@ -142,6 +142,7 @@ class TestEvolutionGraphNode:
                 "width": 4,
                 "size": 5,
                 "wl_hash": "test_hash_123",
+                "isodegrees": [[0, 0], [0, 1], [1, 1]],  # Example isodegrees (will be flattened by server)
                 "traj_id": traj_id,
                 "traj_slice": 0
             }
@@ -173,6 +174,7 @@ class TestEvolutionGraphNode:
             assert data["width"] == 4
             assert data["size"] == 6  # Updated value
             assert data["wl_hash"] == "test_hash_123"
+            assert data["isodegrees"] == [[0, 0], [0, 1], [1, 1]]  # Neo4j returns lists
             assert data["traj_id"] == traj_id
             assert data["traj_slice"] == 0
             
@@ -341,8 +343,8 @@ class TestHighLevelAPI:
         
         # Create some nodes for testing with V2 required fields (auto-generated IDs)
         nodes_data = [
-            {"avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash123", "traj_id": traj_id, "traj_slice": 0},
-            {"avgQ": 3.0, "num_vars": 3, "width": 4, "size": 6, "wl_hash": "hash456", "traj_id": traj_id, "traj_slice": 0}
+            {"avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash123", "isodegrees": [[0, 0], [0, 1], [1, 1]], "traj_id": traj_id, "traj_slice": 0},
+            {"avgQ": 3.0, "num_vars": 3, "width": 4, "size": 6, "wl_hash": "hash456", "isodegrees": [[0, 1], [1, 1], [1, 2]], "traj_id": traj_id, "traj_slice": 0}
         ]
         
         created_node_ids = []
@@ -465,9 +467,9 @@ class TestDatasetEndpoints:
         
         # Create some nodes and edges for testing (auto-generated IDs)
         nodes_data = [
-            {"avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash1", "traj_id": traj_id, "traj_slice": 0},
-            {"avgQ": 3.0, "num_vars": 3, "width": 4, "size": 6, "wl_hash": "hash2", "traj_id": traj_id, "traj_slice": 0},
-            {"avgQ": 2.5, "num_vars": 2, "width": 3, "size": 4, "wl_hash": "hash3", "traj_id": traj_id, "traj_slice": 0}
+            {"avgQ": 2.5, "num_vars": 3, "width": 4, "size": 5, "wl_hash": "hash1", "isodegrees": [[0, 0], [0, 1], [1, 1]], "traj_id": traj_id, "traj_slice": 0},
+            {"avgQ": 3.0, "num_vars": 3, "width": 4, "size": 6, "wl_hash": "hash2", "isodegrees": [[0, 1], [1, 1], [1, 2]], "traj_id": traj_id, "traj_slice": 0},
+            {"avgQ": 2.5, "num_vars": 2, "width": 3, "size": 4, "wl_hash": "hash3", "isodegrees": [[0, 0], [1, 1]], "traj_id": traj_id, "traj_slice": 0}
         ]
         
         created_node_ids = []
@@ -530,7 +532,8 @@ class TestDatasetEndpoints:
             "num_vars": 3, 
             "width": 4, 
             "size": 5, 
-            "wl_hash": "hash_field_test", 
+            "wl_hash": "hash_field_test",
+            "isodegrees": [[0, 0], [0, 1], [1, 1]], 
             "traj_id": traj_id, 
             "traj_slice": 0
         }

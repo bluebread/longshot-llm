@@ -2,7 +2,7 @@
 
 import pytest
 from longshot.utils.trajectory_utils import parse_trajectory_to_definition, reconstruct_formula_from_trajectory
-from longshot.env.formula_graph import FormulaGraph
+from longshot.env.graph import FormulaGraph
 
 
 class TestTrajectoryUtils:
@@ -73,9 +73,8 @@ class TestTrajectoryUtils:
             (0, 10, 1.5),  # ADD gate 10
             (0, 15, 2.0),  # ADD gate 15
         ]
-        num_vars = 4
         
-        formula_graph = reconstruct_formula_from_trajectory(trajectory, num_vars)
+        formula_graph = reconstruct_formula_from_trajectory(trajectory)
         
         assert isinstance(formula_graph, FormulaGraph)
         assert set(formula_graph.gates) == {5, 10, 15}
@@ -88,9 +87,8 @@ class TestTrajectoryUtils:
             (1, 5, 1.2),   # DEL gate 5
             (0, 15, 2.0),  # ADD gate 15
         ]
-        num_vars = 4
         
-        formula_graph = reconstruct_formula_from_trajectory(trajectory, num_vars)
+        formula_graph = reconstruct_formula_from_trajectory(trajectory)
         
         assert isinstance(formula_graph, FormulaGraph)
         assert set(formula_graph.gates) == {10, 15}

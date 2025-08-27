@@ -1,7 +1,7 @@
 import numpy as np
 from ..models import TrajectoryQueueMessage
 from ..models.api import TrajectoryProcessingContext
-from ..env.formula_graph import FormulaGraph
+from ..env.graph import FormulaGraph
 from ..env.isodegrees import FormulaIsodegrees
 from . import WarehouseAgent
 

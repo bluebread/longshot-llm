@@ -43,12 +43,11 @@ def reconstruct_formula_from_trajectory(
     
     Args:
         trajectory_steps: List of trajectory steps as tuples (token_type, token_literals, cur_avgQ)
-        num_vars: Number of variables in the formula
     
     Returns:
         FormulaGraph representing the formula after applying all trajectory steps
     """
-    from ..env.formula_graph import FormulaGraph
+    from ..env.graph import FormulaGraph
     
     # Get the formula definition from trajectory
     gates = parse_trajectory_to_definition(trajectory_steps)

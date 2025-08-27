@@ -23,8 +23,8 @@ MAP-Elites, introduced by Mouret and Clune (2015), differs from traditional evol
 
 ### Feature Space Design
 
-In our implementation, each boolean formula is characterized by its `FormulaFeature`:
-- **Primary Mapping**: FormulaFeature → Cell (isomorphism-invariant representation)
+In our implementation, each boolean formula is characterized by its `FormulaIsodegrees`:
+- **Primary Mapping**: FormulaIsodegrees → Cell (isomorphism-invariant representation)
 - **Cell Identity**: The sorted tuple of literal occurrence counts serves as the cell identifier
 - **Uniqueness**: Isomorphic formulas map to the same cell, ensuring structural diversity
 
@@ -64,7 +64,7 @@ class MAPElitesConfig:
 
 2. **Build Initial Archive**
    ```python
-    ff = FormulaFeature(num_vars, [])
+    fisod = FormulaIsodegrees(num_vars, [])
     archive = defaultdict(list)
 
     for trajectory in trajectories:
@@ -85,13 +85,13 @@ class MAPElitesConfig:
                 break
 
             if token_type == 0:
-                ff.add_gate(litint)
+                fisod.add_gate(litint)
             elif token_type == 1:
-                ff.remove_gate(litint)
+                fisod.remove_gate(litint)
             else:
                 raise Exception()
 
-            cell_id = ff.feature  # Immutable tuple identifier
+            cell_id = fisod.feature  # Immutable tuple identifier
            
             if cell_id not in archive or cur_avgQ > archive[cell_id].avgQ:
                 archive[cell_id] = Elite(
@@ -154,7 +154,7 @@ for trajectory in new_trajectories:
         mutant_avgQ = step.cur_avgQ
         
         # Calculate feature for placement in archive
-        feature = FormulaFeature(num_vars, mutant_formula.gates)
+        feature = FormulaIsodegrees(num_vars, mutant_formula.gates)
         cell_id = feature.feature
         
         # Update archive if improvement or new cell
@@ -231,7 +231,7 @@ graph LR
    - Update archive in bulk operations
 
 2. **Caching**
-   - Cache FormulaFeature computations
+   - Cache FormulaIsodegrees computations
    - Maintain formula hash → feature mapping
    - Store frequently accessed elites in memory
 
@@ -266,7 +266,7 @@ The algorithm terminates when:
 
 ## Algorithm Advantages for Boolean Formula Optimization
 
-1. **Structural Diversity**: FormulaFeature ensures diverse formula structures
+1. **Structural Diversity**: FormulaIsodegrees ensures diverse formula structures
 2. **Isomorphism Handling**: Equivalent formulas map to same cell, avoiding redundancy
 3. **Stepping Stones**: Maintains suboptimal solutions that may lead to breakthroughs
 4. **Parallelizable**: Elite selection and mutation can be parallelized
@@ -280,7 +280,7 @@ The algorithm terminates when:
    - Variable mutate_length based on formula complexity
 
 2. **Advanced Feature Spaces**
-   - Multi-dimensional features beyond FormulaFeature
+   - Multi-dimensional features beyond FormulaIsodegrees
    - Learned feature representations
    - Dynamic feature space expansion
 

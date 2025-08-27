@@ -169,7 +169,8 @@ async def get_trajectory(traj_id: str = Query(..., description="Trajectory UUID"
             timestamp=trajectory_doc["timestamp"],
             steps=steps_as_tuples,
             max_num_vars=trajectory_doc["max_num_vars"],
-            max_width=trajectory_doc["max_width"]
+            max_width=trajectory_doc["max_width"],
+            max_size=trajectory_doc["max_size"]
         )
     raise HTTPException(status_code=404, detail="Trajectory not found")
 
@@ -191,7 +192,8 @@ async def create_trajectory(trajectory: CreateTrajectoryRequest):
         "timestamp": datetime.now().astimezone(),
         "steps": steps_as_lists,
         "max_num_vars": trajectory.max_num_vars,
-        "max_width": trajectory.max_width
+        "max_width": trajectory.max_width,
+        "max_size": trajectory.max_size
     }
     
     trajectory_table.insert_one(trajectory_doc)
@@ -636,7 +638,8 @@ async def get_trajectory_dataset():
             timestamp=trajectory_doc["timestamp"],
             steps=optimized_steps,
             max_num_vars=trajectory_doc["max_num_vars"],
-            max_width=trajectory_doc["max_width"]
+            max_width=trajectory_doc["max_width"],
+            max_size=trajectory_doc["max_size"]  # Use get() for backward compatibility
         )
         trajectories.append(optimized_trajectory)
     

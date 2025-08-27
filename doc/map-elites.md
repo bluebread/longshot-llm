@@ -37,9 +37,9 @@ class MAPElitesConfig:
     cell_density: int            # Maximum organisms per cell (elites)
     
     # Formula space parameters
-    num_vars: int                # Number of boolean variables
-    width: int                   # Formula width constraint
-    size: int                    # Formula size constraint
+    max_num_vars: int                # Number of boolean variables
+    max_width: int                   # Formula width constraint
+    max_size: int                    # Formula size constraint
     
     # Mutation parameters
     mutate_length: int           # Steps to run in clusterbomb simulation

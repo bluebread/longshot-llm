@@ -143,12 +143,14 @@ class TrajectoryProcessor:
         # Get trajectory collection parameters from context
         max_num_vars = context.processing_metadata.get("max_num_vars")
         max_width = context.processing_metadata.get("max_width")
+        max_size = context.processing_metadata.get("max_size")
         
         # Post the complete trajectory to get traj_id
         complete_traj_id = self.warehouse.post_trajectory(
             steps=complete_trajectory_steps,
             max_num_vars=max_num_vars,
-            max_width=max_width
+            max_width=max_width,
+            max_size=max_size
         )
         prefix_length = len(context.prefix_traj)
         

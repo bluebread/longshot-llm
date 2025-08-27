@@ -156,7 +156,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 processing_metadata={
                     "max_num_vars": request.num_vars,  # Explicit max_num_vars for clarity
                     "max_width": request.width,  # Explicit max_width for clarity
-                    "size": request.size,
+                    "max_size": request.size,  # Pass size as max_size for trajectory creation
                 }
             )
             

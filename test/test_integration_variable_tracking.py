@@ -24,7 +24,8 @@ class TestVariableTrackingIntegration:
                 (1, 0x00000003, 1.8),  # DEL x0, x1
             ],
             "max_num_vars": 8,  # Collection parameter
-            "max_width": 5      # Collection parameter
+            "max_width": 5,     # Collection parameter
+            "max_size": 150     # Collection parameter
         }
         
         # POST trajectory
@@ -40,6 +41,7 @@ class TestVariableTrackingIntegration:
         # Verify fields were stored and retrieved
         assert retrieved.get("max_num_vars") == 8
         assert retrieved.get("max_width") == 5
+        assert retrieved.get("max_size") == 150
         assert len(retrieved["steps"]) == 3
         
         # Clean up
@@ -144,7 +146,8 @@ class TestVariableTrackingIntegration:
         trajectory_data = {
             "steps": [(0, 1, 0.5)],
             "max_num_vars": 10,
-            "max_width": 6
+            "max_width": 6,
+            "max_size": 200
         }
         
         response = requests.post(f"{self.WAREHOUSE_URL}/trajectory", json=trajectory_data)
@@ -159,13 +162,14 @@ class TestVariableTrackingIntegration:
         trajectories = dataset["trajectories"]
         recent_trajectory = None
         for traj in trajectories:
-            if traj.get("max_num_vars") == 10 and traj.get("max_width") == 6:
+            if traj.get("max_num_vars") == 10 and traj.get("max_width") == 6 and traj.get("max_size") == 200:
                 recent_trajectory = traj
                 break
         
         if recent_trajectory:
             assert recent_trajectory["max_num_vars"] == 10
             assert recent_trajectory["max_width"] == 6
+            assert recent_trajectory["max_size"] == 200
 
 
 if __name__ == "__main__":

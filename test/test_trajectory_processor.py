@@ -42,7 +42,8 @@ class TestTrajectoryProcessor:
                 for d in definition
             ],
             "max_num_vars": 8,  # Test default value
-            "max_width": 4      # Test default value
+            "max_width": 4,     # Test default value
+            "max_size": 100     # Test default value
         })
         
         assert response.status_code == 201, f"Failed to save trajectory: {response.text}"
@@ -166,7 +167,7 @@ class TestTrajectoryProcessor:
             processing_metadata={
                 "max_num_vars": 4,
                 "max_width": 3,
-                "size": 100
+                "max_size": 100
             }
         )
         

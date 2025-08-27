@@ -54,6 +54,13 @@ Each node is labeled with `FormulaNode`, and each edge is labeled with `EVOLVED_
 - On retrieval, the warehouse service **unflattens** the data back to nested format
 - The flattening/unflattening is transparent to API consumers
 
+**TODO: Variable Count Clarification**:
+- Store `max_num_vars` (trajectory collection parameter) and `width` (max variables per literal) in the trajectory table
+- `num_vars` in node data should represent the **actual number of variables used** in the formula
+- Example: formula `f = (x1·x0)·(x1·x4)` uses 3 variables (x0, x1, x4), not 5
+- Node data should store statistical information about the formula itself, not hyperparameters
+- `num_vars` should be a natural property of the formula, not a trajectory collection parameter
+
 ### Trajectory Table (MongoDB)
 
 **V2 Schema**: Each trajectory contains the COMPLETE formula construction sequence, combining both base formula reconstruction (prefix) and new exploration steps (suffix). This eliminates the linked list structure and enables direct formula reconstruction.

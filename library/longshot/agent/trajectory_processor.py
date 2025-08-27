@@ -1,9 +1,13 @@
 import numpy as np
+import logging
+from requests.exceptions import HTTPError, RequestException
 from ..models import TrajectoryQueueMessage
 from ..models.api import TrajectoryProcessingContext
 from ..env.graph import FormulaGraph
 from ..env.isodegrees import FormulaIsodegrees
 from . import WarehouseAgent
+
+logger = logging.getLogger(__name__)
 
 class TrajectoryProcessor:
     def __init__(self, warehouse: WarehouseAgent, **config):
@@ -33,16 +37,18 @@ class TrajectoryProcessor:
         # Handle non-existent formulas (like initial empty formulas)
         try:
             return self.warehouse.get_formula_definition(formula_id)
-        except Exception as e:
-            # Check for specific HTTP errors - avoid catching all exceptions
-            error_str = str(e).lower()
-            if "404" in error_str or "not found" in error_str:
+        except HTTPError as e:
+            if e.response and e.response.status_code == 404:
                 return []  # Empty formula definition for missing formulas
-            # Log and re-raise unexpected errors
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Unexpected error retrieving formula {formula_id}: {e}")
-            raise  # Re-raise other errors
+            logger.warning(f"HTTP error retrieving formula {formula_id}: {e}")
+            raise  # Re-raise other HTTP errors
+        except RequestException as e:
+            logger.warning(f"Request error retrieving formula {formula_id}: {e}")
+            raise  # Re-raise connection errors
+        except Exception as e:
+            # Still catch unexpected errors but log them
+            logger.error(f"Unexpected error retrieving formula {formula_id}: {e}")
+            raise
 
 
     def isomorphic_to(self, formula_graph: FormulaGraph, wl_hash: str | None = None) -> str | None:
@@ -71,7 +77,8 @@ class TrajectoryProcessor:
                 if formula_graph.is_isomorphic_to(fg):
                     return fid
                     
-            except Exception:
+            except (HTTPError, RequestException, ValueError) as e:
+                logger.debug(f"Failed to check isomorphism for formula {fid}: {e}")
                 continue
         
         return None
@@ -131,20 +138,25 @@ class TrajectoryProcessor:
         """
         # V2: Save complete trajectory (prefix + suffix) once at the beginning
         # Both prefix_traj and suffix_traj are already in tuple format
-        complete_trajectory_steps = list(context.prefix_traj) + list( context.suffix_traj)
+        complete_trajectory_steps = list(context.prefix_traj) + list(context.suffix_traj)
+        
+        # Get trajectory collection parameters from context
+        max_num_vars = context.processing_metadata.get("max_num_vars")
+        max_width = context.processing_metadata.get("max_width")
         
         # Post the complete trajectory to get traj_id
-        complete_traj_id = self.warehouse.post_trajectory(steps=complete_trajectory_steps)
+        complete_traj_id = self.warehouse.post_trajectory(
+            steps=complete_trajectory_steps,
+            max_num_vars=max_num_vars,
+            max_width=max_width
+        )
         prefix_length = len(context.prefix_traj)
         
         # Reconstruct base formula from prefix trajectory (no warehouse dependency)
         base_formula_graph = self.reconstruct_base_formula(context.prefix_traj)
         
-        # Get num_vars early for use in base formula processing
-        num_vars = context.processing_metadata.get("num_vars", 4)
-        
-        # Initialize FormulaIsodegrees with base formula gates for tracking
-        fisod = FormulaIsodegrees(num_vars, list(base_formula_graph.gates) if hasattr(base_formula_graph, 'gates') else [])
+        # Initialize FormulaIsodegrees with max_num_vars for consistent feature vector size
+        fisod = FormulaIsodegrees(max_num_vars, list(base_formula_graph.gates) if hasattr(base_formula_graph, 'gates') else [])
         
         # Check if base formula already exists in database
         base_exists, base_formula_id = self.check_base_formula_exists(base_formula_graph)
@@ -162,8 +174,8 @@ class TrajectoryProcessor:
             # Use the already-posted complete trajectory, with slice pointing to end of prefix
             base_formula_id = self.warehouse.post_evolution_graph_node(
                 avgQ=final_avgQ,
-                num_vars=num_vars,
-                width=context.processing_metadata.get("width", 3),
+                num_vars=base_formula_graph.num_vars,  # Use actual number of variables used
+                width=base_formula_graph.width,  # Use actual max width of gates
                 size=base_size,
                 wl_hash=base_wl_hash,
                 isodegrees=list(fisod.feature),  # Include isodegrees for base formula
@@ -283,8 +295,8 @@ class TrajectoryProcessor:
             formula_data = {
                 "avgQ": final_avgQ,
                 "wl_hash": wl_hash,
-                "num_vars": context.processing_metadata.get("num_vars", 4),  # Default or from context
-                "width": context.processing_metadata.get("width", 3),      # Default or from context
+                "num_vars": fg.num_vars,  # Use actual number of variables used
+                "width": fg.width,        # Use actual max width of gates
                 "size": fg.size,
                 "isodegrees": list(fisod.feature),  # Convert tuple to list for storage
             }

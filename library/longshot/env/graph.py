@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 import networkx as nx
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
+from ..utils.formula import parse_gate_integer_representation
 
 
 class FormulaGraph:
@@ -34,6 +35,8 @@ class FormulaGraph:
         self.graph = nx.Graph()
         self._used_variables = set()  # Track which variables are actually used
         self._size = 0  # Number of gates
+        self._width_counter = {}  # Maps width -> count of gates with that width
+        self._max_width = 0  # Track maximum width in the formula
         
         if definition:
             self.from_definition(definition)
@@ -48,8 +51,25 @@ class FormulaGraph:
         if gate in self.graph:
             return
         
+        # Validate gate value is within reasonable bounds
+        if not (0 <= gate <= 0xFFFFFFFFFFFFFFFF):
+            raise ValueError(f"Gate value {gate} outside valid 64-bit range")
+        
         self.graph.add_node(gate, label="gate")
         self._size += 1
+        
+        # Calculate gate width using Literals
+        literals = parse_gate_integer_representation(gate)
+        gate_width = literals.width
+        
+        # Update width counter
+        if gate_width not in self._width_counter:
+            self._width_counter[gate_width] = 0
+        self._width_counter[gate_width] += 1
+        
+        # Update max width
+        if gate_width > self._max_width:
+            self._max_width = gate_width
         
         # Extract positive and negative literals
         pos_literals = gate & 0xFFFFFFFF
@@ -93,6 +113,19 @@ class FormulaGraph:
         """
         if gate not in self.graph:
             return
+        
+        # Calculate gate width before removing
+        literals = parse_gate_integer_representation(gate)
+        gate_width = literals.width
+        
+        # Update width counter
+        if gate_width in self._width_counter:
+            self._width_counter[gate_width] -= 1
+            if self._width_counter[gate_width] <= 0:
+                del self._width_counter[gate_width]
+                # Recalculate max width only if we removed the last gate with max width
+                if gate_width == self._max_width and gate_width not in self._width_counter:
+                    self._max_width = max(self._width_counter.keys()) if self._width_counter else 0
             
         # Find variables used by this gate
         gate_vars = set()
@@ -154,6 +187,19 @@ class FormulaGraph:
         if not definition:
             return
         
+        # Rebuild width tracking from scratch
+        self._width_counter = {}
+        self._max_width = 0
+        
+        for gate in definition:
+            literals = parse_gate_integer_representation(gate)
+            gate_width = literals.width
+            if gate_width not in self._width_counter:
+                self._width_counter[gate_width] = 0
+            self._width_counter[gate_width] += 1
+            if gate_width > self._max_width:
+                self._max_width = gate_width
+        
         # Combine all gates to find all variables
         all_vars = reduce(lambda x, y: x | y, definition, 0)
         pos_vars = all_vars & 0xFFFFFFFF
@@ -186,9 +232,25 @@ class FormulaGraph:
         self.graph.add_edges_from([(f"+x{i}", f"x{i}") for i in pos_var_indices])
         self.graph.add_edges_from([(f"-x{i}", f"x{i}") for i in neg_var_indices])
         
-        # Add all gates
+        # Add all gates (but skip width calculation since we already did it)
         for gate in definition:
-            self.add_gate(gate)
+            # We need to add gates without recalculating width
+            if gate not in self.graph:
+                self.graph.add_node(gate, label="gate")
+                self._size += 1
+                
+                # Extract positive and negative literals
+                pos_literals = gate & 0xFFFFFFFF
+                neg_literals = (gate >> 32) & 0xFFFFFFFF
+                
+                # Find all variables involved  
+                pos_vars_gate = [i for i in range(32) if (pos_literals & (1 << i)) != 0]
+                neg_vars_gate = [i for i in range(32) if (neg_literals & (1 << i)) != 0]
+                
+                # Add edges from literals to the gate
+                gate_edges = [(f"+x{i}", gate) for i in pos_vars_gate]
+                gate_edges += [(f"-x{i}", gate) for i in neg_vars_gate]
+                self.graph.add_edges_from(gate_edges)
     
     def to_definition(self) -> List[int]:
         """
@@ -259,6 +321,8 @@ class FormulaGraph:
         self.graph.clear()
         self._used_variables.clear()
         self._size = 0
+        self._width_counter.clear()
+        self._max_width = 0
     
     def copy(self) -> 'FormulaGraph':
         """
@@ -271,13 +335,25 @@ class FormulaGraph:
         new_graph.graph = self.graph.copy()
         new_graph._used_variables = self._used_variables.copy()
         new_graph._size = self._size
+        new_graph._width_counter = self._width_counter.copy()
+        new_graph._max_width = self._max_width
         return new_graph
     
     @property
     def num_vars(self) -> int:
-        """Get the number of variables in the formula."""
-        # Return the maximum variable index + 1, or 0 if no variables
-        return max(self._used_variables, default=-1) + 1
+        """Get the actual number of variables used in the formula."""
+        # Return the count of actually used variables
+        return len(self._used_variables)
+    
+    @property
+    def width(self) -> int:
+        """Get the maximum width (number of literals) of any gate in the formula."""
+        return self._max_width
+    
+    @property
+    def width_counter(self) -> Dict[int, int]:
+        """Get a copy of the width counter dictionary."""
+        return self._width_counter.copy()
     
     @property
     def size(self) -> int:
@@ -320,6 +396,8 @@ class FormulaGraph:
                 "num_edges": 0,
                 "num_variables": 0,
                 "used_variables": [],
+                "width": 0,
+                "width_counter": {},
                 "num_literals": 0,
                 "num_gates": 0,
                 "size": 0,
@@ -339,6 +417,8 @@ class FormulaGraph:
             "num_edges": self.num_edges,
             "num_variables": self.num_vars,
             "used_variables": sorted(self._used_variables),
+            "width": self.width,
+            "width_counter": self.width_counter,
             "num_variable_nodes": num_var_nodes,
             "num_literal_nodes": num_literal_nodes,
             "num_gates": self.size,

@@ -154,9 +154,9 @@ async def weapon_rollout(request: WeaponRolloutRequest):
                 suffix_traj=current_trajectory,
                 base_formula_hash=None,  # Will be computed during processing
                 processing_metadata={
-                    "num_vars": request.num_vars,
-                    "width": request.width,
-                    "size": request.size
+                    "max_num_vars": request.num_vars,  # Explicit max_num_vars for clarity
+                    "max_width": request.width,  # Explicit max_width for clarity
+                    "size": request.size,
                 }
             )
             

@@ -30,6 +30,8 @@ class TrajectoryQueueMessage(BaseModel):
     
     num_vars: int = Field(..., description="Number of variables in the trajectory")
     width: int = Field(..., description="Width of the trajectory")
+    max_num_vars: int | None = Field(None, description="Maximum number of variables allowed during trajectory collection")
+    max_width: int | None = Field(None, description="Maximum width allowed during trajectory collection")
     base_size: int = Field(..., description="Size of the base formula")
     timestamp: datetime = Field(..., description="Timestamp of the trajectory")
     trajectory: TrajectoryMessageMultipleSteps = Field(..., description="The trajectory data itself")

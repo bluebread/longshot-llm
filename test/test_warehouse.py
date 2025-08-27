@@ -52,7 +52,9 @@ class TestTrajectory:
         trajectory_data = {
             "steps": [
                 (0, 5, 7/3)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -128,7 +130,9 @@ class TestEvolutionGraphNode:
         trajectory_data = {
             "steps": [
                 (0, 5, 2.5)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -248,7 +252,9 @@ class TestHighLevelAPI:
                 "steps": [
                     (0, 5, 1.0),   # ADD
                     (1, 10, 1.5)   # DELETE
-                ]
+                ],
+                "max_num_vars": 8,
+                "max_width": 4
             }
             response = client.post("/trajectory", json=trajectory_data)
             assert response.status_code == 201
@@ -294,7 +300,9 @@ class TestHighLevelAPI:
         trajectory_data = {
             "steps": [
                 (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -335,7 +343,9 @@ class TestHighLevelAPI:
         trajectory_data = {
             "steps": [
                 (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -388,7 +398,9 @@ class TestHighLevelAPI:
         trajectory_data = {
             "steps": [
                 (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -459,7 +471,9 @@ class TestDatasetEndpoints:
         trajectory_data = {
             "steps": [
                 (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -520,7 +534,9 @@ class TestDatasetEndpoints:
         trajectory_data = {
             "steps": [
                 (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -595,7 +611,9 @@ class TestDatasetEndpoints:
         trajectory_data = {
             "steps": [
                 (0, 5, 1.0)  # (token_type, token_literals, cur_avgQ)
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -657,7 +675,9 @@ class TestDatasetEndpoints:
             "steps": [
                 (0, 5, 1.0),   # ADD
                 (1, 3, 1.5)    # DELETE
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data_1)
         assert response.status_code == 201
@@ -668,7 +688,9 @@ class TestDatasetEndpoints:
                 (0, 10, 2.0),  # ADD
                 (0, 15, 2.5),  # ADD
                 (1, 10, 3.0)   # DELETE
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data_2)
         assert response.status_code == 201
@@ -709,7 +731,9 @@ class TestDatasetEndpoints:
                 (0, 5, 1.0),   # ADD
                 (1, 10, 2.5),  # DELETE
                 (0, 15, 3.7)   # ADD
-            ]
+            ],
+            "max_num_vars": 8,
+            "max_width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201

@@ -40,7 +40,9 @@ class TestTrajectoryProcessor:
             "steps": [
                 (0, d, 0.0)  # (token_type, token_literals, cur_avgQ)
                 for d in definition
-            ]
+            ],
+            "max_num_vars": 8,  # Test default value
+            "max_width": 4      # Test default value
         })
         
         assert response.status_code == 201, f"Failed to save trajectory: {response.text}"
@@ -162,8 +164,8 @@ class TestTrajectoryProcessor:
             suffix_traj=suffix_steps,
             base_formula_hash=None,
             processing_metadata={
-                "num_vars": 4,
-                "width": 3,
+                "max_num_vars": 4,
+                "max_width": 3,
                 "size": 100
             }
         )

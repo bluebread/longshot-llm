@@ -454,6 +454,43 @@ class MAPElites:
         except Exception as e:
             self.log(f"Warning: Could not fetch new trajectories: {e}")
     
+    def initialize_with_random(self):
+        """Initialize archive by generating random trajectories"""
+        self.log("Generating random initial trajectories...")
+        
+        try:
+            # Generate initial random trajectories using clusterbomb
+            num_batches = 5
+            for i in range(num_batches):
+                self.log(f"Generating initial batch {i+1}/{num_batches}...")
+                
+                trajproc_config = {
+                    "iterations": self.config.trajproc_iterations,
+                    "granularity": self.config.trajproc_granularity,
+                    "num_summits": self.config.trajproc_num_summits
+                }
+                
+                response = self.clusterbomb.weapon_rollout(
+                    num_vars=self.config.max_num_vars,
+                    width=self.config.max_width,
+                    size=self.config.max_size,
+                    steps_per_trajectory=20,  # Longer initial trajectories
+                    num_trajectories=10,
+                    prefix_traj=[],  # Start from empty formula
+                    early_stop=True,
+                    trajproc_config=trajproc_config
+                )
+                
+                self.log(f"  Generated {response.num_trajectories} trajectories")
+            
+            # Now load the generated trajectories from warehouse
+            self.log("Loading generated trajectories from warehouse...")
+            self.initialize_from_warehouse()
+            
+        except Exception as e:
+            self.log(f"Error during random initialization: {e}")
+            self.log("Starting with empty archive...")
+    
     def run(self):
         """Run the MAP-Elites algorithm"""
         print("\n" + "="*60)
@@ -465,11 +502,14 @@ class MAPElites:
         print(f"  - Formula space: {self.config.max_num_vars} vars, width {self.config.max_width}, size {self.config.max_size}")
         print(f"  - Mutation: {self.config.num_mutate} trajectories of {self.config.mutate_length} steps")
         print(f"  - Selection strategy: {self.config.elite_selection_strategy}")
+        print(f"  - Initialization: {self.config.initialization_strategy}")
         print("="*60 + "\n")
         
-        # Phase 1: Initialize from warehouse
+        # Phase 1: Initialize archive
         if self.config.initialization_strategy == "warehouse":
             self.initialize_from_warehouse()
+        elif self.config.initialization_strategy == "random":
+            self.initialize_with_random()
         
         # Phase 2: Evolution loop
         for iteration in range(self.config.num_iterations):
@@ -547,6 +587,9 @@ def main():
     parser.add_argument("--strategy", type=str, default="uniform", 
                        choices=["uniform", "curiosity", "performance"],
                        help="Elite selection strategy")
+    parser.add_argument("--init-strategy", type=str, default="warehouse",
+                       choices=["warehouse", "random"],
+                       help="Initialization strategy (warehouse: use existing, random: generate new)")
     parser.add_argument("--warehouse-host", type=str, default="localhost", help="Warehouse host")
     parser.add_argument("--warehouse-port", type=int, default=8000, help="Warehouse port")
     parser.add_argument("--clusterbomb-host", type=str, default="localhost", help="Clusterbomb host")
@@ -570,6 +613,7 @@ def main():
         num_mutate=args.num_mutate,
         batch_size=args.batch_size,
         elite_selection_strategy=args.strategy,
+        initialization_strategy=args.init_strategy,
         warehouse_host=args.warehouse_host,
         warehouse_port=args.warehouse_port,
         clusterbomb_host=args.clusterbomb_host,

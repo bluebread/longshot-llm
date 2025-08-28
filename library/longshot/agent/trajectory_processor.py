@@ -161,7 +161,8 @@ class TrajectoryProcessor:
         fisod = FormulaIsodegrees(max_num_vars, list(base_formula_graph.gates) if hasattr(base_formula_graph, 'gates') else [])
         
         # Check if base formula already exists in database
-        base_exists, base_formula_id = self.check_base_formula_exists(base_formula_graph)
+        # base_exists, base_formula_id = self.check_base_formula_exists(base_formula_graph)
+        base_exists = False
         
         # Save base_formula to warehouse if not exists
         if not base_exists:
@@ -283,9 +284,9 @@ class TrajectoryProcessor:
             # Check if the formula graph is a duplicate
             wl_hash = fg.wl_hash(iterations=self.hash_iterations)
             
-            if (fid := self.isomorphic_to(fg, wl_hash)) is not None:
-                evo_path.append(fid)
-                continue  # Skip storing if it's a duplicate
+            # if (fid := self.isomorphic_to(fg, wl_hash)) is not None:
+            #     evo_path.append(fid)
+            #     continue  # Skip storing if it's a duplicate
             
             # If not a duplicate, store the formula with correct traj_slice
             # V2: Use the complete trajectory ID and calculate correct slice position

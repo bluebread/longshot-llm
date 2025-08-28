@@ -55,6 +55,7 @@ class ClusterbombAgent:
         prefix_traj: list[tuple[int, int, float]],
         seed: Optional[int] = None,
         early_stop: bool = False,
+        trajproc_config: Optional[dict] = None,
     ) -> WeaponRolloutResponse:
         """
         Executes a weapon rollout operation to generate trajectories.
@@ -72,6 +73,7 @@ class ClusterbombAgent:
             prefix_traj: Complete trajectory for base formula reconstruction.
             seed: Optional random seed for deterministic trajectory generation.
             early_stop: If True, stop trajectory simulation when avgQ reaches 0.
+            trajproc_config: Optional configuration for TrajectoryProcessor (iterations, granularity, num_summits).
             
         Returns:
             WeaponRolloutResponse: Response containing the total steps executed
@@ -89,6 +91,7 @@ class ClusterbombAgent:
             prefix_traj=prefix_traj,
             seed=seed,
             early_stop=early_stop,
+            trajproc_config=trajproc_config,
         )
         
         response = self._client.post("/weapon/rollout", json=request.model_dump(exclude_none=True))
@@ -153,6 +156,7 @@ class AsyncClusterbombAgent:
         prefix_traj: list[tuple[int, int, float]],
         seed: Optional[int] = None,
         early_stop: bool = False,
+        trajproc_config: Optional[dict] = None,
     ) -> WeaponRolloutResponse:
         """
         Executes a weapon rollout operation to generate trajectories.
@@ -170,6 +174,7 @@ class AsyncClusterbombAgent:
             prefix_traj: Complete trajectory for base formula reconstruction.
             seed: Optional random seed for deterministic trajectory generation.
             early_stop: If True, stop trajectory simulation when avgQ reaches 0.
+            trajproc_config: Optional configuration for TrajectoryProcessor (iterations, granularity, num_summits).
             
         Returns:
             WeaponRolloutResponse: Response containing the total steps executed
@@ -187,6 +192,7 @@ class AsyncClusterbombAgent:
             prefix_traj=prefix_traj,
             seed=seed,
             early_stop=early_stop,
+            trajproc_config=trajproc_config,
         )
         
         response = await self._client.post("/weapon/rollout", json=request.model_dump(exclude_none=True))

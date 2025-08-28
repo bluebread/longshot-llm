@@ -46,6 +46,11 @@ class MAPElitesConfig:
     clusterbomb_host: str = "localhost"
     clusterbomb_port: int = 8060
     
+    # TrajectoryProcessor configuration
+    trajproc_iterations: int = 5  # WL hash iterations
+    trajproc_granularity: int = 20  # Q-value discretization granularity
+    trajproc_num_summits: int = 5  # Number of summits to consider
+    
     # Output
     verbose: bool = True
     save_archive: bool = True
@@ -58,7 +63,6 @@ class Elite:
     traj_id: str
     traj_slice: int
     avgQ: float
-    formula_id: Optional[str] = None
     discovery_iteration: int = 0
     
     def to_dict(self):
@@ -66,7 +70,6 @@ class Elite:
             "traj_id": self.traj_id,
             "traj_slice": self.traj_slice,
             "avgQ": self.avgQ,
-            "formula_id": self.formula_id,
             "discovery_iteration": self.discovery_iteration
         }
 
@@ -370,6 +373,13 @@ class MAPElites:
             return None
         
         try:
+            # Build trajproc_config from configuration
+            trajproc_config = {
+                "iterations": self.config.trajproc_iterations,
+                "granularity": self.config.trajproc_granularity,
+                "num_summits": self.config.trajproc_num_summits
+            }
+            
             # Request mutation via clusterbomb
             response = self.clusterbomb.weapon_rollout(
                 num_vars=self.config.max_num_vars,
@@ -378,7 +388,8 @@ class MAPElites:
                 steps_per_trajectory=self.config.mutate_length,
                 num_trajectories=self.config.num_mutate,
                 prefix_traj=prefix_traj,
-                early_stop=True
+                early_stop=True,
+                trajproc_config=trajproc_config
             )
             
             # The response contains trajectory IDs that were created
@@ -540,6 +551,9 @@ def main():
     parser.add_argument("--warehouse-port", type=int, default=8000, help="Warehouse port")
     parser.add_argument("--clusterbomb-host", type=str, default="localhost", help="Clusterbomb host")
     parser.add_argument("--clusterbomb-port", type=int, default=8060, help="Clusterbomb port")
+    parser.add_argument("--trajproc-iterations", type=int, default=5, help="WL hash iterations for TrajectoryProcessor")
+    parser.add_argument("--trajproc-granularity", type=int, default=20, help="Q-value discretization granularity for TrajectoryProcessor")
+    parser.add_argument("--trajproc-num-summits", type=int, default=5, help="Number of summits for TrajectoryProcessor")
     parser.add_argument("--output", type=str, default="map_elites_archive.json", help="Output file")
     parser.add_argument("--quiet", action="store_true", help="Reduce output verbosity")
     
@@ -560,6 +574,9 @@ def main():
         warehouse_port=args.warehouse_port,
         clusterbomb_host=args.clusterbomb_host,
         clusterbomb_port=args.clusterbomb_port,
+        trajproc_iterations=args.trajproc_iterations,
+        trajproc_granularity=args.trajproc_granularity,
+        trajproc_num_summits=args.trajproc_num_summits,
         archive_path=args.output,
         verbose=not args.quiet
     )

@@ -182,7 +182,9 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     
     # Initialize warehouse agent and trajectory processor for processing phase
     warehouse = WarehouseAgent(warehouse_host, warehouse_port)
-    processor = TrajectoryProcessor(warehouse)
+    # Use trajproc_config if provided, otherwise use default configuration
+    trajproc_config = request.trajproc_config or {}
+    processor = TrajectoryProcessor(warehouse, **trajproc_config)
     
     try:
         for i, context in enumerate(v2_contexts):

@@ -233,6 +233,7 @@ class WeaponRolloutRequest(BaseModel):
     prefix_traj: list[tuple[int, int, float]] = Field(..., description="Base formula trajectory as tuples (token_type, token_literals, cur_avgQ)")
     seed: int | None = Field(None, description="Random seed for reproducible trajectory generation. If not provided, randomness will be non-deterministic")
     early_stop: bool = Field(default=False, description="If True, stop trajectory simulation when avgQ reaches 0")
+    trajproc_config: dict | None = Field(None, description="Optional configuration for TrajectoryProcessor (iterations, granularity, num_summits)")
 
 
 class WeaponRolloutResponse(BaseModel):

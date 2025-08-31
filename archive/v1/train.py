@@ -21,7 +21,7 @@ import tempfile
 from tqdm import tqdm
 import multiprocessing
 
-from longshot.circuit import NormalFormFormula, Literals, CNF, DNF
+from longshot.literals import NormalFormFormula, Literals, CNF, DNF
 from .distrib import GumbelTopK
 from .model import LongshotModel
 from .game import FormulaGame

@@ -1,5 +1,5 @@
 """Utility functions for trajectory processing."""
-from ..env import FormulaGraph
+from ..formula import FormulaGraph
 
 
 def parse_trajectory_to_definition(trajectory_steps: list[tuple[int, int, float]]) -> list[int]:
@@ -47,7 +47,7 @@ def reconstruct_formula_from_trajectory(
     Returns:
         FormulaGraph representing the formula after applying all trajectory steps
     """
-    from ..env.graph import FormulaGraph
+    from ..formula.graph import FormulaGraph
     
     # Get the formula definition from trajectory
     gates = parse_trajectory_to_definition(trajectory_steps)

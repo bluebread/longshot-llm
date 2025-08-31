@@ -5,7 +5,7 @@ Integration test for variable and width tracking across the entire system.
 import pytest
 import requests
 import time
-from longshot.env import FormulaGraph
+from longshot.formula import FormulaGraph
 
 
 class TestVariableTrackingIntegration:

@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Optional
 
 from map_elites import MAPElites, MAPElitesConfig
-from longshot.agent import WarehouseAgent
+from longshot.service import WarehouseAgent
 
 
 def download_trajectory_dataset(
@@ -116,7 +116,7 @@ def run_map_elites_with_dataset(config: MAPElitesConfig, dataset_args: dict, boo
             print("="*60)
             
             # Generate initial trajectories using clusterbomb
-            from longshot.agent import ClusterbombAgent
+            from longshot.service import ClusterbombAgent
             clusterbomb = ClusterbombAgent(config.clusterbomb_host, config.clusterbomb_port)
             
             try:

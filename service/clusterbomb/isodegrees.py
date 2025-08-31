@@ -1,4 +1,4 @@
-from ..utils import parse_gate_integer_representation
+from ...library.longshot.utils import parse_gate_integer_representation
 
 class FormulaIsodegrees:
     """Extract isomorphism-invariant feature vector from boolean formulas.

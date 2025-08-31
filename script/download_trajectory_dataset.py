@@ -14,7 +14,7 @@ import argparse
 import sys
 from datetime import datetime
 
-from longshot.agent import WarehouseAgent
+from longshot.service import WarehouseAgent
 
 
 def download_dataset(warehouse_host: str, warehouse_port: int, output_path: str) -> dict:

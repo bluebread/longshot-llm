@@ -8,7 +8,7 @@ import torch
 from tensordict import TensorDict
 
 from env import FormulaGame
-from longshot.circuit import CNF
+from longshot.literals import CNF
 
 env = FormulaGame(formula=CNF(5), width=3, size=8)
 

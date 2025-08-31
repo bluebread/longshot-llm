@@ -33,9 +33,9 @@ import networkx as nx
 import numpy as np
 from typing import Dict, List, Any
 
-from longshot.agent import ClusterbombAgent, WarehouseAgent
+from longshot.service import ClusterbombAgent, WarehouseAgent
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
-from longshot.circuit import Literals
+from longshot.literals import Literals
 
 
 def create_output_directory() -> Path:

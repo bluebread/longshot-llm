@@ -10,11 +10,11 @@ import logging
 import random
 from datetime import datetime
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
-from longshot.models.api import TrajectoryProcessingContext
-from longshot.agent import TrajectoryProcessor, WarehouseAgent
+from longshot.service.api_models import TrajectoryProcessingContext
+from longshot.service import TrajectoryProcessor, WarehouseAgent
 import time
-from longshot.circuit import FormulaType
-from longshot.env import FormulaGame
+from longshot.literals import FormulaType
+from longshot.formula import FormulaRewardModel
 from longshot.utils import (
     parse_formula_definition, 
     generate_random_token,
@@ -88,7 +88,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     
     # 2. Initialize the RL environment with reconstructed formula - Validation errors return 422
     try:
-        game = FormulaGame(
+        game = FormulaRewardModel(
             initial_formula, 
             width=request.width,
             size=request.size,

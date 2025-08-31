@@ -13,7 +13,7 @@ from torchrl.envs import (
 )
 from torchrl.envs.utils import check_env_specs
 from torchrl.data import Composite, Binary, Bounded, UnboundedContinuous
-from longshot.circuit import NormalFormFormula, Literals, CNF, DNF
+from longshot.literals import NormalFormFormula, Literals, CNF, DNF
 from longshot.error import LongshotError
 
 class FormulaGame(EnvBase):

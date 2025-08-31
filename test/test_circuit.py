@@ -1,14 +1,14 @@
 import pytest
 import sys
 
-from longshot.circuit import (
+from longshot.literals import (
     Literals,
     Clause,
     Term, 
     NormalFormFormula, 
     FormulaType
 )
-from longshot.circuit import CNF, DNF
+from longshot.literals import CNF, DNF
 
 def test_literals():
     c1 = Literals(pos=0b0101, neg=0b1010)

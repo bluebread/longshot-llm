@@ -2,7 +2,7 @@
 
 import pytest
 from longshot.utils.trajectory_utils import parse_trajectory_to_definition, reconstruct_formula_from_trajectory
-from longshot.env.graph import FormulaGraph
+from longshot.formula.graph import FormulaGraph
 
 
 class TestTrajectoryUtils:

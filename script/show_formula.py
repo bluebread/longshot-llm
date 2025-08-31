@@ -46,8 +46,8 @@ REQUIREMENTS:
 import argparse
 import sys
 from typing import Optional, List
-from longshot.agent import WarehouseAgent
-from longshot.circuit.formula import NormalFormFormula, FormulaType
+from longshot.service import WarehouseAgent
+from longshot.literals.literals import NormalFormFormula, FormulaType
 from longshot.utils import parse_formula_definition, parse_trajectory_to_definition
 
 

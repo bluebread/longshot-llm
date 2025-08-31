@@ -14,8 +14,8 @@ from datetime import datetime
 import json
 import httpx
 
-from longshot.agent import WarehouseAgent, ClusterbombAgent
-from longshot.env import FormulaIsodegrees
+from longshot.service import WarehouseAgent, ClusterbombAgent
+from longshot.formula import FormulaIsodegrees
 from longshot.utils import parse_gate_integer_representation
 
 

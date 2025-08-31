@@ -4,7 +4,7 @@ Tests isomorphism-invariant degree sequence extraction from boolean formulas.
 """
 
 import pytest
-from longshot.env.isodegrees import FormulaIsodegrees
+from service.clusterbomb.isodegrees import FormulaIsodegrees
 
 
 class TestFormulaIsodegrees:

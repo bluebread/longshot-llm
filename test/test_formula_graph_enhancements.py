@@ -3,7 +3,7 @@ Tests for FormulaGraph enhancements including actual variable tracking and width
 """
 
 import pytest
-from longshot.env import FormulaGraph
+from longshot.formula import FormulaGraph
 from longshot.utils.formula import parse_gate_integer_representation
 
 

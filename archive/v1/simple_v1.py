@@ -30,7 +30,7 @@ from torchrl.data.replay_buffers import (
 from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
 
-from longshot.circuit import DNF, Literals, NormalFormFormula
+from longshot.literals import DNF, Literals, NormalFormFormula
 from .game import SimpleFixedWidthFormulaGame
 from .distrib import GateTokenDistribution
 

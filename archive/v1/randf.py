@@ -1,6 +1,6 @@
 import random
 import math
-from longshot.circuit import NormalFormFormula, FormulaType, Literals
+from longshot.literals import NormalFormFormula, FormulaType, Literals
 
 def int_to_bits_shift(n: int, w: int) -> list[int]:
     # extract bit i = (n >> (w-1-i)) & 1 for i=0…w-1

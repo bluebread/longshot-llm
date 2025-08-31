@@ -12,7 +12,7 @@ import pytest
 import pytest_asyncio
 import httpx
 from unittest.mock import Mock, patch, AsyncMock
-from longshot.agent import ClusterbombAgent, AsyncClusterbombAgent
+from longshot.service import ClusterbombAgent, AsyncClusterbombAgent
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
 
 

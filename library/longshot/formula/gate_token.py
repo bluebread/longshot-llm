@@ -1,4 +1,4 @@
-from ..circuit import Literals
+from ..literals import Literals
 from pydantic import BaseModel, ConfigDict, Field
 
 class GateToken(BaseModel):

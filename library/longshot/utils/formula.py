@@ -115,3 +115,65 @@ def generate_random_token(num_vars: int, width: int, rng: random.Random = None) 
     
     literals = Literals(pos=pos_bits, neg=neg_bits)
     return GateToken(type=token_type, literals=literals)
+
+
+def generate_uniform_token(num_vars: int, width: int, current_gates: set, rng: random.Random = None) -> GateToken:
+    """
+    Generate a random GateToken using uniform gate sampling with formula-aware ADD/DELETE.
+    
+    This function uniformly samples a gate from all possible gates, then:
+    - If the gate is NOT in the formula, generates an ADD token
+    - If the gate IS in the formula, generates a DELETE token
+    
+    This ensures:
+    1. Every generated token is valid (no ADD of existing gates, no DELETE of non-existent gates)
+    2. DELETE probability = (formula size) / (# possible gates)
+    
+    Args:
+        num_vars: Number of variables in the formula
+        width: Fixed width (exact number of literals to generate)
+        current_gates: Set of gate integers currently in the formula
+        rng: Optional random number generator instance. If None, uses global random module
+        
+    Returns:
+        GateToken: Token with ADD/DELETE type based on whether gate exists in formula
+        
+    Raises:
+        ValueError: If width or num_vars are invalid
+    """
+    # Validate inputs
+    if width <= 0:
+        raise ValueError(f"Width must be positive, got {width}")
+    if num_vars <= 0:
+        raise ValueError(f"num_vars must be positive, got {num_vars}")
+    
+    # Use provided RNG or fall back to global random module
+    if rng is None:
+        rng = random
+    
+    # Generate a random gate uniformly from all possible gates
+    effective_width = min(width, num_vars)
+    selected_vars = rng.sample(range(num_vars), effective_width)
+    
+    pos_bits = 0
+    neg_bits = 0
+    
+    for var in selected_vars:
+        # Randomly assign positive or negative
+        if rng.random() < 0.5:
+            pos_bits |= (1 << var)
+        else:
+            neg_bits |= (1 << var)
+    
+    literals = Literals(pos=pos_bits, neg=neg_bits)
+    
+    # Convert to gate integer representation to check if it exists
+    gate_int = pos_bits | (neg_bits << 32)
+    
+    # Determine token type based on whether gate exists in formula
+    if gate_int in current_gates:
+        token_type = 'DEL'  # Gate exists, so we DELETE it
+    else:
+        token_type = 'ADD'  # Gate doesn't exist, so we ADD it
+    
+    return GateToken(type=token_type, literals=literals)

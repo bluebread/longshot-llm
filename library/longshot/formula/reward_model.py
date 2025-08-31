@@ -25,17 +25,21 @@ class FormulaRewardModel:
         
         Args:
             formula (NormalFormFormula): The formula to be manipulated in the game.
-            **kwargs: Additional configuration parameters such as width, size, and penalty.
+            **kwargs: Additional configuration parameters:
+                - width: Maximum width constraint (default: num_vars)
+                - size: Maximum formula size constraint (default: None, meaning no limit)
+                - eps: Small epsilon value for reward calculation (default: 1/num_vars)
+                - penalty: Penalty for invalid operations (default: -1.0)
         """
-        self._num_vars = formula.num_vars
-        self._width = kwargs.pop('width', self._num_vars)
-        self._size = kwargs.pop('size', 2**self._num_vars)
-        self._eps = kwargs.pop('eps', 1 / self._num_vars)
-        self._kwargs = kwargs
-        
         if formula is None or not isinstance(formula, NormalFormFormula):
             raise LongshotError("Formula must be an instance of NormalFormFormula.")
-        if formula.num_gates > self._size:
+            
+        self._num_vars = formula.num_vars
+        self._width = kwargs.pop('width', self._num_vars)
+        self._size = kwargs.pop('size', None)  # None means no size constraint
+        self._eps = kwargs.pop('eps', 1 / self._num_vars)
+        self._kwargs = kwargs
+        if self._size is not None and formula.num_gates > self._size:
             raise LongshotError(f"Formula has {formula.num_gates} gates greater than {self._size}.")
         if formula.width > self._width:
             raise LongshotError(f"Formula has width {formula.width} greater than {self._width}.")
@@ -62,7 +66,10 @@ class FormulaRewardModel:
         eps = self._eps
         ls = token.literals
         
-        if ls.is_constant or ls.width > w or self._cur_f.num_gates >= s:
+        # Check constraints: constant literals, width violation, or size violation (if size limit exists)
+        if ls.is_constant or ls.width > w:
+            reward = self._kwargs.get('penalty', -1.0)
+        elif s is not None and self._cur_f.num_gates >= s:
             reward = self._kwargs.get('penalty', -1.0)
         elif ls in self._cur_f and token.type == 'ADD':
             reward = self._kwargs.get('penalty', -1.0)

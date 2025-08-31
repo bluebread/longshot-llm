@@ -41,9 +41,12 @@ class MAPElitesConfig:
     width: int                   # Formula width constraint
     
     # Mutation parameters
-    num_steps: int              # Steps to run in clusterbomb simulation
-    num_trajectoies: int              # Number of trajectories to collect per mutation
+    num_steps: int               # Steps to run in clusterbomb simulation
+    num_trajectories: int        # Number of trajectories to collect per mutation
     
+    # Machine-related parameters
+    num_workers: int | None       # Number of parallel workers (None for using all cores)
+
     # Optional parameters
     batch_size: int = 10         # Number of parallel mutations
     elite_selection_strategy: str = "uniform"  # How to select elites
@@ -68,7 +71,7 @@ class MAPElitesConfig:
 
 2. **Build Initial Archive**
    ```python
-    fisod = FormulaIsodegrees(num_vars, [])
+    fisod = FormulaIsodegrees(config.num_vars, [])
     archive = defaultdict(list)
 
     for trajectory in trajectories:
@@ -83,9 +86,9 @@ class MAPElitesConfig:
             used_variables |= (lits.pos | lits.neg)
 
             # Break the loop if it violates the constraints
-            if used_variables.bit_length() > num_vars:
+            if used_variables.bit_length() > config.num_vars:
                 break
-            if token_type == 0 and lits.width > width:
+            if token_type == 0 and lits.width > config.width:
                 break
 
             if token_type == 0:
@@ -97,16 +100,35 @@ class MAPElitesConfig:
 
             cell_id = fisod.feature  # Immutable tuple identifier
            
-            if cell_id not in archive or cur_avgQ > archive[cell_id].avgQ:
-                archive[cell_id] = Elite(
-                    traj_id=tid, 
+            # Initialize cell if needed
+            if cell_id not in archive:
+                archive[cell_id] = []
+            
+            cell_elites = archive[cell_id]
+            
+            # Add if under capacity
+            if len(cell_elites) < config.cell_density:
+                cell_elites.append(Elite(
+                    traj_id=tid,
+                    traj_slice=i,
+                    avgQ=cur_avgQ
+                ))
+                cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
+            # Replace worst if better and at capacity
+            elif cur_avgQ > min(e.avgQ for e in cell_elites):
+                # Find and replace worst elite
+                min_idx = min(range(len(cell_elites)), 
+                             key=lambda i: cell_elites[i].avgQ)
+                cell_elites[min_idx] = Elite(
+                    traj_id=tid,
                     traj_slice=i,
                     avgQ=cur_avgQ
                 )
+                cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
    ```
-   - Process trajectories incrementally to build FormulaFeatures
+   - Process trajectories incrementally to build FormulaIsodegrees
    - Map formulas to cells based on their feature representation
-   - Keep only the best-performing formula per cell (elite selection)
+   - Maintain up to `cell_density` elites per cell (sorted by performance)
 
 ### Phase 2: Main Evolution Loop
 
@@ -123,37 +145,106 @@ async def sync_archive_with_warehouse(archive, last_sync_time):
         # Get trajectories added since last sync
         new_trajectories = await warehouse.get_trajectory_dataset(
             since=last_sync_time,
-            num_vars=num_vars,
-            width=width
+            num_vars=config.num_vars,
+            width=config.width
         )
     
     # Update local archive with trajectories from all sources
     for trajectory in new_trajectories:
-        update_archive_from_trajectory(archive, trajectory)
+        update_archive_from_trajectory(archive, trajectory, config)
     
     return datetime.now()
+
+def update_archive_from_trajectory(archive, trajectory, config):
+    """Process a trajectory and update the archive with its steps."""
+    fisod = FormulaIsodegrees(config.num_vars, [])
+    
+    for i, step in enumerate(trajectory.steps):
+        token_type, litint, cur_avgQ = step
+        
+        # Incrementally update formula
+        if token_type == 0:  # ADD
+            fisod.add_gate(litint)
+        elif token_type == 1:  # DELETE
+            fisod.remove_gate(litint)
+        elif token_type == 2:  # EOS
+            break
+        
+        # Update archive for this step
+        cell_id = fisod.feature
+        if cell_id not in archive:
+            archive[cell_id] = []
+        
+        cell_elites = archive[cell_id]
+        
+        # Check if we should add this elite
+        if len(cell_elites) < config.cell_density:
+            cell_elites.append(Elite(
+                traj_id=trajectory.traj_id,
+                traj_slice=i,
+                avgQ=cur_avgQ
+            ))
+            cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
+        elif cur_avgQ > min(e.avgQ for e in cell_elites):
+            # Replace worst elite
+            min_idx = min(range(len(cell_elites)), 
+                         key=lambda j: cell_elites[j].avgQ)
+            cell_elites[min_idx] = Elite(
+                traj_id=trajectory.traj_id,
+                traj_slice=i,
+                avgQ=cur_avgQ
+            )
+            cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
 ```
 
 #### Step 2: Elite Selection
 ```python
-def select_elites(archive, strategy="uniform"):
-    populated_cells = [cell for cell in archive if archive[cell] is not None]
+def select_elites(archive, strategy="uniform", batch_size=10):
+    # Get all populated cells (cells with at least one elite)
+    populated_cells = [cell for cell in archive if len(archive[cell]) > 0]
     
     if strategy == "uniform":
         # Uniform random selection from populated cells
-        return random.sample(populated_cells, min(batch_size, len(populated_cells)))
+        selected_cells = random.sample(
+            populated_cells, 
+            min(batch_size, len(populated_cells))
+        )
     elif strategy == "curiosity":
         # Prefer less-explored or boundary cells
-        return select_curious_cells(populated_cells)
+        selected_cells = select_curious_cells(populated_cells, batch_size)
     elif strategy == "performance":
         # Bias toward high-performing cells
-        return select_high_performing_cells(populated_cells)
+        selected_cells = select_high_performing_cells(populated_cells, batch_size)
+    
+    # For each selected cell, pick a random elite from that cell
+    selected_elites = []
+    for cell in selected_cells:
+        elite = random.choice(archive[cell])  # Pick random elite from cell
+        selected_elites.append((cell, elite))
+    
+    return selected_elites
 ```
 
 #### Step 3: Mutation and Trajectory Collection
 ```python
 import asyncio
 from typing import List
+from multiprocessing import Pool
+from functools import partial
+
+def run_mutation_job(args):
+    """Worker function for parallel mutation execution."""
+    elite, traj_slice, config = args
+    # This runs in a separate process
+    trajectories = run_mutations_sync(
+        num_vars=config.num_vars,
+        width=config.width,
+        num_trajectories=config.num_trajectories,
+        steps_per_trajectory=config.num_steps,
+        prefix_traj=elite[:traj_slice+1],
+        early_stop=True
+    )
+    return trajectories
 
 async def post_trajectory_with_retry(warehouse, trajectory, max_retries=3):
     """Post a trajectory with retry logic."""
@@ -166,26 +257,24 @@ async def post_trajectory_with_retry(warehouse, trajectory, max_retries=3):
                 raise
             await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
-async def mutate_elites(warehouse, selected_cells, archive):
+async def mutate_elites(warehouse, selected_elites, trajectories_lookup, config):
     new_trajectories = []
     post_tasks = []
     
-    for selected_cell in selected_cells:
-        elite = archive[selected_cell]
+    # Prepare mutation jobs for parallel execution
+    mutation_jobs = []
+    for cell_id, elite in selected_elites:
         traj = trajectories_lookup[elite.traj_id]
-        
-        # Run mutations directly in the clusterbomb service
-        # No need for external agent - mutations happen internally
-        # TODO: Implement the parallel mutation logic
-        mutated_trajectories = await run_mutations(
-            num_vars=num_vars,
-            width=width,
-            num_trajectories=num_mutate,
-            steps_per_trajectory=mutate_length,
-            prefix_traj=traj[:elite.traj_slice+1],
-            early_stop=True
-        )
-
+        mutation_jobs.append((traj, elite.traj_slice, config))
+    
+    # Use multiprocessing Pool to run mutations in parallel across CPU cores
+    num_workers = config.num_workers if config.num_workers else None  # None uses all cores
+    with Pool(processes=num_workers) as pool:
+        # Dispatch mutation jobs evenly across worker processes
+        mutation_results = pool.map(run_mutation_job, mutation_jobs)
+    
+    # Flatten results and prepare for posting to warehouse
+    for mutated_trajectories in mutation_results:
         # Create retry-enabled post tasks
         post_tasks.extend([
             post_trajectory_with_retry(warehouse, trajectory) 
@@ -211,18 +300,26 @@ async def mutate_elites(warehouse, selected_cells, archive):
 #### Step 4: Process Mutations
 ```python
 for trajectory in new_trajectories:
-    for step in trajectory:
-        # Extract mutated formula and its performance
-        mutant_formula = step.formula
-        mutant_avgQ = step.cur_avgQ
+    # Initialize FormulaIsodegrees for this trajectory
+    fisod = FormulaIsodegrees(config.num_vars, [])
+    
+    for i, step in enumerate(trajectory.steps):
+        token_type, litint, cur_avgQ = step
         
-        # Calculate feature for placement in archive
-        feature = FormulaIsodegrees(num_vars, mutant_formula.gates)
-        cell_id = feature.feature
+        # Incrementally update formula based on token type
+        if token_type == 0:  # ADD operation
+            fisod.add_gate(litint)
+        elif token_type == 1:  # DELETE operation
+            fisod.remove_gate(litint)
+        elif token_type == 2:  # EOS (end of sequence)
+            break
+        
+        # Get current formula feature
+        cell_id = fisod.feature  # Immutable tuple identifier
         
         # Update archive if improvement or new cell
-        if should_update_cell(archive, cell_id, mutant_avgQ, cell_density):
-            update_cell(archive, cell_id, mutant_formula, mutant_avgQ)
+        if should_update_cell(archive, cell_id, cur_avgQ, config.cell_density):
+            update_cell(archive, cell_id, trajectory.traj_id, i, cur_avgQ)
 ```
 
 #### Step 5: Archive Update
@@ -324,17 +421,23 @@ The clusterbomb service now directly implements MAP-Elites algorithm with multi-
 
 ### Performance Optimizations
 
-1. **Batch Processing**
-   - Send multiple elites to clusterbomb in parallel
+1. **Multiprocessing for Mutations**
+   - Utilizes `multiprocessing.Pool` to parallelize mutation jobs across CPU cores
+   - Configurable worker count via `num_workers` parameter (None uses all available cores)
+   - Each mutation runs in a separate process for true parallelism
+   - Pool.map automatically distributes jobs evenly across workers
+
+2. **Batch Processing**
+   - Send multiple elites for mutation in parallel
    - Process trajectory responses in batches
    - Update archive in bulk operations
 
-2. **Caching**
+3. **Caching**
    - Cache FormulaIsodegrees computations
    - Maintain formula hash → feature mapping
    - Store frequently accessed elites in memory
 
-3. **Incremental Updates**
+4. **Incremental Updates**
    - Process trajectories step-by-step
    - Update features incrementally along trajectory
    - Avoid redundant feature recalculation
@@ -376,7 +479,7 @@ The algorithm terminates when:
 1. **Adaptive Parameters**
    - Dynamic cell_density based on archive coverage
    - Adaptive mutation rates based on improvement trends
-   - Variable mutate_length based on formula complexity
+   - Variable num_steps based on formula complexity
 
 2. **Advanced Feature Spaces**
    - Multi-dimensional features beyond FormulaIsodegrees

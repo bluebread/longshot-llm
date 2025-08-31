@@ -69,7 +69,32 @@ class MAPElitesConfig:
    - Extract formulas and their performance metrics (avgQ values)
    - Filtering ensures only compatible trajectories are loaded for the current configuration
 
-2. **Build Initial Archive**
+2. **Handle Empty Warehouse**
+   If no trajectories exist in the warehouse, randomly collect initial trajectories:
+   ```python
+   if not trajectories:
+       # Collect trajectories from initial formulas using clusterbomb
+       trajectories = []
+        # Run clusterbomb simulation to collect trajectory
+        traj_results = run_mutations_sync(
+            num_vars=config.num_vars,
+            width=config.width,
+            num_trajectories=config.initial_population_size ,
+            steps_per_trajectory=config.num_steps,
+            prefix_traj=[],
+            early_stop=True
+        )
+        
+        for trajectory in traj_results:
+            trajectories.append(trajectory)
+            # Send to warehouse immediately
+            await warehouse.post_trajectory(trajectory)
+   ```
+   - Use clusterbomb to collect trajectories through mutation
+   - Store trajectories in warehouse for future use
+   - Ensures algorithm can bootstrap from empty state
+
+3. **Build Initial Archive**
    ```python
     fisod = FormulaIsodegrees(config.num_vars, [])
     archive = defaultdict(list)
@@ -347,18 +372,30 @@ After completing all iterations:
    - Performance distribution across cells
    - Diversity metrics
 
-2. **Final Data Collection**
+2. **Final Analysis**
    ```python
-   async with AsyncWarehouseClient() as warehouse:
-       # Retrieve all trajectories generated during the run
-       final_dataset = await warehouse.get_trajectory_dataset(
-           since=run_start_time,
-           until=run_end_time
-       )
+   # The archive already contains all discovered elites
+   # No need to download from warehouse
+   
+   # Generate statistics from local archive
+   total_cells = len(archive)
+   total_elites = sum(len(cell_elites) for cell_elites in archive.values())
+   
+   # Export best formulas per complexity level
+   best_by_complexity = {}
+   for cell_id, elites in archive.items():
+       complexity = len(cell_id)  # Using feature dimension as complexity metric
+       if complexity not in best_by_complexity:
+           best_by_complexity[complexity] = []
+       best_by_complexity[complexity].extend(elites)
+   
+   # Sort each complexity level by performance
+   for complexity in best_by_complexity:
+       best_by_complexity[complexity].sort(key=lambda e: e.avgQ, reverse=True)
    ```
-   - Collect all trajectories generated during MAP-Elites execution
-   - Generate visualization of the feature space
-   - Export best formulas per complexity level
+   - Analyze the local archive which already contains all discovered elites
+   - Generate visualization of the feature space from archive data
+   - Export best formulas per complexity level directly from archive
 
 ## Data Flow Integration
 

@@ -177,7 +177,26 @@ Get the complete trajectory dataset with all trajectories using optimized tuple 
 
 - **Status Codes:**
     - `200 OK`: Successfully retrieved trajectories (may return empty list if no trajectories match filters or if `since` > `until`)
-    - `400 Bad Request`: Invalid date format in `since` or `until` parameters
+    - `400 Bad Request`: Invalid date format in `since` or `until` parameters or if `since` timestamp is after `until` timestamp
+
+#### `GET /health`
+Check the health status of the warehouse service.
+
+- **Request:** No parameters required
+- **Response:**
+    ```json
+    {
+        "status": "healthy"
+    }
+    ```
+- **Status Codes:**
+    - `200 OK`: Service is healthy and ready to accept requests
+    - `500 Internal Server Error`: Service is unhealthy (e.g., database connection failed)
+- **Description:** 
+    - This endpoint performs a basic health check on the warehouse service
+    - Verifies MongoDB connectivity during service startup
+    - Used for monitoring, load balancers, and container orchestration health checks
+    - No authentication required
 
 ---
 <!-- 

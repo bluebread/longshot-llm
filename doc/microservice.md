@@ -15,7 +15,7 @@ This document outlines the structure and content of the API documentation for th
     - **No public API endpoints** - these services execute trajectory collection jobs autonomously.
     - Services are deployed as standalone containers that continuously collect and store trajectory data.
     - Types of weapon services:
-        - **Clusterbomb**: Collects trajectories using purely random exploration strategy. Runs continuously to build diverse trajectory datasets.
+        - **Clusterbomb**: Collects trajectories using MAP-Elites algorithm for quality-diversity optimization. Maintains an archive of diverse, high-performing trajectories to efficiently explore the solution space.
         - **Missile** (future implementation): Will collect trajectories using AI/RL models for guided exploration. Leverages learned policies for more targeted data collection.
 
 ## Database Schema

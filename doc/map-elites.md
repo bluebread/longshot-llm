@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the implementation plan for adapting the **MAP-Elites (Multi-dimensional Archive of Phenotypic Elites) algorithm** to optimize boolean formulas in the gym-longshot framework. MAP-Elites is a quality-diversity algorithm that maintains a collection of diverse, high-performing solutions organized in a multi-dimensional feature space.
+This document outlines the implementation of the **MAP-Elites (Multi-dimensional Archive of Phenotypic Elites) algorithm** integrated directly into the clusterbomb service for optimizing boolean formulas. MAP-Elites is a quality-diversity algorithm that maintains a collection of diverse, high-performing solutions organized in a multi-dimensional feature space.
 
 ## Background: MAP-Elites Algorithm
 
@@ -37,13 +37,12 @@ class MAPElitesConfig:
     cell_density: int            # Maximum organisms per cell (elites)
     
     # Formula space parameters
-    max_num_vars: int                # Number of boolean variables
-    max_width: int                   # Formula width constraint
-    max_size: int                    # Formula size constraint
+    num_vars: int                # Number of boolean variables
+    width: int                   # Formula width constraint
     
     # Mutation parameters
-    mutate_length: int           # Steps to run in clusterbomb simulation
-    num_mutate: int              # Number of trajectories to collect per mutation
+    num_steps: int              # Steps to run in clusterbomb simulation
+    num_trajectoies: int              # Number of trajectories to collect per mutation
     
     # Optional parameters
     batch_size: int = 10         # Number of parallel mutations
@@ -56,11 +55,16 @@ class MAPElitesConfig:
 ### Phase 1: Initialization
 
 1. **Download Existing Data**
+   ```python
+   async with AsyncWarehouseClient() as warehouse:
+       trajectories = await warehouse.get_trajectory_dataset(
+           num_vars=config.num_vars,
+           width=config.width
+       )
    ```
-   warehouse.download_trajectory_dataset() → List[Trajectory]
-   ```
-   - Retrieve all existing trajectories from the warehouse service
+   - Retrieve relevant trajectories filtered by `num_vars` and `width` from the warehouse service
    - Extract formulas and their performance metrics (avgQ values)
+   - Filtering ensures only compatible trajectories are loaded for the current configuration
 
 2. **Build Initial Archive**
    ```python
@@ -108,7 +112,29 @@ class MAPElitesConfig:
 
 Repeat for `num_iterations`:
 
-#### Step 1: Elite Selection
+#### Step 1: Archive Synchronization
+```python
+async def sync_archive_with_warehouse(archive, last_sync_time):
+    """
+    Fetch new trajectories from warehouse to update local archive.
+    This includes trajectories from other clusterbomb instances.
+    """
+    async with AsyncWarehouseClient() as warehouse:
+        # Get trajectories added since last sync
+        new_trajectories = await warehouse.get_trajectory_dataset(
+            since=last_sync_time,
+            num_vars=num_vars,
+            width=width
+        )
+    
+    # Update local archive with trajectories from all sources
+    for trajectory in new_trajectories:
+        update_archive_from_trajectory(archive, trajectory)
+    
+    return datetime.now()
+```
+
+#### Step 2: Elite Selection
 ```python
 def select_elites(archive, strategy="uniform"):
     populated_cells = [cell for cell in archive if archive[cell] is not None]
@@ -124,28 +150,65 @@ def select_elites(archive, strategy="uniform"):
         return select_high_performing_cells(populated_cells)
 ```
 
-#### Step 2: Mutation via ClusterbombAgent
+#### Step 3: Mutation and Trajectory Collection
 ```python
-for selected_cell in selected_cells:
-    elite = archive[selected_cell]
-    traj = trajectories_lookup[elite.traj_id]
+import asyncio
+from typing import List
+
+async def post_trajectory_with_retry(warehouse, trajectory, max_retries=3):
+    """Post a trajectory with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            return await warehouse.post_trajectory(trajectory)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Failed to post trajectory after {max_retries} attempts: {e}")
+                raise
+            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+async def mutate_elites(warehouse, selected_cells, archive):
+    new_trajectories = []
+    post_tasks = []
     
-    # Send elite formula to clusterbomb for mutation
-    request = RolloutRequest(
-        num_vars=num_vars,
-        width=width,
-        size=size,
-        num_trajectories=num_mutate,
-        steps_per_trajectory=mutate_length,
-        prefix_traj=traj[:elite.traj_slice+1],
-        early_stop=True
-    )
+    for selected_cell in selected_cells:
+        elite = archive[selected_cell]
+        traj = trajectories_lookup[elite.traj_id]
+        
+        # Run mutations directly in the clusterbomb service
+        # No need for external agent - mutations happen internally
+        # TODO: Implement the parallel mutation logic
+        mutated_trajectories = await run_mutations(
+            num_vars=num_vars,
+            width=width,
+            num_trajectories=num_mutate,
+            steps_per_trajectory=mutate_length,
+            prefix_traj=traj[:elite.traj_slice+1],
+            early_stop=True
+        )
+
+        # Create retry-enabled post tasks
+        post_tasks.extend([
+            post_trajectory_with_retry(warehouse, trajectory) 
+            for trajectory in mutated_trajectories
+        ])
+        
+        new_trajectories.extend(mutated_trajectories)
     
-    response = clusterbomb_agent.weapon_rollout(request)
-    new_trajectories = response.trajectories
+    # Execute all POST requests with error handling
+    results = await asyncio.gather(*post_tasks, return_exceptions=True)
+    
+    # Check for failures and report
+    failures = [r for r in results if isinstance(r, Exception)]
+    if failures:
+        print(f"Warning: {len(failures)} trajectories failed to post after retries")
+        # Log failures for debugging but continue execution
+        for failure in failures:
+            print(f"  Error: {failure}")
+
+    return new_trajectories
 ```
 
-#### Step 3: Process Mutations
+#### Step 4: Process Mutations
 ```python
 for trajectory in new_trajectories:
     for step in trajectory:
@@ -162,7 +225,7 @@ for trajectory in new_trajectories:
             update_cell(archive, cell_id, mutant_formula, mutant_avgQ)
 ```
 
-#### Step 4: Archive Update
+#### Step 5: Archive Update
 ```python
 def update_cell(archive, cell_id, traj_id, traj_slice, avgQ):
     cell_elites = archive[cell_id]
@@ -187,39 +250,75 @@ After completing all iterations:
    - Performance distribution across cells
    - Diversity metrics
 
-2. **Elite Export**
-   - Save all elites to warehouse
+2. **Final Data Collection**
+   ```python
+   async with AsyncWarehouseClient() as warehouse:
+       # Retrieve all trajectories generated during the run
+       final_dataset = await warehouse.get_trajectory_dataset(
+           since=run_start_time,
+           until=run_end_time
+       )
+   ```
+   - Collect all trajectories generated during MAP-Elites execution
    - Generate visualization of the feature space
    - Export best formulas per complexity level
 
 ## Data Flow Integration
 
-### Service Interactions
+### Service Architecture
 
 ```
 graph LR
-    A[MAP-Elites Controller] --> B[Warehouse Service]
-    A --> C[ClusterbombAgent]
-    C --> D[Clusterbomb Service]
-    D --> E[TrajectoryProcessor]
-    E --> C
-    C --> A
+    A[Clusterbomb Service with MAP-Elites] --> B[Warehouse Service]
     B --> A
-    A --> B
 ```
 
-1. **Warehouse Service**
-   - Initial data retrieval: `GET /trajectories`
-   - Elite storage: `POST /formulas` with avgQ metadata
-   - Graph updates: `PUT /evolution-graph` with parent-child relationships
+The clusterbomb service now directly implements MAP-Elites algorithm with multi-instance support:
 
-2. **ClusterbombAgent**
-   - Mutation requests: Send elite formulas for exploration
-   - Trajectory retrieval: Receive mutated formulas with performance metrics
+1. **Clusterbomb Service (MAP-Elites Engine)**
+   - Runs as an autonomous container executing MAP-Elites algorithm
+   - **Supports multiple concurrent instances** for distributed exploration
+   - Directly generates and evaluates trajectory mutations
+   - Maintains a local elite archive that synchronizes with global state
+   - No external API endpoints - operates as a job executor
 
-3. **TrajectoryProcessor** (within Clusterbomb)
-   - Computes avgQ values for trajectory steps
-   - Ensures consistent performance evaluation
+2. **Warehouse Service Integration**
+   - **Initialization**: Retrieves existing trajectories via `AsyncWarehouseClient`
+   - **Periodic Synchronization**: Fetches new trajectories from all clusterbomb instances
+   - **Continuous Updates**: Pushes new trajectories asynchronously during execution
+   - **Final Collection**: Gathers all generated trajectories at completion
+   - All communication uses async patterns for optimal performance
+
+3. **Multi-Instance Coordination**
+   ```python
+   # At startup - load global state filtered by configuration
+   trajectories = await warehouse.get_trajectory_dataset(
+       num_vars=config.num_vars,
+       width=config.width
+   )
+   
+   # Each iteration - sync with other instances
+   last_sync = await sync_archive_with_warehouse(archive, last_sync_time)
+   
+   # During execution - share discoveries immediately
+   # NOTE: Each trajectory is sent as soon as it's collected,
+   # not batched until iteration end
+   for trajectory in new_trajectories:
+       await warehouse.post_trajectory(trajectory)
+   
+   # At completion - gather collective results
+   final_dataset = await warehouse.get_trajectory_dataset(
+       since=start_time,
+       num_vars=config.num_vars,
+       width=config.width
+   )
+   ```
+   
+   Multiple clusterbomb instances can run simultaneously:
+   - Each maintains its own local archive
+   - Archives are periodically synchronized through the warehouse
+   - Discoveries from one instance benefit all others
+   - Enables massive parallel exploration of the solution space
 
 ## Implementation Considerations
 

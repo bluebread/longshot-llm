@@ -19,7 +19,7 @@ from archive.v2.library.trajectory import (
     TrajectoryMessageMultipleSteps, 
     TrajectoryMessageStep
 )
-from longshot.service import WarehouseAgent
+from longshot.service import WarehouseClient
 
 warehouse_host = 'localhost'
 warehouse_port = 8000
@@ -38,7 +38,7 @@ class TestClusterbombService:
     @pytest.fixture(scope="function")
     def warehouse_agent(self):
         """Warehouse agent for testing."""
-        agent = WarehouseAgent(warehouse_host, warehouse_port)
+        agent = WarehouseClient(warehouse_host, warehouse_port)
         return agent
     
     def create_test_prefix_traj(self, size: int = 2) -> list[tuple[int, int, float]]:
@@ -68,7 +68,7 @@ class TestClusterbombService:
         assert data["status"] == "healthy"
         assert data["service"] == "clusterbomb"
     
-    def test_weapon_rollout_with_warehouse_validation(self, client: httpx.Client, warehouse_agent: WarehouseAgent):
+    def test_weapon_rollout_with_warehouse_validation(self, client: httpx.Client, warehouse_agent: WarehouseClient):
         """Test weapon rollout functionality and validate data in warehouse."""
         # TODO: don't forget to clean the database
         request_data = {
@@ -106,7 +106,7 @@ class TestClusterbombService:
         # The fact that the API returned 200 and the expected response values
         # indicates that trajectories were processed with V2 schema
         
-    def test_weapon_rollout_with_seed(self, client: httpx.Client, warehouse_agent: WarehouseAgent):
+    def test_weapon_rollout_with_seed(self, client: httpx.Client, warehouse_agent: WarehouseClient):
         """Test weapon rollout with seed for deterministic behavior."""
         request_data = {
             "num_vars": 2,
@@ -130,7 +130,7 @@ class TestClusterbombService:
         
         # The fact that we got a 200 response indicates the V2 processing was successful
 
-    def test_weapon_rollout_large_batch(self, client: httpx.Client, warehouse_agent: WarehouseAgent):
+    def test_weapon_rollout_large_batch(self, client: httpx.Client, warehouse_agent: WarehouseClient):
         """Test weapon rollout with larger batch to verify scalability."""
         request_data = {
             "num_vars": 4,

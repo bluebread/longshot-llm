@@ -11,7 +11,7 @@ import random
 from datetime import datetime
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
 from longshot.service.api_models import TrajectoryProcessingContext
-from longshot.service import TrajectoryProcessor, WarehouseAgent
+from longshot.service import TrajectoryProcessor, WarehouseClient
 import time
 from longshot.literals import FormulaType
 from longshot.formula import FormulaRewardModel
@@ -181,7 +181,7 @@ async def weapon_rollout(request: WeaponRolloutRequest):
     base_formula_exists = False  # Will be updated from first trajectory result
     
     # Initialize warehouse agent and trajectory processor for processing phase
-    warehouse = WarehouseAgent(warehouse_host, warehouse_port)
+    warehouse = WarehouseClient(warehouse_host, warehouse_port)
     # Use trajproc_config if provided, otherwise use default configuration
     trajproc_config = request.trajproc_config or {}
     processor = TrajectoryProcessor(warehouse, **trajproc_config)

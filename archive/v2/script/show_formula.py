@@ -46,12 +46,12 @@ REQUIREMENTS:
 import argparse
 import sys
 from typing import Optional, List
-from longshot.service import WarehouseAgent
+from longshot.service import WarehouseClient
 from longshot.literals.literals import NormalFormFormula, FormulaType
 from longshot.utils import parse_formula_definition, parse_trajectory_to_definition
 
 
-def get_formula_from_node(warehouse: WarehouseAgent, node_id: str) -> tuple[Optional[List[int]], Optional[int]]:
+def get_formula_from_node(warehouse: WarehouseClient, node_id: str) -> tuple[Optional[List[int]], Optional[int]]:
     """
     Retrieve formula definition and num_vars from a node_id.
     
@@ -91,7 +91,7 @@ def get_formula_from_node(warehouse: WarehouseAgent, node_id: str) -> tuple[Opti
         return None, None
 
 
-def get_formula_from_trajectory(warehouse: WarehouseAgent, traj_id: str, traj_slice: int) -> tuple[Optional[List[int]], Optional[int]]:
+def get_formula_from_trajectory(warehouse: WarehouseClient, traj_id: str, traj_slice: int) -> tuple[Optional[List[int]], Optional[int]]:
     """
     Retrieve formula definition and num_vars from a trajectory at a specific slice.
     
@@ -233,7 +233,7 @@ Examples:
     formula_type = FormulaType.Conjunctive if args.formula_type == "CNF" else FormulaType.Disjunctive
     
     # Initialize warehouse agent
-    warehouse = WarehouseAgent(args.warehouse_host, args.warehouse_port)
+    warehouse = WarehouseClient(args.warehouse_host, args.warehouse_port)
     
     try:
         # Get formula definition and num_vars based on input

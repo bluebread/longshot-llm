@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Optional
 
 from map_elites import MAPElites, MAPElitesConfig
-from longshot.service import WarehouseAgent
+from longshot.service import WarehouseClient
 
 
 def download_trajectory_dataset(
@@ -38,7 +38,7 @@ def download_trajectory_dataset(
     Returns:
         Dictionary containing the downloaded dataset
     """
-    warehouse = WarehouseAgent(warehouse_host, warehouse_port)
+    warehouse = WarehouseClient(warehouse_host, warehouse_port)
     
     retry_count = 0
     

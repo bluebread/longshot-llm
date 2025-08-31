@@ -14,7 +14,7 @@ from datetime import datetime
 import json
 import httpx
 
-from longshot.service import WarehouseAgent, ClusterbombAgent
+from longshot.service import WarehouseClient, ClusterbombAgent
 from longshot.formula import FormulaIsodegrees
 from longshot.utils import parse_gate_integer_representation
 
@@ -146,7 +146,7 @@ class MAPElites:
         self.trajectories_lookup = {}
         
         # Initialize service clients
-        self.warehouse = WarehouseAgent(config.warehouse_host, config.warehouse_port)
+        self.warehouse = WarehouseClient(config.warehouse_host, config.warehouse_port)
         self.clusterbomb = ClusterbombAgent(config.clusterbomb_host, config.clusterbomb_port)
         
         # Track iteration progress

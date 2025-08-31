@@ -33,7 +33,7 @@ import networkx as nx
 import numpy as np
 from typing import Dict, List, Any
 
-from longshot.service import ClusterbombAgent, WarehouseAgent
+from longshot.service import ClusterbombAgent, WarehouseClient
 from longshot.models import WeaponRolloutRequest, WeaponRolloutResponse
 from longshot.literals import Literals
 
@@ -46,12 +46,12 @@ def create_output_directory() -> Path:
     return output_dir
 
 
-def initialize_services() -> tuple[ClusterbombAgent, WarehouseAgent]:
+def initialize_services() -> tuple[ClusterbombAgent, WarehouseClient]:
     """Initialize connections to microservices."""
     print("\n=== Initializing Services ===")
     
     # Connect to warehouse
-    warehouse = WarehouseAgent('localhost', 8000)
+    warehouse = WarehouseClient('localhost', 8000)
     print("✓ Connected to Warehouse service")
     
     # Connect to clusterbomb
@@ -67,7 +67,7 @@ def initialize_services() -> tuple[ClusterbombAgent, WarehouseAgent]:
     return clusterbomb, warehouse
 
 
-def create_empty_formula(warehouse: WarehouseAgent) -> str:
+def create_empty_formula(warehouse: WarehouseClient) -> str:
     """Create an empty initial formula in the warehouse."""
     print("\n=== Creating Initial Empty Formula ===")
     
@@ -125,7 +125,7 @@ def execute_weapon_rollout(clusterbomb: ClusterbombAgent, initial_node_id: str, 
     return result
 
 
-def retrieve_trajectories(warehouse: WarehouseAgent) -> Dict[str, Any]:
+def retrieve_trajectories(warehouse: WarehouseClient) -> Dict[str, Any]:
     """Retrieve trajectory data from warehouse using dataset endpoint."""
     print("\n=== Retrieving Trajectory Data ===")
     
@@ -180,7 +180,7 @@ def retrieve_trajectories(warehouse: WarehouseAgent) -> Dict[str, Any]:
     return trajectory_stats
 
 
-def retrieve_evolution_graph(warehouse: WarehouseAgent) -> nx.DiGraph:
+def retrieve_evolution_graph(warehouse: WarehouseClient) -> nx.DiGraph:
     """Retrieve and build evolution graph from warehouse using dataset endpoint."""
     print("\n=== Building Evolution Graph ===")
     
@@ -235,7 +235,7 @@ def retrieve_evolution_graph(warehouse: WarehouseAgent) -> nx.DiGraph:
     return G
 
 
-def retrieve_detailed_node_info(warehouse: WarehouseAgent) -> List[Dict[str, Any]]:
+def retrieve_detailed_node_info(warehouse: WarehouseClient) -> List[Dict[str, Any]]:
     """Retrieve detailed information for all nodes including definitions."""
     print("\n=== Retrieving Detailed Node Information ===")
     
@@ -598,7 +598,7 @@ def generate_summary_report(G: nx.DiGraph, trajectory_stats: Dict, output_dir: P
     return stats
 
 
-def list_trajectories_with_analysis(warehouse: WarehouseAgent, output_dir: Path):
+def list_trajectories_with_analysis(warehouse: WarehouseClient, output_dir: Path):
     """Generate detailed trajectory analysis showing literal/complexity sequences and evolution paths."""
     print("\n=== Trajectory Analysis and Listing ===")
     
@@ -896,7 +896,7 @@ def main():
         # 2. Initialize services
         if args.only_list_trajectories:
             # Only initialize warehouse for trajectory analysis
-            warehouse = WarehouseAgent('localhost', 8000)
+            warehouse = WarehouseClient('localhost', 8000)
             print("✓ Connected to Warehouse service")
             clusterbomb = None
         else:

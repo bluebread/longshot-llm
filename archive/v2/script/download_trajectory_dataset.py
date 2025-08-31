@@ -14,7 +14,7 @@ import argparse
 import sys
 from datetime import datetime
 
-from longshot.service import WarehouseAgent
+from longshot.service import WarehouseClient
 
 
 def download_dataset(warehouse_host: str, warehouse_port: int, output_path: str) -> dict:
@@ -29,7 +29,7 @@ def download_dataset(warehouse_host: str, warehouse_port: int, output_path: str)
     Returns:
         The downloaded dataset dictionary
     """
-    warehouse = WarehouseAgent(warehouse_host, warehouse_port)
+    warehouse = WarehouseClient(warehouse_host, warehouse_port)
     
     try:
         print(f"Connecting to warehouse at {warehouse_host}:{warehouse_port}...")

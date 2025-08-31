@@ -1,7 +1,7 @@
 import httpx
 from typing import Any, Dict, List, Optional
 
-class WarehouseAgent:
+class WarehouseClient:
     """
     The WarehouseAgent class provides a high-level interface for interacting 
     with the Warehouse microservice, which manages the storage and retrieval of 
@@ -209,7 +209,7 @@ class WarehouseAgent:
         """
         self._client.close()
 
-    def __enter__(self) -> "WarehouseAgent":
+    def __enter__(self) -> "WarehouseClient":
         """
         Enters the runtime context related to this object.
         This method is called when the object is used in a `with` statement.
@@ -224,7 +224,7 @@ class WarehouseAgent:
         self.close()
         
 
-class AsyncWarehouseAgent:
+class AsyncWarehouseClient:
     """Asynchronous agent for interacting with the Longshot warehouse service.
     This class provides an async interface to the warehouse API, allowing for
     non-blocking I/O operations. It manages formula information, trajectories,
@@ -496,7 +496,7 @@ class AsyncWarehouseAgent:
         """Closes the underlying HTTP client."""
         await self._client.aclose()
 
-    async def __aenter__(self) -> "AsyncWarehouseAgent":
+    async def __aenter__(self) -> "AsyncWarehouseClient":
         """Enters the async context manager.
         
         Returns:

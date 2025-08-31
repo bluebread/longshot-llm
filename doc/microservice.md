@@ -9,14 +9,14 @@ This document outlines the structure and content of the API documentation for th
     - Contains the following tables:
         1. *Trajectory Tables*: Simplified entries with cur_avgQ field.
         2. *Parameter Server*: Stores model parameters (not detailed here).
-<!-- 
-2. **Weapons**
-    - Collect trajectories and process them locally using library components.
-    - Public API:
-        - `POST /weapon/rollout`: Given the number of steps and the initial formula's definition, it will run the environment for the specified number of steps and collect trajectories.
-    - Including the following types of weapons:
-        - **Cluster Bomb**: Randomly collects trajectories from the environment and processes them locally.
-        - **Guided Missile**: Collects trajectories from the environment through RL policy and processes them locally. -->
+
+2. **Weapon Services (Job Executors)**
+    - Run as independent containerized services to collect trajectories using different strategies.
+    - **No public API endpoints** - these services execute trajectory collection jobs autonomously.
+    - Services are deployed as standalone containers that continuously collect and store trajectory data.
+    - Types of weapon services:
+        - **Clusterbomb**: Collects trajectories using purely random exploration strategy. Runs continuously to build diverse trajectory datasets.
+        - **Missile** (future implementation): Will collect trajectories using AI/RL models for guided exploration. Leverages learned policies for more targeted data collection.
 
 ## Database Schema
 
@@ -197,106 +197,3 @@ Check the health status of the warehouse service.
     - Verifies MongoDB connectivity during service startup
     - Used for monitoring, load balancers, and container orchestration health checks
     - No authentication required
-
----
-<!-- 
-### Weapons
-
-The Weapons microservice is responsible for collecting trajectories and processing them locally using the integrated library components. It provides a public API for external clients to interact with the system and collect trajectories from the environment.
-
-#### `POST /weapon/rollout`
-
-Collects trajectories from the environment and processes them locally using V2 TrajectoryProcessor. The V2 schema provides complete trajectory data.
-
-- Request Body:
-    ```json
-    {
-        "num_vars": 3,
-        "width": 2,
-        "size": 10,
-        "steps_per_trajectory": 100,
-        "num_trajectories": 10,
-        "prefix_traj": [
-            [0, 3, 0.5],
-            [0, 4, 1.0]
-        ],
-        "seed": 42,
-        "early_stop": false
-    }
-    ```
-- Request Field Descriptions:
-    - `num_vars` (int): Number of variables in the formula.
-    - `width` (int): Width of the formula.
-    - `size` (int): Size of the formula (number of nodes).
-    - `steps_per_trajectory` (int): Number of steps to run in a single trajectory.
-    - `num_trajectories` (int): Number of trajectories to collect.
-    - `prefix_traj` (list[TrajectoryStep]): **V2 REQUIRED** - Complete trajectory containing all steps needed to build the initial state.
-    - `seed` (int, optional): Random seed for reproducibility. Default: None.
-    - `early_stop` (bool, optional): If True, stop trajectory simulation when avgQ reaches 0. This affects the `total_steps` count in the response. Default: False.
-- TrajectoryStep Format:
-    - Steps are provided as tuples `[token_type, token_literals, cur_avgQ]` where:
-        - `token_type` (int): Type of operation (0=ADD, 1=DEL, 2=EOS)
-        - `token_literals` (int): 64-bit integer representation of literals (first 32 bits positive, last 32 bits negative)
-        - `cur_avgQ` (float): Average Q-value after this step
-- Response:
-    ```json
-    {
-        "total_steps": 1000,
-        "num_trajectories": 10,
-        "processed_trajectories": 25
-    }
-    ```
-- Response Field Descriptions:
-    - `total_steps` (int): Total number of steps actually executed across all trajectories (may be less than `steps_per_trajectory * num_trajectories` if `early_stop` is enabled)
-    - `num_trajectories` (int): Number of trajectories actually collected
-    - `processed_trajectories` (int): **V2** - Number of trajectories processed
-- Status Codes:
-    - `200 OK`: Successfully collected trajectories and processed them using V2 schema.
-    - `422 Unprocessable Entity`: Invalid request parameters. This includes:
-        - Missing required `prefix_traj` field
-        - Invalid trajectory step format
-        - Parameter conflicts
-    - `500 Internal Server Error`: Unexpected server issues (e.g., warehouse connection failures).
-
-##### Clusterbomb Algorithm
-
-1. Initialize trajectory from prefix trajectory.
-2. Initialize the RL environment, warehouse agent and trajectory processor.
-3. Run the environment simulation.
-4. Process all trajectories.
-
-
-## V2 Architecture Changes
-
-### Trajectory Schema Evolution
-
-**V1 Problems (Deprecated)**:
-- Trajectories formed a linked list structure via `initial_node_id` references
-- Required complex backtracking to reconstruct states
-- Empty initialization caused database consistency issues
-- Performance degradation due to recursive retrieval
-
-**V2 Solutions**:
-- **Embedded Reconstruction**: Each trajectory contains complete `prefix_traj` for initial state reconstruction
-- **No Linked Lists**: Eliminates dependency chains and backtracking requirements
-- **Complete Trajectories**: Combined prefix + suffix stored as single trajectory record
-- **Improved Performance**: Direct reconstruction without warehouse queries
-- **Database Consistency**: Existence checking prevents orphaned references
-
-### Processing Flow
-
-1. **Initial State Reconstruction**: Use `prefix_traj` to rebuild initial state locally
-2. **Duplicate Detection**: Check if data already exists in database
-3. **Trajectory Segmentation**: Process `suffix_traj` in granulated pieces
-4. **Complete Storage**: Store combined (prefix + suffix) trajectory with correct references
-5. **Data Storage**: Store processed trajectory data
-
-### Migration Notes
-
-- **Backward Compatibility**: V1 fields (`initial_definition`, `initial_node_id`) are deprecated but temporarily supported
-- **Required Migration**: New integrations must use `prefix_traj` field with tuple format
-- **Performance Benefits**: 
-    - V2 eliminates O(n) traversal costs for data retrieval
-    - Tuple storage format provides 45.9% BSON size reduction in MongoDB
-- **Data Consistency**: V2 prevents empty initialization problems in demo scripts
-- **Trajectory Format**: All trajectory steps now use tuple format `[token_type, token_literals, cur_avgQ]` across APIs and storage -->

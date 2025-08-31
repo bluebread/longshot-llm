@@ -3,14 +3,10 @@ from collections.abc import Iterable
 import numpy as np
 from binarytree import Node
 from sortedcontainers import SortedSet
-import networkx as nx
-from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
-from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
 
 from ..error import LongshotError
 from ..literals import Literals, Term, Clause, MAX_NUM_VARS
 from .._core import (
-    _Literals,
     _CountingBooleanFunction,
     _CppDecisionTree,
 )
@@ -108,22 +104,12 @@ class NormalFormFormula:
         # Initialize the properties of the formula
         self._literals = SortedSet()
         self._bf = _CountingBooleanFunction(num_vars)
-        self._graph = nx.Graph()
         
         # Convert the boolean function to the specified normal form
         if ftype == FormulaType.Conjunctive:
             self._bf.as_cnf()
         if ftype == FormulaType.Disjunctive:
             self._bf.as_dnf()
-            
-        # Initialize the graph with the number of variables
-        var_nodes = [f"x{i}" for i in range(num_vars)]
-        pos_nodes = [f"+x{i}" for i in range(num_vars)]
-        neg_nodes = [f"-x{i}" for i in range(num_vars)]
-        self._graph.add_nodes_from(var_nodes, label="var")
-        self._graph.add_nodes_from(pos_nodes + neg_nodes, label="literal")
-        self._graph.add_edges_from([(f"x{i}", f"+x{i}") for i in range(num_vars)])
-        self._graph.add_edges_from([(f"x{i}", f"-x{i}") for i in range(num_vars)])
     
     def copy(self):
         """
@@ -134,7 +120,6 @@ class NormalFormFormula:
         
         cpy._literals = self._literals.copy()
         cpy._bf = _CountingBooleanFunction(self._bf)
-        cpy._graph = self._graph.copy()
         
         return cpy
     
@@ -178,13 +163,6 @@ class NormalFormFormula:
             return  # No need to toggle constants
         
         if ls not in self._literals:
-            # Add the literals to the graph as gate
-            gn = int(ls)
-            self._graph.add_node(gn, label="gate")    
-            dls = ls.to_dict()
-            edges = [(f"+x{i}", gn) for i in dls["pos"]] + [(f"-x{i}", gn) for i in dls["neg"]]
-            self._graph.add_edges_from(edges)     
-            
             # Apply the literals to the boolean function
             if self._ftype == FormulaType.Conjunctive:
                 self._bf.add_clause(ls)
@@ -194,10 +172,6 @@ class NormalFormFormula:
             self._literals.add(ls)
                 
         else:
-            # Remove the literals from the graph and tensor
-            gn = int(ls)
-            self._graph.remove_node(gn)
-            
             # Remove the literals from the boolean function
             if self._ftype == FormulaType.Conjunctive:
                 self._bf.del_clause(ls)
@@ -234,20 +208,6 @@ class NormalFormFormula:
            return qv, DecisionTree(ctree)
        
         return qv
-    
-    def wl_graph_hash(self, iterations: int = None) -> int:
-        """
-        Computes the Weisfeiler-Lehman graph hash for the formula's graph representation.
-        :param iterations: Number of iterations for the WL algorithm.
-        :return: The hash value of the formula.
-        """
-        if iterations is not None:
-            if not isinstance(iterations, int) or iterations < 1:
-                raise LongshotError("the argument `iterations` should be a positive integer.")
-        else:
-            iterations = self._num_vars # Default to the number of variables
-        
-        return weisfeiler_lehman_graph_hash(self._graph, iterations=iterations, node_attr="label")
     
     def __str__(self) -> str:
         """
@@ -304,23 +264,6 @@ class NormalFormFormula:
         """
         return self._literals.copy()
     
-    @property
-    def graph(self) -> nx.Graph:
-        """
-        A `networkx.Graph` representation of the formula.
-        """
-        return self._graph.copy()
-        
-    @classmethod
-    def is_isomorphic(cls, F1: "NormalFormFormula", F2: "NormalFormFormula") -> bool:
-        """
-        A class method to check if two formulas `F1` and `F2` are isomorphic (structurally identical).
-        
-        :param F1: The first formula.
-        :param F2: The second formula.
-        :return: True if the formulas are isomorphic, False otherwise.
-        """
-        return vf2pp_is_isomorphic(F1._graph, F2._graph, node_label='label')
         
 class ConjunctiveNormalFormFormula(NormalFormFormula):
     """

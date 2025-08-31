@@ -62,25 +62,56 @@ def test_tree():
     assert dnf.eval(0b11111) == tree.decide(0b11111)
     
 def test_graph():
+    # Test FormulaGraph functionality instead of removed graph methods
+    from longshot.formula import FormulaGraph
+    
     f1 = DNF(5)
     f1.toggle(Term(pos=[0,2,4], neg=[1,3]))
     f1.toggle(Term(pos=[3], neg=[0, 1]))
-
-    assert f1.graph.number_of_nodes() == 17  # 5 variables + 10 literals + 2 terms
-    assert f1.graph.number_of_edges() == 18  # edges between literals and terms
-
+    
+    # Get the gates as integers for FormulaGraph
+    definition1 = [int(gate) for gate in f1.gates]
+    fg1 = FormulaGraph(definition1)
+    
     f2 = DNF(5)
     f2.toggle(Term(pos=[3,4], neg=[0,1,2]))
     f2.toggle(Term(pos=[1,4], neg=[3]))
     
-    assert f2.graph.number_of_nodes() == 17  # 5 variables + 10 literals + 2 terms
-    assert f2.graph.number_of_edges() == 18  # edges between literals and terms
+    # Get the gates as integers for FormulaGraph
+    definition2 = [int(gate) for gate in f2.gates]
+    fg2 = FormulaGraph(definition2)
     
-    assert DNF.is_isomorphic(f1, f2) == True
-    assert f1.wl_graph_hash() == 'a6d78fa057c14ea466a3ec99a545197b'
-    assert f2.wl_graph_hash() == 'a6d78fa057c14ea466a3ec99a545197b'
+    # Test that formulas with same structure have same hash
+    # Note: The actual hash values might differ from the old implementation
+    assert fg1.wl_hash() == fg2.wl_hash()  # Both have same structure
+    assert fg1.is_isomorphic_to(fg2) == True
     
     
+def test_literals_properties():
+    """Test the wrapped properties of Literals class."""
+    # Test is_empty
+    assert Literals().is_empty == True
+    assert Literals(pos=[0]).is_empty == False
+    
+    # Test is_contradictory
+    assert Literals(pos=[0], neg=[0]).is_contradictory == True
+    assert Literals(pos=[0], neg=[1]).is_contradictory == False
+    
+    # Test is_constant
+    assert Literals().is_constant == True
+    assert Literals(pos=[0], neg=[0]).is_constant == True
+    assert Literals(pos=[0]).is_constant == False
+    
+    # Test width
+    assert Literals(pos=[0, 1], neg=[2]).width == 3
+    assert Literals().width == 0
+    assert Literals(pos=[0], neg=[0]).width == 0
+    
+    # Test pos and neg properties
+    assert Literals(pos=[0, 2]).pos == 5  # Binary: 0101
+    assert Literals(neg=[1, 3]).neg == 10  # Binary: 1010
+
+
 if __name__ == "__main__":
     # pytest.main([__file__])
     # # test_literals()

@@ -12,6 +12,7 @@ python map_elites_with_dataset.py --iterations 20 --num-vars 4 --width 2 --strat
 
 import json
 import argparse
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -39,14 +40,27 @@ def download_trajectory_dataset(
     """
     warehouse = WarehouseAgent(warehouse_host, warehouse_port)
     
+    retry_count = 0
+    
+    while True:
+        try:
+            # Always download the complete dataset from warehouse
+            print(f"Downloading trajectory dataset from warehouse... (attempt {retry_count + 1})")
+            response = warehouse._client.get("/trajectory/dataset")
+            response.raise_for_status()
+            
+            dataset = response.json()
+            all_trajectories = dataset.get("trajectories", [])
+            break  # Success, exit retry loop
+            
+        except Exception as e:
+            retry_count += 1
+            print(f"Download attempt {retry_count} failed: {e}")
+            print("Retrying in 10 seconds...")
+            time.sleep(10)
+            continue
+    
     try:
-        # Always download the complete dataset from warehouse
-        print("Downloading trajectory dataset from warehouse...")
-        response = warehouse._client.get("/trajectory/dataset")
-        response.raise_for_status()
-        
-        dataset = response.json()
-        all_trajectories = dataset.get("trajectories", [])
         
         # Filter by elite IDs if provided
         if elite_traj_ids:
@@ -136,7 +150,6 @@ def run_map_elites_with_dataset(config: MAPElitesConfig, dataset_args: dict, boo
                         map_elites.current_iteration = iteration + 1
                         print(f"\n--- Iteration {map_elites.current_iteration}/{config.num_iterations} ---")
                         
-                        import time
                         start_time = time.time()
                         map_elites.evolution_step()
                         elapsed = time.time() - start_time

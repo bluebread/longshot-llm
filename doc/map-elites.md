@@ -51,6 +51,23 @@ class MAPElitesConfig:
     batch_size: int = 10         # Number of parallel mutations
     elite_selection_strategy: str = "uniform"  # How to select elites
     initialization_strategy: str = "warehouse"  # Source of initial population
+    enable_sync: bool = False    # Whether to sync with other instances via warehouse
+    sync_interval: int = 10      # Iterations between syncs (if enabled)
+```
+
+### Command Line Usage
+
+```bash
+# Run MAP-Elites without synchronization (standalone mode)
+python run_map_elites.py --num-vars 10 --width 3 --iterations 100
+
+# Run MAP-Elites with synchronization (collaborative mode)
+python run_map_elites.py --num-vars 10 --width 3 --iterations 100 --enable-sync --sync-interval 5
+
+# Run multiple instances in parallel (each syncing through warehouse)
+python run_map_elites.py --enable-sync &  # Instance 1
+python run_map_elites.py --enable-sync &  # Instance 2
+python run_map_elites.py --enable-sync &  # Instance 3
 ```
 
 ## Algorithm Process Flow
@@ -159,12 +176,20 @@ class MAPElitesConfig:
 
 Repeat for `num_iterations`:
 
-#### Step 1: Archive Synchronization
+#### Step 1: Archive Synchronization (Optional)
 ```python
-async def sync_archive_with_warehouse(archive, last_sync_time):
+# Only sync if enabled and at sync interval
+if config.enable_sync and iteration % config.sync_interval == 0:
+    last_sync = await sync_archive_with_warehouse(archive, last_sync_time, config)
+else:
+    # Skip synchronization in standalone mode
+    pass
+
+async def sync_archive_with_warehouse(archive, last_sync_time, config):
     """
     Fetch new trajectories from warehouse to update local archive.
     This includes trajectories from other clusterbomb instances.
+    Only called when enable_sync is True.
     """
     async with AsyncWarehouseClient() as warehouse:
         # Get trajectories added since last sync
@@ -418,12 +443,22 @@ The clusterbomb service now directly implements MAP-Elites algorithm with multi-
 
 2. **Warehouse Service Integration**
    - **Initialization**: Retrieves existing trajectories via `AsyncWarehouseClient`
-   - **Periodic Synchronization**: Fetches new trajectories from all clusterbomb instances
+   - **Optional Synchronization**: When `enable_sync=True`, fetches new trajectories from other instances
    - **Continuous Updates**: Pushes new trajectories asynchronously during execution
-   - **Final Collection**: Gathers all generated trajectories at completion
+   - **Standalone Mode**: When `enable_sync=False`, operates independently without syncing
    - All communication uses async patterns for optimal performance
 
-3. **Multi-Instance Coordination**
+3. **Operating Modes**
+
+   **Standalone Mode** (`enable_sync=False`):
+   ```python
+   # Run independently without synchronization
+   # Faster iteration, no network overhead
+   # Best for single-machine exploration
+   python run_map_elites.py --num-vars 10 --width 3
+   ```
+   
+   **Collaborative Mode** (`enable_sync=True`):
    ```python
    # At startup - load global state filtered by configuration
    trajectories = await warehouse.get_trajectory_dataset(
@@ -431,28 +466,24 @@ The clusterbomb service now directly implements MAP-Elites algorithm with multi-
        width=config.width
    )
    
-   # Each iteration - sync with other instances
-   last_sync = await sync_archive_with_warehouse(archive, last_sync_time)
+   # Each iteration - conditionally sync with other instances
+   if config.enable_sync and iteration % config.sync_interval == 0:
+       last_sync = await sync_archive_with_warehouse(archive, last_sync_time, config)
    
    # During execution - share discoveries immediately
    # NOTE: Each trajectory is sent as soon as it's collected,
    # not batched until iteration end
    for trajectory in new_trajectories:
        await warehouse.post_trajectory(trajectory)
-   
-   # At completion - gather collective results
-   final_dataset = await warehouse.get_trajectory_dataset(
-       since=start_time,
-       num_vars=config.num_vars,
-       width=config.width
-   )
    ```
    
-   Multiple clusterbomb instances can run simultaneously:
+   **Multi-Instance Benefits**:
+   - Multiple clusterbomb instances can run simultaneously when sync is enabled
    - Each maintains its own local archive
-   - Archives are periodically synchronized through the warehouse
+   - Archives are periodically synchronized through the warehouse (controlled by `sync_interval`)
    - Discoveries from one instance benefit all others
    - Enables massive parallel exploration of the solution space
+   - Can dynamically enable/disable sync based on needs
 
 ## Implementation Considerations
 

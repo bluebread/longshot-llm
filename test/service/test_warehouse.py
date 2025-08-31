@@ -22,9 +22,8 @@ class TestTrajectory:
             "steps": [
                 (0, 5, 7/3)  # (token_type, token_literals, cur_avgQ)
             ],
-            "max_num_vars": 8,
-            "max_width": 4,
-            "max_size": 100
+            "num_vars": 8,
+            "width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -107,9 +106,8 @@ class TestDatasetEndpoints:
                 (0, 5, 1.0),   # ADD
                 (1, 3, 1.5)    # DELETE
             ],
-            "max_num_vars": 8,
-            "max_width": 4,
-            "max_size": 100
+            "num_vars": 8,
+            "width": 4
         }
         response = client.post("/trajectory", json=trajectory_data_1)
         assert response.status_code == 201
@@ -121,9 +119,8 @@ class TestDatasetEndpoints:
                 (0, 15, 2.5),  # ADD
                 (1, 10, 3.0)   # DELETE
             ],
-            "max_num_vars": 8,
-            "max_width": 4,
-            "max_size": 100
+            "num_vars": 8,
+            "width": 4
         }
         response = client.post("/trajectory", json=trajectory_data_2)
         assert response.status_code == 201
@@ -165,9 +162,8 @@ class TestDatasetEndpoints:
                 (1, 10, 2.5),  # DELETE
                 (0, 15, 3.7)   # ADD
             ],
-            "max_num_vars": 8,
-            "max_width": 4,
-            "max_size": 100
+            "num_vars": 8,
+            "width": 4
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -218,9 +214,8 @@ class TestDatasetEndpoints:
         # Trajectory 1: num_vars=3, width=2
         trajectory_data_1 = {
             "steps": [(0, 5, 1.0)],
-            "max_num_vars": 3,
-            "max_width": 2,
-            "max_size": 100
+            "num_vars": 3,
+            "width": 2
         }
         response = client.post("/trajectory", json=trajectory_data_1)
         assert response.status_code == 201
@@ -229,9 +224,8 @@ class TestDatasetEndpoints:
         # Trajectory 2: num_vars=3, width=4
         trajectory_data_2 = {
             "steps": [(0, 10, 2.0)],
-            "max_num_vars": 3,
-            "max_width": 4,
-            "max_size": 100
+            "num_vars": 3,
+            "width": 4
         }
         response = client.post("/trajectory", json=trajectory_data_2)
         assert response.status_code == 201
@@ -240,9 +234,8 @@ class TestDatasetEndpoints:
         # Trajectory 3: num_vars=5, width=2
         trajectory_data_3 = {
             "steps": [(0, 15, 3.0)],
-            "max_num_vars": 5,
-            "max_width": 2,
-            "max_size": 100
+            "num_vars": 5,
+            "width": 2
         }
         response = client.post("/trajectory", json=trajectory_data_3)
         assert response.status_code == 201
@@ -255,7 +248,7 @@ class TestDatasetEndpoints:
             data = response.json()
             filtered_trajs = [traj for traj in data["trajectories"] if traj["traj_id"] in traj_ids]
             assert len(filtered_trajs) == 2  # Should only get trajectories 1 and 2
-            assert all(traj["max_num_vars"] == 3 for traj in filtered_trajs)
+            assert all(traj["num_vars"] == 3 for traj in filtered_trajs)
             
             # Test filtering by width
             response = client.get("/trajectory/dataset", params={"width": 2})
@@ -263,7 +256,7 @@ class TestDatasetEndpoints:
             data = response.json()
             filtered_trajs = [traj for traj in data["trajectories"] if traj["traj_id"] in traj_ids]
             assert len(filtered_trajs) == 2  # Should only get trajectories 1 and 3
-            assert all(traj["max_width"] == 2 for traj in filtered_trajs)
+            assert all(traj["width"] == 2 for traj in filtered_trajs)
             
             # Test filtering by both num_vars and width
             response = client.get("/trajectory/dataset", params={"num_vars": 3, "width": 2})
@@ -271,8 +264,8 @@ class TestDatasetEndpoints:
             data = response.json()
             filtered_trajs = [traj for traj in data["trajectories"] if traj["traj_id"] in traj_ids]
             assert len(filtered_trajs) == 1  # Should only get trajectory 1
-            assert filtered_trajs[0]["max_num_vars"] == 3
-            assert filtered_trajs[0]["max_width"] == 2
+            assert filtered_trajs[0]["num_vars"] == 3
+            assert filtered_trajs[0]["width"] == 2
             
         finally:
             # Clean up
@@ -284,9 +277,8 @@ class TestDatasetEndpoints:
         # Create a trajectory to test with
         trajectory_data = {
             "steps": [(0, 5, 1.0)],
-            "max_num_vars": 3,
-            "max_width": 2,
-            "max_size": 100
+            "num_vars": 3,
+            "width": 2
         }
         response = client.post("/trajectory", json=trajectory_data)
         assert response.status_code == 201
@@ -343,17 +335,17 @@ class TestDatasetEndpoints:
             filtered_trajs = [traj for traj in data["trajectories"] if traj["traj_id"] == traj_id]
             assert len(filtered_trajs) == 1  # Should include our trajectory
             
-            # Test with 'since' > 'until' (should return empty list)
+            # Test with 'since' > 'until' (should return 400 error)
             since_time = traj_timestamp + timedelta(minutes=1)
             until_time = traj_timestamp - timedelta(minutes=1)
             response = client.get("/trajectory/dataset", params={
                 "since": since_time.isoformat(),
                 "until": until_time.isoformat()
             })
-            assert response.status_code == 200
-            data = response.json()
-            filtered_trajs = [traj for traj in data["trajectories"] if traj["traj_id"] == traj_id]
-            assert len(filtered_trajs) == 0  # Should return empty list
+            assert response.status_code == 400
+            error_detail = response.json()["detail"]
+            assert "Invalid date range" in error_detail
+            assert "cannot be after" in error_detail
             
         finally:
             # Clean up

@@ -16,9 +16,8 @@ class QueryTrajectoryInfoResponse(BaseModel):
     traj_id: str = Field(alias="_id", serialization_alias="traj_id")
     timestamp: datetime
     steps: list[tuple[int, int, float]] = Field(..., description="Steps as tuples of (token_type, token_literals, cur_avgQ)")
-    max_num_vars: int | None = Field(None, description="Maximum number of variables allowed during trajectory collection")
-    max_width: int | None = Field(None, description="Maximum width allowed during trajectory collection")
-    max_size: int | None = Field(None, description="Maximum size (number of gates) allowed during trajectory collection")
+    num_vars: int | None = Field(None, description="Number of variables in the formula")
+    width: int | None = Field(None, description="Width of the formula")
     
 
 
@@ -27,15 +26,12 @@ class CreateTrajectoryRequest(BaseModel):
     steps: list[tuple[int, int, float]] = Field(..., 
                                                  description="Steps as tuples of (token_type, token_literals, cur_avgQ)",
                                                  max_length=10000)  # Reasonable limit to prevent resource exhaustion
-    max_num_vars: int | None = Field(..., 
-                                     description="Maximum number of variables allowed during trajectory collection",
+    num_vars: int | None = Field(..., 
+                                     description="Number of variables in the formula",
                                      ge=1, le=32)  # Valid variable range
-    max_width: int | None = Field(..., 
-                                 description="Maximum width allowed during trajectory collection",
+    width: int | None = Field(..., 
+                                 description="Width of the formula",
                                  ge=1, le=32)  # Valid width range
-    max_size: int | None = Field(..., 
-                                description="Maximum size (number of gates) allowed during trajectory collection",
-                                ge=1, le=1000)  # Valid size range
 
 
 # Trajectory-related models
@@ -56,9 +52,8 @@ class OptimizedTrajectoryInfo(BaseModel):
     traj_id: str = Field(alias="_id", serialization_alias="traj_id")
     timestamp: datetime
     steps: list[tuple[int, int, float]] = Field(..., description="Steps as tuples of (token_type, token_literals, cur_avgQ)")
-    max_num_vars: int | None = Field(None, description="Maximum number of variables allowed during trajectory collection")
-    max_width: int | None = Field(None, description="Maximum width allowed during trajectory collection")
-    max_size: int | None = Field(None, description="Maximum size (number of gates) allowed during trajectory collection")
+    num_vars: int | None = Field(None, description="Number of variables in the formula")
+    width: int | None = Field(None, description="Width of the formula")
 
 class TrajectoryDatasetResponse(BaseModel):
     """Response model for complete trajectory dataset."""

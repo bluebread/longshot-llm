@@ -71,17 +71,15 @@ async def get_trajectory(traj_id: str = Query(..., description="Trajectory UUID"
         # Steps are now stored as lists in MongoDB
         # Convert to tuples for API response (Pydantic will serialize as JSON arrays)
         steps_as_tuples = [
-            tuple(step) if isinstance(step, list) else 
-            (step["token_type"], step["token_literals"], step["cur_avgQ"])  # Handle legacy dict format
+            tuple(step) 
             for step in trajectory_doc.get("steps", [])
         ]
         return QueryTrajectoryInfoResponse(
             _id=trajectory_doc["_id"],
             timestamp=trajectory_doc["timestamp"],
             steps=steps_as_tuples,
-            max_num_vars=trajectory_doc["max_num_vars"],
-            max_width=trajectory_doc["max_width"],
-            max_size=trajectory_doc["max_size"]
+            num_vars=trajectory_doc.get("num_vars"),
+            width=trajectory_doc.get("width")
         )
     else:
         raise HTTPException(status_code=404, detail="Trajectory not found")
@@ -102,10 +100,9 @@ async def create_trajectory(trajectory: CreateTrajectoryRequest):
     trajectory_doc = {
         "_id": trajectory_id,
         "timestamp": datetime.now(),
+        "num_vars": trajectory.num_vars,
+        "width": trajectory.width,
         "steps": steps_as_lists,  # Store as lists for BSON efficiency
-        "max_num_vars": trajectory.max_num_vars,
-        "max_width": trajectory.max_width,
-        "max_size": trajectory.max_size
     }
     trajectory_table.insert_one(trajectory_doc)
     
@@ -154,21 +151,26 @@ async def get_trajectory_dataset(
     until: Optional[datetime] = Query(None, description="Filter trajectories with timestamp before this date (ISO 8601 format)")
 ):
     """Get the complete trajectory dataset with all trajectories using optimized tuple format.
-    
-    TODO: Add an index on the timestamp field in MongoDB for efficient range queries.
     """
     
     # Build filter query
     filter_query = {}
     
     if num_vars is not None:
-        filter_query["max_num_vars"] = num_vars
+        filter_query["num_vars"] = num_vars
     
     if width is not None:
-        filter_query["max_width"] = width
+        filter_query["width"] = width
     
     # Add timestamp range filters
     if since is not None or until is not None:
+        # Validate that since is not after until
+        if since is not None and until is not None and since > until:
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid date range: 'since' timestamp cannot be after 'until' timestamp"
+            )
+        
         timestamp_filter = {}
         if since is not None:
             timestamp_filter["$gte"] = since
@@ -182,10 +184,8 @@ async def get_trajectory_dataset(
     
     for trajectory_doc in trajectories_cursor:
         # Convert steps to tuple format (token_type, token_literals, cur_avgQ)
-        # Handle both list and dict formats for backward compatibility
         optimized_steps = [
-            tuple(step) if isinstance(step, list) else
-            (step["token_type"], step["token_literals"], step["cur_avgQ"])
+            tuple(step)
             for step in trajectory_doc.get("steps", [])
         ]
         
@@ -194,9 +194,8 @@ async def get_trajectory_dataset(
             _id=trajectory_doc["_id"],
             timestamp=trajectory_doc["timestamp"],
             steps=optimized_steps,
-            max_num_vars=trajectory_doc["max_num_vars"],
-            max_width=trajectory_doc["max_width"],
-            max_size=trajectory_doc["max_size"]  # Use get() for backward compatibility
+            num_vars=trajectory_doc.get("num_vars"),
+            width=trajectory_doc.get("width")
         )
         trajectories.append(optimized_trajectory)
     

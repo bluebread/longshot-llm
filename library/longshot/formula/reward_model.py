@@ -1,8 +1,18 @@
-from ..literals import NormalFormFormula
+from ..formula import NormalFormFormula
 from ..error import LongshotError
-from ..models import GateToken
+from ..literals import Literals
+from pydantic import BaseModel, ConfigDict, Field
 
-# TODO: write a static method to process avgQ sequence into reward sequence. 
+
+class GateToken(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    type: str
+    literals: Literals = Field(..., description="List of literals involved in the operation")
+    
+    @classmethod
+    def dim_token(cls, num_vars: int) -> int:
+        return 2 * num_vars + 3
+
 
 class FormulaRewardModel:
     """

@@ -1,17 +1,9 @@
-import enum
 from collections.abc import Iterable
 import numpy as np
-from binarytree import Node
-from sortedcontainers import SortedSet
-import networkx as nx
-from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
-from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
 
 from ..error import LongshotError
 from .._core import (
     _Literals,
-    _CountingBooleanFunction,
-    _CppDecisionTree,
 )
 
 MAX_NUM_VARS = 32  # Maximum number of variables supported
@@ -136,6 +128,118 @@ class Literals(_Literals):
         if not isinstance(other, Literals):
             raise LongshotError("the argument `other` is not a Literals object.")   
         return (self.pos, self.neg) < (other.pos, other.neg)
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        Check if the literals set is empty (no literals).
+        
+        Returns:
+            bool: True if there are no positive or negative literals, False otherwise.
+            
+        Example:
+            >>> Literals().is_empty  # Empty literals
+            True
+            >>> Literals(pos=[0]).is_empty  # Has x0
+            False
+        """
+        return super().is_empty
+    
+    @property
+    def is_contradictory(self) -> bool:
+        """
+        Check if the literals set contains contradictions.
+        
+        A contradiction occurs when the same variable appears as both positive 
+        and negative (e.g., x0 and ¬x0).
+        
+        Returns:
+            bool: True if there are contradictory literals, False otherwise.
+            
+        Example:
+            >>> Literals(pos=[0], neg=[0]).is_contradictory  # x0 and ¬x0
+            True
+            >>> Literals(pos=[0], neg=[1]).is_contradictory  # x0 and ¬x1
+            False
+        """
+        return super().is_contradictory
+    
+    @property
+    def is_constant(self) -> bool:
+        """
+        Check if the literals represent a constant (always true or always false).
+        
+        A literals set is constant if it's either empty or contains contradictions.
+        Empty literals evaluate to true in CNF (empty conjunction) or false in DNF (empty disjunction).
+        Contradictory literals always evaluate to a constant regardless of variable assignments.
+        
+        Returns:
+            bool: True if the literals represent a constant value, False otherwise.
+            
+        Example:
+            >>> Literals().is_constant  # Empty is constant
+            True
+            >>> Literals(pos=[0], neg=[0]).is_constant  # Contradiction is constant
+            True
+            >>> Literals(pos=[0]).is_constant  # x0 is not constant
+            False
+        """
+        return super().is_constant
+    
+    @property
+    def width(self) -> int:
+        """
+        Get the width (number of literals) in this set.
+        
+        Width is the total count of distinct literals (both positive and negative).
+        Constant literals (empty or contradictory) have width 0.
+        
+        Returns:
+            int: The number of literals in the set, or 0 if constant.
+            
+        Example:
+            >>> Literals(pos=[0, 1], neg=[2]).width  # x0, x1, ¬x2
+            3
+            >>> Literals().width  # Empty has width 0
+            0
+            >>> Literals(pos=[0], neg=[0]).width  # Contradiction has width 0
+            0
+        """
+        return super().width
+    
+    @property
+    def pos(self) -> int:
+        """
+        Get the bitmask representing positive literals.
+        
+        Each bit position corresponds to a variable index. Bit i is set if variable i 
+        appears as a positive literal (xi).
+        
+        Returns:
+            int: Bitmask of positive literals.
+            
+        Example:
+            >>> Literals(pos=[0, 2]).pos  # x0 and x2
+            5  # Binary: 0101
+        """
+        return super().pos
+    
+    @property
+    def neg(self) -> int:
+        """
+        Get the bitmask representing negative literals.
+        
+        Each bit position corresponds to a variable index. Bit i is set if variable i 
+        appears as a negative literal (¬xi).
+        
+        Returns:
+            int: Bitmask of negative literals.
+            
+        Example:
+            >>> Literals(neg=[1, 3]).neg  # ¬x1 and ¬x3
+            10  # Binary: 1010
+        """
+        return super().neg
 
 class Clause(Literals):
     """

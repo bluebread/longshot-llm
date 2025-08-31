@@ -11,7 +11,26 @@ from typing import Optional, List, Dict, Any
 import networkx as nx
 from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 from networkx.algorithms.isomorphism import vf2pp_is_isomorphic
-from ..utils.formula import parse_gate_integer_representation
+from ..literals import Literals
+
+
+def parse_gate_integer_representation(gate_int: int) -> Literals:
+    """
+    Parse a gate integer representation into a Literals object.
+    
+    Args:
+        gate_int: Integer representation where lower 32 bits are positive literals
+                 and upper 32 bits are negative literals
+                 
+    Returns:
+        Literals: Literals object created from the gate integer representation
+    """
+    # Lower 32 bits are positive literals, upper 32 bits are negative literals  
+    pos_bits = gate_int & 0xFFFFFFFF          # Extract lower 32 bits (0-31)
+    neg_bits = (gate_int >> 32) & 0xFFFFFFFF  # Extract upper 32 bits (32-63)
+    
+    # Create and return Literals object using the two-argument constructor
+    return Literals(pos_bits, neg_bits)
 
 
 class FormulaGraph:

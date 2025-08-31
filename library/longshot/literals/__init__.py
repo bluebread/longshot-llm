@@ -1,3 +1,1 @@
-from .literals import *
-from .literals import ConjunctiveNormalFormFormula as CNF
-from .literals import DisjunctiveNormalFormFormula as DNF
+from .literals import Literals, Clause, Term, MAX_NUM_VARS

@@ -1,8 +1,8 @@
 from functools import reduce
 import random
 import networkx as nx
-from ..literals import NormalFormFormula, FormulaType, Clause, Term, Literals
-from ..models import GateToken
+from ..literals import Clause, Term, Literals
+from ..formula import NormalFormFormula, FormulaType, GateToken
 
 def to_lambda(avgQ: float, *, n: int, eps: float) -> float:
     """

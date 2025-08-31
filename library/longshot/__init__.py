@@ -12,6 +12,5 @@ within reinforcement learning environments. Major components include:
 """
 import longshot.literals
 import longshot.error
-import longshot.models
 import longshot.utils
 import longshot.formula

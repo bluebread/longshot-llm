@@ -1,4 +1,4 @@
-from ..formula import NormalFormFormula
+from .formula import NormalFormFormula
 from ..error import LongshotError
 from ..literals import Literals
 from pydantic import BaseModel, ConfigDict, Field

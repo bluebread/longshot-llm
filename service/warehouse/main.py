@@ -2,46 +2,24 @@
 FastAPI application for the Warehouse microservice.
 """
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query
 from pymongo import MongoClient
-from redis import Redis
-from neo4j import GraphDatabase
 from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
 import logging
+from typing import Optional
 
-from longshot.models import (
-    LikelyIsomorphicResponse,
-    LikelyIsomorphicRequest,
+from longshot.service.api_models import (
     QueryTrajectoryInfoResponse,
     CreateTrajectoryRequest,
     UpdateTrajectoryRequest,
     TrajectoryResponse,
-    QueryEvolutionGraphNode,
-    CreateNodeRequest,
-    UpdateNodeRequest,
-    NodeResponse,
-    QueryFormulaDefinitionResponse,
-    CreateNewPathRequest,
-    DownloadNodesResponse,
-    DownloadHyperNodesResponse,
-    EvolutionGraphDatasetResponse,
-    EvolutionGraphEdge,
     TrajectoryDatasetResponse,
     OptimizedTrajectoryInfo,
-    SuccessResponse
+    SuccessResponse,
+    PurgeResponse
 )
-
-# Add purge response models
-from pydantic import BaseModel
-from datetime import datetime
-
-class PurgeResponse(BaseModel):
-    success: bool
-    deleted_count: int
-    message: str
-    timestamp: datetime = datetime.now()
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -54,102 +32,35 @@ logger = logging.getLogger(__name__)
 mongo_client = MongoClient("mongodb://haowei:bread861122@mongo-bread:27017")
 mongodb = mongo_client["LongshotWarehouse"]
 
-redis_config = {
-    "host": "redis-bread",
-    "port": 6379,
-    "username": "default",
-    "password": "bread861122",
-    "decode_responses": True
-}
-isohash_table = Redis(db=0, **redis_config)
-
-neo4j_config = {
-    "uri": "neo4j://neo4j-bread:7687",
-    "auth": ("neo4j", "bread861122"),
-}
-neo4j_driver = GraphDatabase.driver(**neo4j_config)
-
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
     # Check availability of external services
     try:
         # Test MongoDB connection
         mongodb.command("ping")
-        # Test Redis connection
-        isohash_table.ping()
-        # Test Neo4j connection
-        neo4j_driver.verify_connectivity()
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="MongoDB connection failed")
     
     # Initialize MongoDB resources
     try:
         # TODO: add validator
         mongodb.create_collection("TrajectoryTable", check_exists=True)
+        # TODO: Add index on timestamp field for efficient range queries
+        mongodb["TrajectoryTable"].create_index("timestamp")
     except Exception:
         pass
-
-    # Initialize Neo4j resources
-    init_statements = [
-        """
-        CREATE CONSTRAINT formula_id_unique IF NOT EXISTS
-        FOR (n:FormulaNode)
-        REQUIRE n.node_id IS UNIQUE
-        """,
-        """
-        CREATE INDEX num_vars_index IF NOT EXISTS
-        FOR (n:FormulaNode)
-        ON (n.num_vars)
-        """,
-        """
-        CREATE INDEX width_index IF NOT EXISTS
-        FOR (n:FormulaNode)
-        ON (n.width)
-        """,
-        """
-        CREATE INDEX size_index IF NOT EXISTS
-        FOR (n:FormulaNode)
-        ON (n.size)
-        """
-    ]
-
-    with neo4j_driver.session() as session:
-        for stmt in init_statements:
-            session.run(stmt)
     
     # Yield control to the application
     yield
     
     # Cleanup resources
     mongo_client.close()
-    isohash_table.close()
-    neo4j_driver.close()
     
 app = FastAPI(
     title="Warehouse API",
     lifespan=lifespan,
 )
 trajectory_table = mongodb["TrajectoryTable"]
-
-# Likely isomorphic formulas endpoints
-@app.get("/formula/likely_isomorphic", response_model=LikelyIsomorphicResponse)
-async def get_likely_isomorphic(wl_hash: str = Query(..., description="Weisfeiler-Lehman hash")):
-    """Retrieve IDs of likely isomorphic formulas."""
-    formula_ids = list(isohash_table.smembers(wl_hash))
-    return LikelyIsomorphicResponse(wl_hash=wl_hash, isomorphic_ids=formula_ids)
-
-
-@app.post("/formula/likely_isomorphic", response_model=SuccessResponse, status_code=201)
-async def add_likely_isomorphic(request: LikelyIsomorphicRequest):
-    """Add a likely isomorphic formula."""
-    isohash_table.sadd(request.wl_hash, request.node_id)
-    return SuccessResponse(message="Likely isomorphic formula added successfully")
-
-@app.delete("/formula/likely_isomorphic", response_model=SuccessResponse)
-async def delete_likely_isomorphic(wl_hash: str = Query(..., description="Weisfeiler-Lehman hash")):
-    """Delete a likely isomorphic formula."""
-    isohash_table.delete(wl_hash)
-    return SuccessResponse(message="Likely isomorphic formula deleted successfully")
 
 # Trajectory endpoints
 @app.get("/trajectory", response_model=QueryTrajectoryInfoResponse)
@@ -172,33 +83,33 @@ async def get_trajectory(traj_id: str = Query(..., description="Trajectory UUID"
             max_width=trajectory_doc["max_width"],
             max_size=trajectory_doc["max_size"]
         )
-    raise HTTPException(status_code=404, detail="Trajectory not found")
+    else:
+        raise HTTPException(status_code=404, detail="Trajectory not found")
 
 
 @app.post("/trajectory", response_model=TrajectoryResponse, status_code=201)
 async def create_trajectory(trajectory: CreateTrajectoryRequest):
-    """Add a new trajectory."""
-    new_id = str(uuid.uuid4())
+    """Add a new trajectory with V2 schema including cur_avgQ per step."""
+    trajectory_id = str(uuid.uuid4())
     
-    # Store steps as lists in MongoDB for better BSON efficiency
-    # Lists are more efficient than dicts in BSON encoding
+    # Convert steps from tuples (API format) to lists (MongoDB storage)
+    # Each step: (token_type, token_literals, cur_avgQ)
     steps_as_lists = [
-        [step[0], step[1], step[2]]  # [token_type, token_literals, cur_avgQ]
+        list(step) if isinstance(step, tuple) else step
         for step in trajectory.steps
     ]
     
     trajectory_doc = {
-        "_id": new_id,
-        "timestamp": datetime.now().astimezone(),
-        "steps": steps_as_lists,
+        "_id": trajectory_id,
+        "timestamp": datetime.now(),
+        "steps": steps_as_lists,  # Store as lists for BSON efficiency
         "max_num_vars": trajectory.max_num_vars,
         "max_width": trajectory.max_width,
         "max_size": trajectory.max_size
     }
-    
     trajectory_table.insert_one(trajectory_doc)
     
-    return TrajectoryResponse(traj_id=trajectory_doc["_id"])
+    return TrajectoryResponse(traj_id=trajectory_id)
 
 
 @app.put("/trajectory", response_model=SuccessResponse)
@@ -206,23 +117,21 @@ async def update_trajectory(trajectory: UpdateTrajectoryRequest):
     """Update an existing trajectory."""
     trajectory_id = trajectory.traj_id
     
-    if not trajectory.steps:
-        raise HTTPException(status_code=400, detail="No update data provided")
-
-    # Store steps as lists in MongoDB for better BSON efficiency
+    # Convert steps from tuples (API format) to lists (MongoDB storage)
     steps_as_lists = [
-        [step[0], step[1], step[2]]  # [token_type, token_literals, cur_avgQ]
+        list(step) if isinstance(step, tuple) else step
         for step in trajectory.steps
     ]
-        
+    
+    update_doc = {"steps": steps_as_lists}
     result = trajectory_table.update_one(
-        {"_id": trajectory_id},
-        {"$set": {"steps": steps_as_lists}}
+        {"_id": trajectory_id}, 
+        {"$set": update_doc}
     )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Trajectory not found")
-    
+
     return SuccessResponse(message="Trajectory updated successfully")
 
 
@@ -230,397 +139,45 @@ async def update_trajectory(trajectory: UpdateTrajectoryRequest):
 async def delete_trajectory(traj_id: str = Query(..., description="Trajectory UUID")):
     """Delete a trajectory."""
     result = trajectory_table.delete_one({"_id": traj_id})
-    
+
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Trajectory not found")
-        
+
     return SuccessResponse(message="Trajectory deleted successfully")
 
 
-# Evolution graph node endpoints
-@app.get("/evolution_graph/node", response_model=QueryEvolutionGraphNode)
-async def get_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
-    """Retrieve a node in the evolution graph by its ID with integrated formula data."""
-    query = """
-    MATCH   (n:FormulaNode {node_id: $node_id})
-    OPTIONAL MATCH (n)--(m:FormulaNode)
-    WITH    n, 
-            sum(CASE WHEN m.avgQ < n.avgQ THEN 1 ELSE 0 END) AS in_degree,
-            sum(CASE WHEN m.avgQ > n.avgQ THEN 1 ELSE 0 END) AS out_degree
-    RETURN  n.node_id AS node_id,
-            n.avgQ AS avgQ,
-            n.num_vars AS num_vars,
-            n.width AS width,
-            n.size AS size,
-            n.wl_hash AS wl_hash,
-            n.isodegrees AS isodegrees,
-            datetime(n.timestamp) AS timestamp,
-            n.traj_id AS traj_id,
-            n.traj_slice AS traj_slice,
-            in_degree,
-            out_degree
-    """
-    with neo4j_driver.session() as session:
-        result = session.run(query, node_id=node_id).single()
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Node not found")
-    
-    data = result.data()
-    # Convert Neo4j DateTime to Python datetime
-    if data["timestamp"] and hasattr(data["timestamp"], "to_native"):
-        data["timestamp"] = data["timestamp"].to_native()
-    
-    # Unflatten isodegrees from Neo4j storage (reconstruct nested structure)
-    if data.get("isodegrees") is not None and isinstance(data["isodegrees"], list):
-        # Convert flat list back to list of pairs
-        flat = data["isodegrees"]
-        if len(flat) % 2 == 0:  # Should be even number of elements
-            data["isodegrees"] = [[flat[i], flat[i+1]] for i in range(0, len(flat), 2)]
-    
-    return QueryEvolutionGraphNode(**data)
-
-
-@app.post("/evolution_graph/node", response_model=NodeResponse, status_code=201)
-async def create_evolution_graph_node(node: CreateNodeRequest):
-    """Add a new node to the evolution graph with integrated formula data."""
-    # Generate unique node_id using uuid4
-    node_id = str(uuid.uuid4())
-    
-    query = """
-    CREATE (n:FormulaNode {node_id: $node_id})
-    SET n.avgQ = $avgQ,
-        n.num_vars = $num_vars,
-        n.width = $width,
-        n.size = $size,
-        n.wl_hash = $wl_hash,
-        n.isodegrees = $isodegrees,
-        n.traj_id = $traj_id,
-        n.traj_slice = $traj_slice,
-        n.timestamp = $timestamp
-    RETURN n.node_id AS node_id
-    """
-    node_data = node.model_dump()
-    node_data["node_id"] = node_id
-    node_data["timestamp"] = datetime.now()
-    
-    # Flatten isodegrees for Neo4j storage (Neo4j can't store nested arrays)
-    if node_data.get("isodegrees") is not None:
-        # Flatten nested list to single-level list
-        flattened = []
-        for item in node_data["isodegrees"]:
-            if isinstance(item, (list, tuple)):
-                flattened.extend(item)
-            else:
-                flattened.append(item)
-        node_data["isodegrees"] = flattened
-    
-    with neo4j_driver.session() as session:
-        result = session.run(query, **node_data).single()
-
-    if not result:
-        raise HTTPException(status_code=500, detail="Failed to create node")
-
-    return NodeResponse(node_id=result["node_id"])
-
-
-@app.put("/evolution_graph/node", response_model=SuccessResponse)
-async def update_evolution_graph_node(node: UpdateNodeRequest):
-    """Update an existing node with integrated formula data."""
-    node_id = node.node_id
-    update_data = node.model_dump(exclude_unset=True, exclude={"node_id"})
-
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No update data provided")
-
-    set_clauses = [f"n.{key} = ${key}" for key in update_data.keys()]
-
-    query = f"""
-    MATCH   (n:FormulaNode {{node_id: $node_id}})
-    SET     {', '.join(set_clauses)}
-    RETURN  n
-    """
-    
-    params = {"node_id": node_id, **update_data}
-
-    with neo4j_driver.session() as session:
-        result = session.run(query, params).single()
-
-    if not result:
-        raise HTTPException(status_code=404, detail="Node not found")
-
-    return SuccessResponse(message="Node updated successfully")
-
-
-@app.delete("/evolution_graph/node", response_model=SuccessResponse)
-async def delete_evolution_graph_node(node_id: str = Query(..., description="Node UUID")):
-    """Delete a node and its relationships."""
-    query = """
-    MATCH   (n:FormulaNode {node_id: $node_id})
-    WITH    n, n.node_id AS node_id
-    DETACH  DELETE n
-    RETURN  node_id
-    """
-    with neo4j_driver.session() as session:
-        result = session.run(query, node_id=node_id).single()
-
-    if not result:
-        raise HTTPException(status_code=404, detail="Node not found")
-
-    return SuccessResponse(message="Node deleted successfully")
-
-# High-level API endpoints
-@app.get("/formula/definition", response_model=QueryFormulaDefinitionResponse)
-async def get_formula_definition(node_id: str = Query(..., description="Node UUID")):
-    """Retrieve the full definition of a formula by its ID using trajectory reconstruction."""
-    # Get the formula node from Neo4j
-    query = """
-    MATCH (n:FormulaNode {node_id: $node_id})
-    RETURN n.traj_id AS traj_id, n.traj_slice AS traj_slice
-    """
-    
-    with neo4j_driver.session() as session:
-        result = session.run(query, node_id=node_id).single()
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Formula not found")
-    
-    traj_id = result["traj_id"]
-    traj_slice = result["traj_slice"]
-    
-    # Get the trajectory from MongoDB
-    trajectory_doc = trajectory_table.find_one({"_id": traj_id})
-    if not trajectory_doc:
-        # Return empty definition if trajectory not found
-        return QueryFormulaDefinitionResponse(node_id=node_id, definition=[])
-    
-    # Reconstruct the formula definition up to the specified slice
-    definition = set()
-    steps = trajectory_doc.get("steps", [])
-    
-    # Process steps up to and including the specified slice
-    for i, step in enumerate(steps):
-        if i > traj_slice:
-            break
-            
-        # Handle both dict and tuple formats for backward compatibility
-        if isinstance(step, dict):
-            ttype = step["token_type"]
-            literals = step["token_literals"]
-        else:  # tuple format
-            ttype = step[0]
-            literals = step[1]
-
-        if ttype == 0:  # ADD
-            definition.add(literals)
-        elif ttype == 1:  # DELETE
-            definition.discard(literals)
-        else:
-            raise HTTPException(status_code=500, detail=f"Unknown token type: {ttype}")
-
-    final_definition = list(definition)
-    return QueryFormulaDefinitionResponse(node_id=node_id, definition=final_definition)
-
-
-@app.post("/evolution_graph/path", response_model=SuccessResponse, status_code=201)
-async def create_new_path(request: CreateNewPathRequest):
-    """Create a new path in the evolution graph."""
-    query = """
-    WITH    $path AS nodes
-    UNWIND  range(0, size(nodes) - 2) AS i
-    MERGE   (n:FormulaNode {node_id: nodes[i]})
-    MERGE   (m:FormulaNode {node_id: nodes[i + 1]})
-    MERGE   (n)-[:EVOLVED_TO]->(m)
-    WITH    n, m
-    WHERE   n.avgQ IS NOT NULL AND m.avgQ IS NOT NULL AND n.avgQ = m.avgQ
-    MERGE   (n)-[:SAME_Q]->(m)
-    """
-    
-    with neo4j_driver.session() as session:
-        session.run(query, path=request.path)
-        
-    return SuccessResponse(message="Path created successfully")
-
-
-@app.get("/evolution_graph/download_nodes", response_model=DownloadNodesResponse)
-async def download_evolution_graph_nodes(
-    num_vars: int = Query(..., description="Number of variables in formula"),
-    width: int = Query(..., description="Width of formula"),
-    size_constraint: int | None = Query(None, description="Maximum size of formula"),
-):
-    """Download all nodes in the evolution graph."""
-    filters = ["n.num_vars = $num_vars", "n.width = $width"]
-    params = {"num_vars": num_vars, "width": width}
-
-    if size_constraint is not None:
-        filters.append("n.size <= $size_constraint")
-        params["size_constraint"] = size_constraint
-
-    filter_str = " AND ".join(filters)
-    query = f"""
-    MATCH   (n:FormulaNode)
-    WHERE   {filter_str}
-    OPTIONAL MATCH (n)--(m:FormulaNode)
-    WITH    n, 
-            sum(CASE WHEN m.avgQ < n.avgQ THEN 1 ELSE 0 END) AS in_degree,
-            sum(CASE WHEN m.avgQ > n.avgQ THEN 1 ELSE 0 END) AS out_degree
-    RETURN  n.node_id AS node_id,
-            n.avgQ AS avgQ,
-            n.num_vars AS num_vars,
-            n.width AS width,
-            n.size AS size,
-            n.wl_hash AS wl_hash,
-            n.isodegrees AS isodegrees,
-            datetime(n.timestamp) AS timestamp,
-            n.traj_id AS traj_id,
-            n.traj_slice AS traj_slice,
-            in_degree,
-            out_degree
-    """
-    
-    with neo4j_driver.session() as session:
-        response = session.run(query, **params)
-        records = list(response)
-
-    nodes = []
-    for record in records:
-        data = record.data()
-        # Convert Neo4j DateTime to Python datetime
-        if data["timestamp"] and hasattr(data["timestamp"], "to_native"):
-            data["timestamp"] = data["timestamp"].to_native()
-        
-        # Unflatten isodegrees from Neo4j storage (reconstruct nested structure)
-        if data.get("isodegrees") is not None and isinstance(data["isodegrees"], list):
-            # Convert flat list back to list of pairs
-            flat = data["isodegrees"]
-            if len(flat) % 2 == 0:  # Should be even number of elements
-                data["isodegrees"] = [[flat[i], flat[i+1]] for i in range(0, len(flat), 2)]
-        
-        nodes.append(data)
-
-    return {"nodes": nodes}
-
-@app.get("/evolution_graph/download_hypernodes", response_model=DownloadHyperNodesResponse)
-async def download_evolution_graph_hypernodes(
-    num_vars: int = Query(..., description="Number of variables in formula"),
-    width: int = Query(..., description="Width of formula"),
-    size_constraint: int | None = Query(None, description="Maximum size of formula"),
-):
-    """Download all hypernodes in the evolution graph."""
-    predicate = "node.num_vars = $num_vars AND node.width = $width"
-    params = {"num_vars": num_vars, "width": width}
-    
-    if size_constraint is not None:
-        predicate += " AND node.size <= $size_constraint"
-        params["size_constraint"] = size_constraint
-    
-    gid = uuid.uuid4()
-    gs = f"sameQ_{gid}"
-    
-    proj_cmd = """
-    CALL gds.graph.project(
-        $gs,
-        'FormulaNode',
-        { SAME_Q: { type: 'SAME_Q', orientation: 'UNDIRECTED' } }
-    )
-    YIELD graphName, nodeCount, relationshipCount
-    """
-    query = f"""
-    CALL    gds.wcc.stream($gs)
-    YIELD   nodeId, componentId
-    WITH    componentId, 
-            gds.util.asNode(nodeId) AS node
-    WHERE   {predicate}
-    WITH    componentId,
-            collect(node.node_id) AS nodes
-    WHERE   size(nodes) > 1
-    RETURN  componentId AS hnid,
-            nodes
-    """
-    drop_cmd = """
-    CALL    gds.graph.drop($gs)
-    YIELD   graphName, nodeCount, relationshipCount
-    """
-    
-    with neo4j_driver.session() as session:
-        session.run(proj_cmd, gs=gs)
-        response = session.run(query, gs=gs, **params)
-        records = list(response)
-        session.run(drop_cmd, gs=gs)
-
-    return { "hypernodes": [record.data() for record in records] }
-
-
-@app.get("/evolution_graph/dataset", response_model=EvolutionGraphDatasetResponse)
-async def get_evolution_graph_dataset(
-    required_fields: list[str] = Query(["node_id"], description="List of required node fields to include")
-):
-    """Get the complete evolution graph dataset including all nodes and edges with optional field filtering."""
-    
-    # Build field selection - node_id is always required
-    available_fields = {
-        "node_id": "n.node_id",
-        "avgQ": "n.avgQ", 
-        "num_vars": "n.num_vars",
-        "width": "n.width",
-        "size": "n.size",
-        "wl_hash": "n.wl_hash",
-        "timestamp": "datetime(n.timestamp)",
-        "traj_id": "n.traj_id",
-        "traj_slice": "n.traj_slice"
-    }
-    
-    # Ensure node_id is always included
-    if "node_id" not in required_fields:
-        required_fields = ["node_id"] + required_fields
-    
-    # Filter valid fields and build select clause
-    valid_fields = [field for field in required_fields if field in available_fields]
-    select_fields = [f"{available_fields[field]} AS {field}" for field in valid_fields]
-    select_clause = ", ".join(select_fields)
-    
-    # Query to get all nodes with selected fields
-    nodes_query = f"""
-    MATCH   (n:FormulaNode)
-    RETURN  {select_clause}
-    """
-    
-    # Query to get all edges
-    edges_query = """
-    MATCH (n:FormulaNode)-[r]->(m:FormulaNode)
-    RETURN n.node_id AS src, m.node_id AS dst, type(r) AS type
-    """
-    
-    with neo4j_driver.session() as session:
-        # Get nodes
-        nodes_response = session.run(nodes_query)
-        nodes_records = list(nodes_response)
-        
-        # Get edges
-        edges_response = session.run(edges_query)
-        edges_records = list(edges_response)
-    
-    # Process nodes
-    nodes = []
-    for record in nodes_records:
-        data = record.data()
-        # Convert Neo4j DateTime to Python datetime if present
-        if "timestamp" in data and data["timestamp"] and hasattr(data["timestamp"], "to_native"):
-            data["timestamp"] = data["timestamp"].to_native()
-        nodes.append(data)
-    
-    # Process edges
-    edges = [EvolutionGraphEdge(**record.data()) for record in edges_records]
-    
-    return EvolutionGraphDatasetResponse(nodes=nodes, edges=edges)
-
-
 @app.get("/trajectory/dataset", response_model=TrajectoryDatasetResponse)
-async def get_trajectory_dataset():
-    """Get the complete trajectory dataset with all trajectories using optimized tuple format."""
+async def get_trajectory_dataset(
+    num_vars: Optional[int] = Query(None, description="Filter trajectories by number of variables"),
+    width: Optional[int] = Query(None, description="Filter trajectories by width"),
+    since: Optional[datetime] = Query(None, description="Filter trajectories with timestamp after this date (ISO 8601 format)"),
+    until: Optional[datetime] = Query(None, description="Filter trajectories with timestamp before this date (ISO 8601 format)")
+):
+    """Get the complete trajectory dataset with all trajectories using optimized tuple format.
     
-    # Get all trajectories from MongoDB
-    trajectories_cursor = trajectory_table.find({})
+    TODO: Add an index on the timestamp field in MongoDB for efficient range queries.
+    """
+    
+    # Build filter query
+    filter_query = {}
+    
+    if num_vars is not None:
+        filter_query["max_num_vars"] = num_vars
+    
+    if width is not None:
+        filter_query["max_width"] = width
+    
+    # Add timestamp range filters
+    if since is not None or until is not None:
+        timestamp_filter = {}
+        if since is not None:
+            timestamp_filter["$gte"] = since
+        if until is not None:
+            timestamp_filter["$lte"] = until
+        filter_query["timestamp"] = timestamp_filter
+    
+    # Get filtered trajectories from MongoDB
+    trajectories_cursor = trajectory_table.find(filter_query)
     trajectories = []
     
     for trajectory_doc in trajectories_cursor:
@@ -645,6 +202,7 @@ async def get_trajectory_dataset():
     
     return TrajectoryDatasetResponse(trajectories=trajectories)
 
+
 # Database purge endpoints
 @app.delete("/trajectory/purge", response_model=PurgeResponse)
 async def purge_trajectories():
@@ -656,10 +214,8 @@ async def purge_trajectories():
         # Drop the entire trajectory collection
         trajectory_table.drop()
         
-        # Recreate the collection (empty)
+        # Recreate the collection to ensure it exists for future operations
         mongodb.create_collection("TrajectoryTable")
-        
-        logger.info(f"Purged {count_before} trajectories from MongoDB")
         
         return PurgeResponse(
             success=True,
@@ -667,45 +223,17 @@ async def purge_trajectories():
             message=f"Successfully purged {count_before} trajectories from MongoDB",
             timestamp=datetime.now()
         )
-        
     except Exception as e:
         logger.error(f"Failed to purge trajectories: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to purge trajectories: {str(e)}")
-
-@app.delete("/formula/purge", response_model=PurgeResponse) 
-async def purge_formulas():
-    """Completely purge all formula data from Neo4j and Redis."""
-    try:
-        # Delete all FormulaNode labeled nodes from Neo4j and count them
-        with neo4j_driver.session() as session:
-            delete_result = session.run("MATCH (n:FormulaNode) DETACH DELETE n RETURN count(n) as deleted").single()
-            nodes_deleted = delete_result["deleted"] if delete_result else 0
-        
-        # Count Redis keys before deletion
-        redis_keys_before = isohash_table.dbsize()
-        
-        # Clear all Redis keys (isomorphism cache)
-        isohash_table.flushdb()
-        
-        total_deleted = nodes_deleted + redis_keys_before
-        
-        logger.info(f"Purged {nodes_deleted} nodes from Neo4j and {redis_keys_before} keys from Redis")
-        
-        return PurgeResponse(
-            success=True,
-            deleted_count=total_deleted,
-            message=f"Successfully purged {nodes_deleted} nodes from Neo4j and {redis_keys_before} keys from Redis",
-            timestamp=datetime.now()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to purge trajectories: {str(e)}"
         )
-        
-    except Exception as e:
-        logger.error(f"Failed to purge formulas: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to purge formulas: {str(e)}")
 
-# Health check endpoint
+
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Check the health status of the warehouse service."""
     return {"status": "healthy"}
 
 

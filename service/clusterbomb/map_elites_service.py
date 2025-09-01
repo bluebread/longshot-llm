@@ -40,7 +40,6 @@ class MAPElitesService:
                 - cell_density: Maximum elites per archive cell
                 - num_vars: Number of boolean variables in formulas
                 - width: Maximum formula width constraint
-                - size: Optional maximum formula size constraint
                 - enable_sync: Whether to sync with other instances via warehouse
                 - And other algorithm configuration parameters
         
@@ -61,8 +60,7 @@ class MAPElitesService:
         # Initialize trajectory generator
         self.trajectory_generator = TrajectoryGenerator({
             "num_vars": config.num_vars,
-            "width": config.width,
-            "size": config.size
+            "width": config.width
         })
         
         # Track state
@@ -224,7 +222,6 @@ class MAPElitesService:
         Constraints checked:
             - Number of variables used <= config.num_vars
             - Formula width <= config.width
-            - Formula size <= config.size (if specified)
             - Formula must be non-empty (at least one gate)
         """
         # TODO: validate trajectories in other places instead of here
@@ -421,7 +418,6 @@ class MAPElitesService:
                     - width: Width constraint
                     - num_trajectories: Number of mutations to generate
                     - num_steps: Steps per mutation
-                    - size: Optional size constraint
         
         Returns:
             List of trajectory dictionaries with generated mutations
@@ -440,8 +436,7 @@ class MAPElitesService:
             num_trajectories=config_dict["num_trajectories"],
             steps_per_trajectory=config_dict["num_steps"],
             prefix_traj=prefix_traj,
-            early_stop=True,
-            size=config_dict.get("size")
+            early_stop=True
         )
     
     async def mutate_elites(self, selected_elites: List[Tuple[tuple, Elite]]) -> List[Dict]:
@@ -484,8 +479,7 @@ class MAPElitesService:
             "num_vars": self.config.num_vars,
             "width": self.config.width,
             "num_trajectories": self.config.num_trajectories,
-            "num_steps": self.config.num_steps,
-            "size": self.config.size
+            "num_steps": self.config.num_steps
         }
         
         for _, elite in selected_elites:
@@ -623,7 +617,7 @@ class MAPElitesService:
         self.log(f"Configuration:")
         self.log(f"  - Iterations: {self.config.num_iterations}")
         self.log(f"  - Cell density: {self.config.cell_density}")
-        self.log(f"  - Formula space: {self.config.num_vars} vars, width {self.config.width}, size {self.config.size}")
+        self.log(f"  - Formula space: {self.config.num_vars} vars, width {self.config.width}")
         self.log(f"  - Mutation: {self.config.num_trajectories} trajectories of {self.config.num_steps} steps")
         self.log(f"  - Selection strategy: {self.config.elite_selection_strategy}")
         self.log(f"  - Sync enabled: {self.config.enable_sync}")
@@ -703,7 +697,6 @@ class MAPElitesService:
             "cell_density": self.config.cell_density,
             "num_vars": self.config.num_vars,
             "width": self.config.width,
-            "size": self.config.size,
             "num_steps": self.config.num_steps,
             "num_trajectories": self.config.num_trajectories,
             "batch_size": self.config.batch_size,
@@ -756,7 +749,6 @@ class MAPElitesService:
             config={
                 "num_vars": self.config.num_vars,
                 "width": self.config.width,
-                "size": self.config.size,
                 "enable_sync": self.config.enable_sync
             }
         )

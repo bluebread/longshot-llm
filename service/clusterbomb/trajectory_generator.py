@@ -8,7 +8,7 @@ from longshot.literals import FormulaType
 from longshot.formula import FormulaRewardModel
 from longshot.utils import (
     parse_formula_definition,
-    generate_random_token,
+    generate_uniform_token,
     parse_trajectory_to_definition,
     parse_gate_integer_representation
 )
@@ -27,11 +27,15 @@ def run_mutations_sync(
     steps_per_trajectory: int,
     prefix_traj: List[Tuple[int, int, float]],
     early_stop: bool = True,
-    size: Optional[int] = None,
     seed: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
     Run trajectory mutations synchronously (for use in multiprocessing).
+    
+    Uses generate_uniform_token for smart token generation that ensures:
+    - ADD tokens only for gates not in the formula
+    - DELETE tokens only for gates already in the formula
+    - Uniform sampling across all possible valid operations
     
     Args:
         num_vars: Number of variables in formulas
@@ -40,7 +44,6 @@ def run_mutations_sync(
         steps_per_trajectory: Steps per trajectory
         prefix_traj: Prefix trajectory to start from
         early_stop: Stop when avgQ reaches 0
-        size: Optional size constraint
         seed: Random seed for reproducibility
     
     Returns:
@@ -78,7 +81,6 @@ def run_mutations_sync(
             game = FormulaRewardModel(
                 initial_formula,
                 width=width,
-                size=size,
                 penalty=-1.0
             )
             
@@ -87,24 +89,31 @@ def run_mutations_sync(
             total_steps = 0
             
             for step_idx in range(steps_per_trajectory):
-                # Generate random token
-                token = generate_random_token(
-                    game.formula,
-                    width,
-                    size,
-                    rng
-                )
+                # Generate uniform token that's aware of current formula state
+                # This ensures valid ADD/DELETE operations
+                try:
+                    current_gates = game.gates  # Get current gates from the game
+                    token = generate_uniform_token(
+                        num_vars,
+                        width,
+                        current_gates,
+                        rng
+                    )
+                except ValueError:
+                    break  # No valid token could be generated
                 
                 if token is None:
                     break  # No valid moves
                 
-                # Take action
-                reward = game.take_action(token)
-                avgQ = game.avgQ
+                # Take action using step method (not take_action)
+                game.step(token)  # Returns reward but we don't need it
+                avgQ = game.cur_avgQ  # Use cur_avgQ property (not avgQ)
                 
-                # Record step
-                token_type = token.token_type
-                litint = token.litint
+                # Record step - convert GateToken to our trajectory format
+                # token.type is 'ADD' or 'DEL', we need 0 or 1
+                token_type = 0 if token.type == 'ADD' else 1
+                # Convert Literals to integer representation
+                litint = int(token.literals)
                 trajectory_steps.append((token_type, litint, avgQ))
                 
                 total_steps += 1
@@ -119,7 +128,6 @@ def run_mutations_sync(
                 "steps": trajectory_steps,
                 "num_vars": num_vars,
                 "width": width,
-                "size": size,
                 "timestamp": datetime.now().isoformat(),
                 "prefix_length": len(prefix_traj)
             }
@@ -141,11 +149,10 @@ class TrajectoryGenerator:
         Initialize trajectory generator.
         
         Args:
-            config: Configuration dictionary with num_vars, width, size
+            config: Configuration dictionary with num_vars, width
         """
         self.num_vars = config.get("num_vars", 4)
         self.width = config.get("width", 3)
-        self.size = config.get("size", None)
         self.rng = random.Random()
     
     def generate_initial_trajectories(
@@ -169,8 +176,7 @@ class TrajectoryGenerator:
             num_trajectories=num_trajectories,
             steps_per_trajectory=steps_per_trajectory,
             prefix_traj=[],  # Start from empty
-            early_stop=True,
-            size=self.size
+            early_stop=True
         )
     
     def mutate_from_prefix(
@@ -196,8 +202,7 @@ class TrajectoryGenerator:
             num_trajectories=num_trajectories,
             steps_per_trajectory=steps_per_trajectory,
             prefix_traj=prefix_traj,
-            early_stop=True,
-            size=self.size
+            early_stop=True
         )
     
     def validate_trajectory_prefix(
@@ -246,8 +251,5 @@ class TrajectoryGenerator:
             current_width <= self.width and
             used_variables.bit_count() <= self.num_vars
         )
-        
-        if self.size is not None:
-            valid = valid and len(formula_gates) <= self.size
         
         return valid

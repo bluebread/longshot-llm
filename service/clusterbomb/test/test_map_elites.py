@@ -178,21 +178,18 @@ class TestTrajectoryGenerator:
         """Test TrajectoryGenerator initialization"""
         config = {
             "num_vars": 4,
-            "width": 3,
-            "size": 5
+            "width": 3
         }
         generator = TrajectoryGenerator(config)
         
         assert generator.num_vars == 4
         assert generator.width == 3
-        assert generator.size == 5
     
     def test_validate_trajectory_prefix(self):
         """Test trajectory prefix validation"""
         generator = TrajectoryGenerator({
             "num_vars": 4,
-            "width": 3,
-            "size": 5
+            "width": 3
         })
         
         # Valid prefix
@@ -247,7 +244,6 @@ class TestMAPElitesService:
             cell_density=1,
             num_vars=4,
             width=3,
-            size=5,
             num_steps=5,
             num_trajectories=2,
             batch_size=2,
@@ -374,7 +370,6 @@ class TestIntegration:
             cell_density=1,
             num_vars=3,
             width=2,
-            size=3,
             num_steps=3,
             num_trajectories=1,
             batch_size=1,

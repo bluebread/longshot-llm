@@ -48,7 +48,7 @@ async def run_map_elites(config: MAPElitesConfig):
     logger.info(f"Starting autonomous MAP-Elites execution")
     logger.info(f"Configuration:")
     logger.info(f"  - Iterations: {config.num_iterations}")
-    logger.info(f"  - Formula space: {config.num_vars} vars, width {config.width}, size {config.size}")
+    logger.info(f"  - Formula space: {config.num_vars} vars, width {config.width}")
     logger.info(f"  - Synchronization: {'Enabled' if config.enable_sync else 'Disabled'}")
     if config.enable_sync:
         logger.info(f"  - Sync interval: every {config.sync_interval} iterations")
@@ -94,8 +94,6 @@ def main():
                        help="Number of boolean variables (default: 4)")
     parser.add_argument("--width", type=int, default=3,
                        help="Maximum formula width (default: 3)")
-    parser.add_argument("--size", type=int, default=None,
-                       help="Maximum formula size (optional)")
     
     # Mutation parameters
     parser.add_argument("--num-steps", type=int, default=10,
@@ -148,7 +146,6 @@ def main():
         cell_density=args.cell_density,
         num_vars=args.num_vars,
         width=args.width,
-        size=args.size,
         num_steps=args.num_steps,
         num_trajectories=args.num_trajectories,
         num_workers=args.num_workers,

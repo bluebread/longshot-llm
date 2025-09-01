@@ -104,3 +104,17 @@ class FormulaRewardModel:
             float: The current average-case deterministic query complexity.
         """
         return self._cur_avgQ
+    
+    @property
+    def gates(self) -> set:
+        """
+        Returns the current set of gates in the formula.
+        
+        Returns:
+            set: Set of gate integers currently in the formula.
+        """
+        # Convert the formula's gates to a set of integers
+        return {int(lit) for lit in self._cur_f.gates}
+
+
+    

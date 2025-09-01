@@ -5,6 +5,108 @@ Autonomous MAP-Elites runner for clusterbomb service.
 This script runs MAP-Elites algorithm as a standalone job executor that
 continuously collects trajectories and stores them in the warehouse.
 No public API endpoints - runs as an autonomous container.
+
+Usage:
+    python run_map_elites.py [OPTIONS]
+
+Basic Examples:
+    # Run with default settings (100 iterations, 4 vars, width 3)
+    python run_map_elites.py
+    
+    # Run with custom iterations and formula space
+    python run_map_elites.py --iterations 500 --num-vars 5 --width 4
+    
+    # Run with synchronization enabled (for multi-instance deployment)
+    python run_map_elites.py --enable-sync --sync-interval 10
+    
+    # Connect to remote warehouse
+    python run_map_elites.py --warehouse-host warehouse.example.com --warehouse-port 8000
+    
+    # Run with increased parallelization
+    python run_map_elites.py --num-workers 16 --batch-size 20
+
+Core Algorithm Parameters:
+    --iterations N        Number of MAP-Elites iterations (default: 100)
+    --cell-density N      Maximum elites per cell (default: 1)
+    
+Formula Space Parameters:
+    --num-vars N          Number of boolean variables (default: 4)
+    --width N             Maximum formula width (default: 3)
+    
+Mutation Parameters:
+    --num-steps N         Steps per trajectory mutation (default: 10)
+    --num-trajectories N  Trajectories per mutation (default: 5)
+    
+Parallelization:
+    --num-workers N       Number of parallel workers (default: all CPU cores)
+    --batch-size N        Number of elites to mutate per iteration (default: 10)
+    
+Algorithm Strategy:
+    --strategy TYPE       Elite selection strategy: uniform, curiosity, performance (default: uniform)
+    --init-strategy TYPE  Initialization: warehouse, random (default: warehouse)
+    
+Synchronization (for distributed runs):
+    --enable-sync         Enable synchronization with other instances via warehouse
+    --sync-interval N     Iterations between syncs when enabled (default: 10)
+    
+Warehouse Connection:
+    --warehouse-host HOST Warehouse service host (default: localhost)
+    --warehouse-port PORT Warehouse service port (default: 8000)
+    
+Output Options:
+    --output FILE         Archive output file (default: map_elites_archive.json)
+    --quiet               Reduce output verbosity
+    --no-save             Don't save archive to file
+
+Advanced Examples:
+    # High-performance configuration for large formula spaces
+    python run_map_elites.py \\
+        --iterations 1000 \\
+        --num-vars 6 \\
+        --width 4 \\
+        --num-workers 32 \\
+        --batch-size 50 \\
+        --num-trajectories 10 \\
+        --strategy performance
+    
+    # Distributed multi-instance deployment
+    python run_map_elites.py \\
+        --enable-sync \\
+        --sync-interval 5 \\
+        --warehouse-host central-warehouse.cluster.local \\
+        --init-strategy warehouse \\
+        --cell-density 3
+    
+    # Exploration-focused configuration
+    python run_map_elites.py \\
+        --strategy curiosity \\
+        --num-steps 20 \\
+        --num-trajectories 8 \\
+        --batch-size 15 \\
+        --output exploration_archive.json
+
+Docker Deployment:
+    # Build and run as container
+    docker build -t clusterbomb-map-elites .
+    docker run --network host clusterbomb-map-elites \\
+        --warehouse-host warehouse \\
+        --iterations 500
+
+Environment Variables:
+    WAREHOUSE_HOST        Alternative to --warehouse-host
+    WAREHOUSE_PORT        Alternative to --warehouse-port
+    MAP_ELITES_WORKERS    Alternative to --num-workers
+
+Signal Handling:
+    - SIGINT (Ctrl+C): Graceful shutdown, saves current archive
+    - SIGTERM: Graceful shutdown for container orchestration
+
+Notes:
+    - The algorithm will automatically initialize from existing warehouse trajectories
+    - Archive is saved periodically and on shutdown (unless --no-save)
+    - Progress is logged to stdout with configurable verbosity
+    - Multi-instance synchronization allows distributed exploration
+    - Each instance maintains its own archive while sharing discoveries
 """
 
 import asyncio
@@ -131,14 +233,18 @@ def main():
     
     # Output options
     parser.add_argument("--output", type=str, 
-                       default="map_elites_archive.json",
-                       help="Archive output file (default: map_elites_archive.json)")
+                       default=None,
+                       help="Archive output file (default: output/archive-n{N}w{W}.json based on num_vars and width)")
     parser.add_argument("--quiet", action="store_true",
                        help="Reduce output verbosity")
     parser.add_argument("--no-save", action="store_true",
                        help="Don't save archive to file")
     
     args = parser.parse_args()
+    
+    # Generate default output filename if not specified
+    if args.output is None:
+        args.output = f"output/archive-n{args.num_vars}w{args.width}.json"
     
     # Create configuration
     config = MAPElitesConfig(

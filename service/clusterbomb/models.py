@@ -40,7 +40,7 @@ class MAPElitesConfig:
     # Output
     verbose: bool = True
     save_archive: bool = True
-    archive_path: str = "map_elites_archive.json"
+    archive_path: str = "output/map_elites_archive.json"
 
 
 @dataclass

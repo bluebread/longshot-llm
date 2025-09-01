@@ -120,10 +120,17 @@ class MAPElitesService:
                 self.config.warehouse_port
             ) as warehouse:
                 # Get trajectories filtered by configuration
-                trajectories = await warehouse.get_trajectory_dataset(
+                dataset_response = await warehouse.get_trajectory_dataset(
                     num_vars=self.config.num_vars,
                     width=self.config.width
                 )
+                
+                # Extract trajectories from response
+                trajectories = []
+                if isinstance(dataset_response, dict):
+                    trajectories = dataset_response.get('trajectories', [])
+                elif isinstance(dataset_response, list):
+                    trajectories = dataset_response
                 
                 # TODO: validate trajectories here
                 
@@ -133,6 +140,10 @@ class MAPElitesService:
                 else:
                     self.log(f"Processing {len(trajectories)} trajectories...")
                     for traj in trajectories:
+                        # Skip if trajectory is just an ID string
+                        if isinstance(traj, str):
+                            self.log(f"Warning: Skipping trajectory ID string: {traj}")
+                            continue
                         self.process_trajectory_for_archive(traj, is_initialization=True)
                 
                 stats = self.archive.get_statistics()
@@ -179,8 +190,9 @@ class MAPElitesService:
         success_count = 0
         for traj in initial_trajectories:
             try:
-                posted = await warehouse.post_trajectory(traj)
-                if posted:
+                # Post trajectory using keyword arguments (returns trajectory ID on success)
+                posted = await warehouse.post_trajectory(**traj)
+                if isinstance(posted, str):  # Returns trajectory ID string on success
                     success_count += 1
                 self.process_trajectory_for_archive(traj, is_initialization=True)
             except Exception as e:
@@ -310,11 +322,18 @@ class MAPElitesService:
         try:
             async with AsyncWarehouseClient(host, port) as warehouse:
                 # Get trajectories added since last sync
-                new_trajectories = await warehouse.get_trajectory_dataset(
+                dataset_response = await warehouse.get_trajectory_dataset(
                     num_vars=self.config.num_vars,
                     width=self.config.width,
                     since=self.last_sync_time
                 )
+                
+                # Extract trajectories from response
+                new_trajectories = []
+                if isinstance(dataset_response, dict):
+                    new_trajectories = dataset_response.get('trajectories', [])
+                elif isinstance(dataset_response, list):
+                    new_trajectories = dataset_response
                 
                 # TODO: validate trajectories here
                 
@@ -562,13 +581,13 @@ class MAPElitesService:
             # Post trajectories
             post_tasks = []
             for traj in new_trajectories:
-                post_tasks.append(warehouse.post_trajectory(traj))
+                post_tasks.append(warehouse.post_trajectory(**traj))
             
             # Execute posts concurrently
             results = await asyncio.gather(*post_tasks, return_exceptions=True)
             
-            # Count successes
-            successes = sum(1 for r in results if r is True)
+            # Count successes (post_trajectory returns trajectory ID string on success)
+            successes = sum(1 for r in results if isinstance(r, str) and not isinstance(r, Exception))
             if successes < len(new_trajectories):
                 self.log(f"Warning: Only {successes}/{len(new_trajectories)} trajectories posted successfully")
         
@@ -705,8 +724,12 @@ class MAPElitesService:
             "timestamp": datetime.now().isoformat()
         }
         
+        # Create output directory if it doesn't exist
+        import os
+        os.makedirs(os.path.dirname(self.config.archive_path), exist_ok=True)
+        
         with open(self.config.archive_path, 'w') as f:
-            json.dump(archive_data, f, indent=2)
+            json.dump(archive_data, f, separators=(',', ':'))  # Compact mode
     
     def get_status(self) -> MAPElitesStatus:
         """

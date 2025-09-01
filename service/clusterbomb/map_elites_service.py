@@ -523,6 +523,12 @@ class MAPElitesService:
             # The context manager automatically handles close() and join()
             mutation_results = pool.map(MAPElitesService.run_mutation_job, mutation_jobs)
         
+        # # DEBUG: Run jobs serially on single CPU
+        # mutation_results = []
+        # for job in mutation_jobs:
+        #     result = MAPElitesService.run_mutation_job(job)
+        #     mutation_results.append(result)
+        
         # Flatten results
         new_trajectories = []
         for trajectories in mutation_results:

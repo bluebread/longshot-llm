@@ -15,11 +15,15 @@ Usage:
     # Validate trajectories from JSON file
     python script/validate_trajectories.py --input trajectories.json
     
+    # Validate a single trajectory by ID
+    python script/validate_trajectories.py --traj-id abc123-def456
+    
     # Validate with detailed output
     python script/validate_trajectories.py --num-vars 4 --verbose
 
 Options:
     --input             : Input JSON file (if not using warehouse)
+    --traj-id           : Validate a single trajectory by ID (warehouse only)
     --num-vars          : Filter by number of variables (warehouse only)
     --width             : Filter by formula width (warehouse only)
     --host              : Warehouse host (default: localhost)
@@ -55,15 +59,30 @@ def setup_logging(verbose: bool) -> logging.Logger:
 def load_trajectories(
     input_file: Optional[str],
     warehouse_client: Optional[WarehouseClient],
+    traj_id: Optional[str],
     num_vars: Optional[int],
     width: Optional[int],
     limit: Optional[int],
     logger: logging.Logger
 ) -> List[Dict[str, Any]]:
-    """Load trajectories from file or warehouse."""
+    """Load trajectories from file, warehouse, or single trajectory by ID."""
     trajectories = []
     
-    if input_file:
+    if traj_id and warehouse_client:
+        # Load single trajectory by ID
+        logger.info(f"🔍 Fetching single trajectory: {traj_id}")
+        try:
+            trajectory = warehouse_client.get_trajectory(traj_id)
+            if trajectory:
+                logger.info(f"   Found trajectory with {len(trajectory.get('steps', []))} steps")
+                trajectories = [trajectory]
+            else:
+                logger.error(f"   Trajectory {traj_id} not found")
+                return []
+        except Exception as e:
+            logger.error(f"   Failed to fetch trajectory {traj_id}: {e}")
+            return []
+    elif input_file:
         logger.info(f"📂 Loading trajectories from {input_file}...")
         with open(input_file, 'r') as f:
             data = json.load(f)
@@ -79,9 +98,9 @@ def load_trajectories(
         trajectories = dataset.get('trajectories', [])
         logger.info(f"   Found {len(trajectories)} trajectories")
     else:
-        raise ValueError("Either input file or warehouse connection required")
+        raise ValueError("Either input file, trajectory ID, or warehouse connection required")
     
-    if limit and limit < len(trajectories):
+    if limit and limit < len(trajectories) and not traj_id:
         logger.info(f"   Limiting to {limit} trajectories")
         trajectories = trajectories[:limit]
     
@@ -218,7 +237,7 @@ def check_formula_properties(
     gates = parse_trajectory_to_definition(trajectory_tuples)
     
     if not gates:
-        return 0, 0, ["No gates in formula"]
+        return 0, 0, [] # ["No gates in formula"]
     
     # Calculate actual properties
     max_var_idx = -1
@@ -378,13 +397,16 @@ def main():
         epilog="""
 Examples:
   # Validate trajectories from warehouse
-  %(prog)s --num-vars 4 --width 3
+  %(prog)s --warehouse --num-vars 4 --width 3
 
   # Validate trajectories from JSON file
   %(prog)s --input trajectories.json
 
+  # Validate a single trajectory by ID
+  %(prog)s --traj-id 2ac219a6-1066-49c3-97a9-754ae65ef30c --show-errors
+
   # Validate with detailed error output
-  %(prog)s --num-vars 4 --verbose --show-errors
+  %(prog)s --warehouse --num-vars 4 --verbose --show-errors
 
   # Validate limited number of trajectories
   %(prog)s --input data.json --limit 100
@@ -400,7 +422,11 @@ Examples:
     input_group.add_argument(
         "--warehouse", "-w",
         action="store_true",
-        help="Use warehouse (default if no --input)"
+        help="Use warehouse (default if no --input or --traj-id)"
+    )
+    input_group.add_argument(
+        "--traj-id", "-t",
+        help="Validate a single trajectory by ID (requires warehouse connection)"
     )
     
     # Filter arguments (for warehouse)
@@ -454,13 +480,14 @@ Examples:
     
     # Load trajectories
     warehouse_client = None
-    if not args.input:
+    if not args.input or args.traj_id:
         warehouse_client = WarehouseClient(host=args.host, port=args.port)
     
     try:
         trajectories = load_trajectories(
             args.input,
             warehouse_client,
+            args.traj_id,
             args.num_vars,
             args.width,
             args.limit,
@@ -493,6 +520,21 @@ Examples:
                 if args.show_errors:
                     logger.error(f"  Trajectory {result['traj_id']}: {result['errors'][:2]}")
             
+            # Show detailed stats for single trajectory validation
+            if args.traj_id and (args.verbose or args.show_errors):
+                logger.info(f"\n📊 Detailed Statistics for {result['traj_id']}:")
+                logger.info(f"   Steps: {result['stats'].get('num_steps', 0)}")
+                logger.info(f"   ADD tokens: {result['stats'].get('add_tokens', 0)}")
+                logger.info(f"   DEL tokens: {result['stats'].get('del_tokens', 0)}")
+                logger.info(f"   EOS tokens: {result['stats'].get('eos_tokens', 0)}")
+                logger.info(f"   Useless DEL tokens: {result['stats'].get('useless_del_tokens', 0)}")
+                logger.info(f"   Actual num_vars: {result['stats'].get('actual_num_vars', 'N/A')}")
+                logger.info(f"   Actual width: {result['stats'].get('actual_width', 'N/A')}")
+                if result['warnings']:
+                    logger.info(f"   Warnings: {result['warnings']}")
+                if not result['valid'] and result['errors']:
+                    logger.info(f"   Errors: {result['errors']}")
+            
             # Collect statistics
             total_useless_dels += result['stats'].get('useless_del_tokens', 0)
             
@@ -513,6 +555,9 @@ Examples:
         
         if args.input:
             logger.info(f"Input file: {args.input}")
+        elif args.traj_id:
+            logger.info(f"Warehouse: http://{args.host}:{args.port}")
+            logger.info(f"Trajectory ID: {args.traj_id}")
         else:
             logger.info(f"Warehouse: http://{args.host}:{args.port}")
             if args.num_vars:

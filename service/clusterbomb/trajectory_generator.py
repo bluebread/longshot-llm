@@ -83,9 +83,10 @@ def run_mutations_sync(
                 penalty=-1.0
             )
             
-            # Collect trajectory
-            trajectory_steps = []
-            total_steps = 0
+            # Collect trajectory - start with deep copy of prefix trajectory
+            # IMPORTANT: Include prefix steps in the output trajectory since they represent
+            # the initial state of the formula that game was initialized with
+            trajectory_steps = [tuple(step) for step in prefix_traj]
             
             for step_idx in range(steps_per_trajectory):
                 # Generate uniform token that's aware of current formula state
@@ -114,8 +115,6 @@ def run_mutations_sync(
                 # Convert Literals to integer representation
                 litint = int(token.literals)
                 trajectory_steps.append((token_type, litint, avgQ))
-                
-                total_steps += 1
                 
                 # Early stopping
                 if early_stop and avgQ <= 0:

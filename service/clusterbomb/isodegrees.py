@@ -1,4 +1,4 @@
-from ...library.longshot.utils import parse_gate_integer_representation
+from longshot.utils import parse_gate_integer_representation
 
 class FormulaIsodegrees:
     """Extract isomorphism-invariant feature vector from boolean formulas.
@@ -21,6 +21,7 @@ class FormulaIsodegrees:
     Attributes:
         _posc: List of positive occurrence counts for each variable
         _negc: List of negative occurrence counts for each variable
+        _feature_cache: Cached feature tuple to avoid recomputation
     
     Example:
         Formula: (x1 ∧ ¬x2) ∨ (x1 ∧ x3) has counts:
@@ -43,6 +44,7 @@ class FormulaIsodegrees:
         self._posc = [0] * num_vars
         self._negc = [0] * num_vars
         self.gates = set(gates)
+        self._feature_cache = None  # Cache for computed feature
         
         for g in self.gates:
             ld = parse_gate_integer_representation(g).to_dict()
@@ -93,6 +95,7 @@ class FormulaIsodegrees:
             self._negc[i] += 1
             
         self.gates.add(gate)
+        self._feature_cache = None  # Invalidate cache
         
     def remove_gate(self, gate: int) -> None:
         """Remove a gate from the formula feature representation.
@@ -120,16 +123,19 @@ class FormulaIsodegrees:
             self._negc[i] -= 1
         
         self.gates.remove(gate)
+        self._feature_cache = None  # Invalidate cache
         
     @property
     def feature(self):
-        """Get the canonical feature tuple."""
-        return tuple(
-            sorted([
-                tuple(sorted(z)) 
-                for z in zip(self._posc, self._negc)
-            ])
-        )
+        """Get the canonical feature tuple with caching."""
+        if self._feature_cache is None:
+            self._feature_cache = tuple(
+                sorted([
+                    tuple(sorted(z)) 
+                    for z in zip(self._posc, self._negc)
+                ])
+            )
+        return self._feature_cache
         
     @property
     def num_vars(self):

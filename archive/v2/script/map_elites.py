@@ -3,7 +3,7 @@
 MAP-Elites Algorithm Implementation for Boolean Formula Optimization
 
 This script implements the MAP-Elites (Multi-dimensional Archive of Phenotypic Elites)
-algorithm adapted for optimizing boolean formulas in the gym-longshot framework.
+algorithm adapted for optimizing boolean formulas in the longshot-llm framework.
 """
 
 import random

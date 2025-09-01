@@ -40,7 +40,7 @@ from longshot.literals import Literals
 
 def create_output_directory() -> Path:
     """Create output directory for images and reports."""
-    output_dir = Path("/root/gym-longshot/output")
+    output_dir = Path("/root/longshot-llm/output")
     output_dir.mkdir(exist_ok=True)
     print(f"✓ Output directory ready: {output_dir}")
     return output_dir

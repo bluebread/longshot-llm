@@ -34,7 +34,7 @@ setup(
     version=__version__,
     author="bluebread",
     author_email="hotbread70127@gmail.com",
-    url="https://github.com/bluebread/gym-longshot",
+    url="https://github.com/bluebread/longshot-llm",
     description="A C++/Python library for boolean function",
     packages=find_packages(where="."),
     package_dir={"": "."},

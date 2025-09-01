@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Export Trajectories Script for gym-longshot
+Export Trajectories Script for longshot-llm
 
 This script directly connects to MongoDB and exports trajectory data to a JSON dataset format.
 Credentials are loaded from environment variables for security.

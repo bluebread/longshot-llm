@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Database Cleanup Script for gym-longshot
+Database Cleanup Script for longshot-llm
 
 This script provides a safe way to completely purge all data from the 
-gym-longshot databases (MongoDB, Neo4j, Redis) via the warehouse service API.
+longshot-llm databases (MongoDB, Neo4j, Redis) via the warehouse service API.
 
 DESTRUCTIVE OPERATION WARNING:
 This script will permanently delete ALL data from the databases.
@@ -164,7 +164,7 @@ def call_purge_endpoint(warehouse_url: str, endpoint: str, description: str,
 def main():
     """Main cleanup function."""
     parser = argparse.ArgumentParser(
-        description="Cleanup all gym-longshot databases",
+        description="Cleanup all longshot-llm databases",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )

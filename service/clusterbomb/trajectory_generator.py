@@ -4,8 +4,7 @@ Internal trajectory generator for MAP-Elites mutations.
 
 import random
 from typing import List, Dict, Any, Optional, Tuple
-from longshot.literals import FormulaType
-from longshot.formula import FormulaRewardModel
+from longshot.formula import FormulaRewardModel, FormulaType
 from longshot.utils import (
     parse_formula_definition,
     generate_uniform_token,

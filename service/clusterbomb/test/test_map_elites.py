@@ -204,18 +204,19 @@ class TestTrajectoryGenerator:
         assert generator.validate_trajectory_prefix(delete_prefix) == False
     
     @patch('trajectory_generator.FormulaRewardModel')
-    @patch('trajectory_generator.generate_random_token')
+    @patch('trajectory_generator.generate_uniform_token')
     def test_run_mutations_sync(self, mock_token, mock_model):
         """Test synchronous mutation execution"""
         # Setup mocks
         mock_game = MagicMock()
-        mock_game.avgQ = 0.5
-        mock_game.take_action.return_value = 0.1
+        mock_game.gates = {5, 12}  # Current gates in formula
+        mock_game.cur_avgQ = 0.5  # Use cur_avgQ property
+        mock_game.step.return_value = None  # step returns None
         mock_model.return_value = mock_game
         
         mock_token_obj = MagicMock()
-        mock_token_obj.token_type = 0
-        mock_token_obj.litint = 5
+        mock_token_obj.type = 'ADD'  # 'ADD' or 'DEL' for GateToken
+        mock_token_obj.literals = 5  # literals property, not litint
         mock_token.return_value = mock_token_obj
         
         # Run mutations

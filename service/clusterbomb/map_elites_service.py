@@ -15,9 +15,9 @@ import logging
 from longshot.service import AsyncWarehouseClient
 from longshot.utils import parse_gate_integer_representation
 
-from .models import MAPElitesConfig, MAPElitesArchive, Elite, MAPElitesStatus
-from .trajectory_generator import TrajectoryGenerator, run_mutations_sync
-from .isodegrees import FormulaIsodegrees
+from models import MAPElitesConfig, MAPElitesArchive, Elite, MAPElitesStatus
+from trajectory_generator import TrajectoryGenerator, run_mutations_sync
+from isodegrees import FormulaIsodegrees
 
 logger = logging.getLogger(__name__)
 

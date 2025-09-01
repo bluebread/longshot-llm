@@ -5,12 +5,11 @@ Quick test to verify trajectory generator fixes work correctly.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../library'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../service/clusterbomb'))
+# Add parent directory to path to import clusterbomb modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from trajectory_generator import run_mutations_sync
-from longshot.formula import FormulaRewardModel
-from longshot.literals import FormulaType
+from longshot.formula import FormulaRewardModel, FormulaType
 from longshot.utils import parse_formula_definition
 
 
@@ -20,7 +19,6 @@ def test_trajectory_generation():
     # Test parameters
     num_vars = 4
     width = 3
-    size = 5
     
     # Generate trajectories from empty formula
     trajectories = run_mutations_sync(
@@ -30,7 +28,6 @@ def test_trajectory_generation():
         steps_per_trajectory=10,
         prefix_traj=[],
         early_stop=True,
-        size=size,
         seed=42
     )
     
@@ -55,7 +52,6 @@ def test_trajectory_generation():
         steps_per_trajectory=5,
         prefix_traj=prefix,
         early_stop=True,
-        size=size,
         seed=43
     )
     
@@ -63,9 +59,8 @@ def test_trajectory_generation():
     print(f"Prefix length: {trajectories_with_prefix[0].get('prefix_length', 0)}")
     
     # Test that game.gates property works
-    from longshot.formula import NormalFormFormula
     formula = parse_formula_definition([], num_vars, FormulaType.Conjunctive)
-    game = FormulaRewardModel(formula, width=width, size=size)
+    game = FormulaRewardModel(formula, width=width)
     
     print(f"\nInitial gates in game: {game.gates}")
     assert isinstance(game.gates, set), "gates property should return a set"

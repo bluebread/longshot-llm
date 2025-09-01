@@ -18,7 +18,7 @@ class MAPElitesConfig:
     # Formula space parameters
     num_vars: int = 4
     width: int = 3
-    size: Optional[int] = None  # Optional size constraint
+    size: Optional[int] = None  # Optional size constraint # TODO: delete it
     
     # Mutation parameters
     num_steps: int = 10

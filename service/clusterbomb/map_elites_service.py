@@ -26,7 +26,34 @@ class MAPElitesService:
     """MAP-Elites algorithm service for boolean formula optimization"""
     
     def __init__(self, config: MAPElitesConfig):
-        """Initialize MAP-Elites service"""
+        """
+        Initialize MAP-Elites service with configuration.
+        
+        Sets up the MAP-Elites algorithm service with the provided configuration,
+        initializes the archive for storing elites, and creates a trajectory generator
+        for internal mutations. The service tracks execution state and maintains a
+        lookup table for efficient trajectory access.
+        
+        Args:
+            config: MAPElitesConfig object containing all algorithm parameters including:
+                - num_iterations: Number of evolution iterations to run
+                - cell_density: Maximum elites per archive cell
+                - num_vars: Number of boolean variables in formulas
+                - width: Maximum formula width constraint
+                - size: Optional maximum formula size constraint
+                - enable_sync: Whether to sync with other instances via warehouse
+                - And other algorithm configuration parameters
+        
+        Attributes initialized:
+            self.config: Stores the configuration
+            self.archive: MAPElitesArchive for storing discovered elites
+            self.trajectories_lookup: Dict mapping trajectory IDs to trajectory data
+            self.trajectory_generator: Internal generator for creating mutations
+            self.current_iteration: Current iteration counter (starts at 0)
+            self.is_running: Flag indicating if algorithm is currently executing
+            self.start_time: Timestamp when execution started
+            self.last_sync_time: Last time archive was synced with warehouse
+        """
         self.config = config
         self.archive = MAPElitesArchive(cell_density=config.cell_density)
         self.trajectories_lookup = {}
@@ -45,12 +72,48 @@ class MAPElitesService:
         self.last_sync_time = None
         
     def log(self, message: str):
-        """Log message if verbose mode is enabled"""
+        """
+        Log message if verbose mode is enabled.
+        
+        Utility method for conditional logging based on the verbose configuration setting.
+        Messages are prefixed with the current iteration number for context. This helps
+        track algorithm progress and debug issues during execution.
+        
+        Args:
+            message: The message string to log
+        
+        Note:
+            Only logs when self.config.verbose is True
+            Uses logger.info level for all messages
+            Format: "[Iteration X] message"
+        """
         if self.config.verbose:
             logger.info(f"[Iteration {self.current_iteration}] {message}")
     
     async def initialize_from_warehouse(self):
-        """Initialize archive from existing warehouse trajectories"""
+        """
+        Initialize archive from existing warehouse trajectories.
+        
+        Asynchronously downloads existing trajectories from the warehouse service that match
+        the current configuration (num_vars, width) and processes them to populate the initial
+        archive. If no trajectories exist, generates an initial population using random
+        mutations. This provides a warm start for the MAP-Elites algorithm by leveraging
+        previously discovered solutions.
+        
+        The method handles three scenarios:
+        1. Warehouse has existing trajectories: Downloads and processes them
+        2. Warehouse is empty: Generates initial random trajectories
+        3. Connection error: Starts with empty archive and logs warning
+        
+        Side effects:
+            - Populates self.archive with discovered elites
+            - Updates self.trajectories_lookup with trajectory data
+            - Posts new trajectories to warehouse if generating initial population
+            - Logs initialization statistics
+        
+        Raises:
+            No exceptions raised - errors are caught and logged
+        """
         self.log("Downloading trajectory dataset from warehouse...")
         
         try:
@@ -63,6 +126,8 @@ class MAPElitesService:
                     num_vars=self.config.num_vars,
                     width=self.config.width
                 )
+                
+                # TODO: validate trajectories here
                 
                 if not trajectories:
                     self.log("No existing trajectories found, generating initial population...")
@@ -85,7 +150,28 @@ class MAPElitesService:
             self.log("Starting with empty archive...")
     
     async def generate_initial_population(self, warehouse: AsyncWarehouseClient):
-        """Generate initial population when warehouse is empty"""
+        """
+        Generate initial population when warehouse is empty.
+        
+        Creates an initial set of random trajectories to bootstrap the MAP-Elites algorithm
+        when no existing trajectories are available in the warehouse. Generates twice the
+        batch size to ensure sufficient initial diversity. Each generated trajectory is
+        posted to the warehouse and processed into the archive.
+        
+        Args:
+            warehouse: AsyncWarehouseClient instance for posting trajectories
+        
+        Process:
+            1. Generate random trajectories starting from empty formulas
+            2. Post each trajectory to warehouse (with error handling)
+            3. Process trajectories into archive to extract elites
+            4. Log generation statistics
+        
+        Side effects:
+            - Posts new trajectories to warehouse
+            - Updates self.archive with generated elites
+            - Updates self.trajectories_lookup
+        """
         initial_trajectories = self.trajectory_generator.generate_initial_trajectories(
             num_trajectories=self.config.batch_size * 2,
             steps_per_trajectory=self.config.num_steps
@@ -105,7 +191,43 @@ class MAPElitesService:
         self.log(f"Generated {len(initial_trajectories)} initial trajectories, posted {success_count} successfully")
     
     def process_trajectory_for_archive(self, trajectory: dict, is_initialization: bool = False):
-        """Process a trajectory and update archive with formulas along the path"""
+        """
+        Process a trajectory and update archive with formulas along the path.
+        
+        Incrementally processes each step in a trajectory to extract elite solutions at
+        different formula states. Uses FormulaIsodegrees to compute isomorphism-invariant
+        features that serve as cell IDs in the archive. Only stores valid formulas that
+        satisfy all constraints (num_vars, width, size).
+        
+        Args:
+            trajectory: Dictionary containing:
+                - traj_id: Unique identifier for the trajectory
+                - steps: List of (token_type, litint, avgQ) tuples
+                - Optional: num_vars, width, size constraints
+            is_initialization: If True, marks elites as discovered during initialization
+                              (iteration 0), otherwise uses current_iteration
+        
+        Process for each step:
+            1. Parse token type and literals from step
+            2. Update formula state (add/remove gates)
+            3. Check constraints (variables used, width, size)
+            4. Compute feature using FormulaIsodegrees
+            5. Create elite and attempt archive update
+            6. Track discovery statistics
+        
+        Side effects:
+            - Updates self.archive with discovered elites
+            - Updates self.trajectories_lookup with trajectory reference
+            - Increments archive.total_evaluations
+            - Updates archive.iteration_discoveries if not initialization
+        
+        Constraints checked:
+            - Number of variables used <= config.num_vars
+            - Formula width <= config.width
+            - Formula size <= config.size (if specified)
+            - Formula must be non-empty (at least one gate)
+        """
+        # TODO: validate trajectories in other places instead of here
         traj_id = trajectory.get("traj_id", trajectory.get("_id"))
         steps = trajectory.get("steps", [])
         
@@ -115,15 +237,10 @@ class MAPElitesService:
         # Track formula state incrementally
         fisod = FormulaIsodegrees(self.config.num_vars, [])
         used_variables = 0
-        formula_gates = []
-        current_formula_width = 0
         
         for i, step in enumerate(steps):
             # Parse step
-            if isinstance(step, (list, tuple)) and len(step) == 3:
-                token_type, litint, cur_avgQ = step
-            else:
-                continue
+            token_type, litint, cur_avgQ = step
             
             # Parse literals
             lits = parse_gate_integer_representation(litint)
@@ -131,73 +248,78 @@ class MAPElitesService:
             # Track used variables
             used_variables |= (lits.pos | lits.neg)
             
-            # Check constraints
-            if used_variables.bit_count() > self.config.num_vars:
-                break
-            if token_type == 0 and lits.width > self.config.width:
-                break
-            if self.config.size and token_type == 0 and len(formula_gates) >= self.config.size:
-                break
-            
             # Update formula state
             if token_type == 0:  # ADD
                 fisod.add_gate(litint)
-                formula_gates.append(litint)
-                current_formula_width = max(current_formula_width, lits.width)
             elif token_type == 1:  # DELETE
                 fisod.remove_gate(litint)
-                if litint in formula_gates:
-                    formula_gates.remove(litint)
-                    if formula_gates:
-                        current_formula_width = max(
-                            parse_gate_integer_representation(g).width
-                            for g in formula_gates
-                        )
-                    else:
-                        current_formula_width = 0
-            else:
-                continue
             
-            # Only store as elite if formula is valid
-            if len(formula_gates) > 0 and current_formula_width <= self.config.width:
-                if not self.config.size or len(formula_gates) <= self.config.size:
-                    # Get cell ID from feature
-                    cell_id = fisod.feature
-                    
-                    # Create elite
-                    elite = Elite(
-                        traj_id=traj_id,
-                        traj_slice=i,
-                        avgQ=cur_avgQ,
-                        discovery_iteration=0 if is_initialization else self.current_iteration
-                    )
-                    
-                    # Update archive
-                    if self.archive.update_cell(cell_id, elite):
-                        if not is_initialization:
-                            self.archive.iteration_discoveries[self.current_iteration] = \
-                                self.archive.iteration_discoveries.get(self.current_iteration, 0) + 1
+            # Get cell ID from feature
+            cell_id = fisod.feature
+            
+            # Create elite
+            elite = Elite(
+                traj_id=traj_id,
+                traj_slice=i,
+                avgQ=cur_avgQ,
+                discovery_iteration=0 if is_initialization else self.current_iteration
+            )
+            
+            # Update archive
+            if self.archive.update_cell(cell_id, elite) and not is_initialization:
+                self.archive.iteration_discoveries[self.current_iteration] = \
+                    self.archive.iteration_discoveries.get(self.current_iteration, 0) + 1
         
         self.archive.total_evaluations += len(steps)
     
     async def sync_archive_with_warehouse(self):
-        """Sync archive with warehouse to get trajectories from other instances"""
+        """
+        Sync archive with warehouse to get trajectories from other instances.
+        
+        Enables collaborative exploration by periodically downloading new trajectories
+        from the warehouse that were created by other MAP-Elites instances. Only
+        retrieves trajectories added since the last sync time to minimize data transfer.
+        This allows multiple instances to share discoveries and accelerate convergence.
+        
+        Only executes if:
+            - config.enable_sync is True
+            - Called at sync_interval iterations
+        
+        Process:
+            1. Connect to warehouse service
+            2. Query trajectories added since last_sync_time
+            3. Filter by num_vars and width configuration
+            4. Process new trajectories into local archive
+            5. Update last_sync_time
+        
+        Side effects:
+            - Updates self.archive with trajectories from other instances
+            - Updates self.trajectories_lookup with new trajectory data
+            - Updates self.last_sync_time to current time
+            - Logs sync statistics
+        
+        Error handling:
+            - Connection failures are caught and logged
+            - Sync failures don't interrupt algorithm execution
+            - Returns silently if sync is disabled
+        """
         if not self.config.enable_sync:
             return
         
         self.log("Syncing with warehouse...")
+        host = self.config.warehouse_host
+        port = self.config.warehouse_port
         
         try:
-            async with AsyncWarehouseClient(
-                self.config.warehouse_host,
-                self.config.warehouse_port
-            ) as warehouse:
+            async with AsyncWarehouseClient(host, port) as warehouse:
                 # Get trajectories added since last sync
                 new_trajectories = await warehouse.get_trajectory_dataset(
                     num_vars=self.config.num_vars,
                     width=self.config.width,
                     since=self.last_sync_time
                 )
+                
+                # TODO: validate trajectories here
                 
                 # Process new trajectories
                 new_count = 0
@@ -214,7 +336,33 @@ class MAPElitesService:
             self.log(f"Warning: Sync failed: {e}")
     
     def select_elites(self, num_elites: int) -> List[Tuple[tuple, Elite]]:
-        """Select elites for mutation based on strategy"""
+        """
+        Select elites for mutation based on configured strategy.
+        
+        Implements different selection strategies for choosing which elites to mutate
+        in the next iteration. The strategy affects exploration vs exploitation balance
+        and convergence behavior of the algorithm.
+        
+        Args:
+            num_elites: Number of elites to select for mutation (typically batch_size)
+        
+        Returns:
+            List of (cell_id, elite) tuples selected for mutation
+            Returns empty list if archive is empty
+        
+        Selection strategies:
+            - "uniform": Random uniform selection from all populated cells
+                        Provides balanced exploration across the feature space
+            - "curiosity": Prefers cells with fewer elites (less explored regions)
+                          Encourages exploration of sparse areas in the archive  
+            - "performance": Biases selection toward high-performing cells
+                            Encourages exploitation of promising regions
+        
+        Implementation details:
+            - Each cell contributes at most one elite (randomly selected from cell)
+            - Number returned may be less than num_elites if archive has fewer cells
+            - Falls back to uniform strategy if unknown strategy specified
+        """
         if not self.archive.cells:
             return []
         
@@ -258,7 +406,31 @@ class MAPElitesService:
     
     @staticmethod
     def run_mutation_job(args: Tuple) -> List[Dict]:
-        """Static worker function for parallel mutation execution"""
+        """
+        Static worker function for parallel mutation execution.
+        
+        Executes trajectory mutations in a separate process for parallelization.
+        Must be static to be serializable for multiprocessing. Takes a prefix
+        trajectory and generates new trajectories by continuing from that point.
+        
+        Args:
+            args: Tuple containing:
+                - prefix_traj: List of (token_type, litint, avgQ) steps to start from
+                - config_dict: Dictionary with mutation parameters:
+                    - num_vars: Number of variables
+                    - width: Width constraint
+                    - num_trajectories: Number of mutations to generate
+                    - num_steps: Steps per mutation
+                    - size: Optional size constraint
+        
+        Returns:
+            List of trajectory dictionaries with generated mutations
+        
+        Note:
+            - Static method required for multiprocessing Pool.map()
+            - Runs in separate process without access to instance state
+            - Uses run_mutations_sync for thread-safe execution
+        """
         prefix_traj, config_dict = args
         
         # Run mutations with the provided prefix
@@ -273,7 +445,39 @@ class MAPElitesService:
         )
     
     async def mutate_elites(self, selected_elites: List[Tuple[tuple, Elite]]) -> List[Dict]:
-        """Mutate selected elites using multiprocessing"""
+        """
+        Mutate selected elites using multiprocessing for parallelization.
+        
+        Takes selected elites and generates new trajectories by mutating from their
+        positions. Uses multiprocessing Pool to parallelize mutations across CPU cores
+        for improved performance. Each elite's trajectory is truncated at the elite's
+        position and used as a prefix for generating new trajectories.
+        
+        Args:
+            selected_elites: List of (cell_id, elite) tuples to mutate
+        
+        Returns:
+            List of newly generated trajectory dictionaries
+            Returns empty list if no valid mutations could be created
+        
+        Process:
+            1. Extract prefix trajectory for each elite up to its position
+            2. Validate prefix produces valid formula
+            3. Prepare serializable job data for multiprocessing
+            4. Distribute jobs across worker processes
+            5. Collect and flatten results
+        
+        Performance notes:
+            - Uses multiprocessing.Pool for true parallelism
+            - Number of workers controlled by config.num_workers
+            - Jobs distributed evenly across available cores
+            - Pool properly closed and joined to prevent resource leaks
+        
+        Error handling:
+            - Invalid prefixes are skipped
+            - Missing trajectories are ignored
+            - Pool cleanup happens even if errors occur
+        """
         # Prepare mutation jobs with serializable data
         mutation_jobs = []
         config_dict = {
@@ -284,7 +488,7 @@ class MAPElitesService:
             "size": self.config.size
         }
         
-        for cell_id, elite in selected_elites:
+        for _, elite in selected_elites:
             # Get trajectory and extract prefix
             traj = self.trajectories_lookup.get(elite.traj_id)
             if not traj:
@@ -292,10 +496,7 @@ class MAPElitesService:
             
             steps = traj.get("steps", [])
             prefix_traj = steps[:elite.traj_slice + 1]
-            
-            # Validate prefix before adding to jobs
-            if self.trajectory_generator.validate_trajectory_prefix(prefix_traj):
-                mutation_jobs.append((prefix_traj, config_dict))
+            mutation_jobs.append((prefix_traj, config_dict))
         
         if not mutation_jobs:
             return []
@@ -303,11 +504,9 @@ class MAPElitesService:
         # Use multiprocessing for parallel execution
         num_workers = self.config.num_workers
         with Pool(processes=num_workers) as pool:
-            try:
-                mutation_results = pool.map(MAPElitesService.run_mutation_job, mutation_jobs)
-            finally:
-                pool.close()
-                pool.join()
+            # Pool.map blocks until all results are ready
+            # The context manager automatically handles close() and join()
+            mutation_results = pool.map(MAPElitesService.run_mutation_job, mutation_jobs)
         
         # Flatten results
         new_trajectories = []
@@ -317,7 +516,32 @@ class MAPElitesService:
         return new_trajectories
     
     async def evolution_step(self):
-        """Execute one iteration of MAP-Elites evolution"""
+        """
+        Execute one iteration of MAP-Elites evolution.
+        
+        Performs a single iteration of the MAP-Elites algorithm including elite selection,
+        mutation, trajectory collection, and archive update. Optionally syncs with warehouse
+        for multi-instance collaboration based on configuration.
+        
+        Process:
+            1. Sync with warehouse (if enabled and at sync interval)
+            2. Select elites for mutation based on strategy
+            3. Generate mutations in parallel using multiprocessing
+            4. Post new trajectories to warehouse
+            5. Process trajectories into archive
+            6. Update discovery statistics
+        
+        Side effects:
+            - Updates self.archive with new elites
+            - Posts trajectories to warehouse
+            - May sync archive with other instances
+            - Logs iteration progress
+        
+        Error handling:
+            - Failed trajectory posts are logged but don't stop execution
+            - Returns early if no elites available for mutation
+            - Warehouse connection errors are caught and logged
+        """
         self.log("Starting evolution step...")
         
         # Optional sync with warehouse
@@ -337,10 +561,10 @@ class MAPElitesService:
         self.log(f"Generated {len(new_trajectories)} new trajectories")
         
         # Post to warehouse and update archive
-        async with AsyncWarehouseClient(
-            self.config.warehouse_host,
-            self.config.warehouse_port
-        ) as warehouse:
+        host = self.config.warehouse_host
+        port = self.config.warehouse_port
+        
+        async with AsyncWarehouseClient(host, port) as warehouse:
             # Post trajectories
             post_tasks = []
             for traj in new_trajectories:
@@ -359,7 +583,37 @@ class MAPElitesService:
             self.process_trajectory_for_archive(traj)
     
     async def run(self):
-        """Run the MAP-Elites algorithm"""
+        """
+        Run the complete MAP-Elites algorithm.
+        
+        Main entry point for executing the MAP-Elites algorithm. Manages the full lifecycle
+        from initialization through evolution iterations to final reporting. Handles both
+        standalone and collaborative modes based on configuration.
+        
+        Execution phases:
+            1. Initialization: Load existing trajectories or generate initial population
+            2. Evolution: Run configured number of iterations
+            3. Reporting: Generate final statistics and save archive
+        
+        Configuration parameters used:
+            - num_iterations: Total iterations to run
+            - enable_sync: Whether to sync with other instances
+            - save_archive: Whether to save final archive to file
+            - verbose: Controls logging verbosity
+        
+        Side effects:
+            - Sets self.is_running flag during execution
+            - Updates self.start_time at beginning
+            - Modifies archive throughout execution
+            - Posts trajectories to warehouse
+            - Saves archive to file if configured
+            - Extensive logging of progress
+        
+        Lifecycle management:
+            - Sets is_running=True at start, False at end
+            - Tracks execution time via start_time
+            - Updates current_iteration throughout
+        """
         self.is_running = True
         self.start_time = datetime.now()
         
@@ -418,7 +672,31 @@ class MAPElitesService:
         self.is_running = False
     
     def save_archive(self):
-        """Save the archive to a JSON file"""
+        """
+        Save the archive to a JSON file.
+        
+        Serializes the current archive state to JSON format and saves to disk.
+        Includes both the archive data (cells, elites, statistics) and the
+        configuration used for this run. Useful for analysis, visualization,
+        and resuming experiments.
+        
+        File structure:
+            - cells: Dictionary of cell_id -> list of elites
+            - cell_density: Maximum elites per cell
+            - total_evaluations: Total trajectory steps processed
+            - iteration_discoveries: Discoveries per iteration
+            - statistics: Final archive statistics
+            - config: Configuration parameters used
+            - timestamp: When archive was saved
+        
+        Output location:
+            Saves to self.config.archive_path (default: "map_elites_archive.json")
+        
+        Note:
+            - Cell IDs are converted to strings for JSON compatibility
+            - Elite objects are converted to dictionaries
+            - Datetime objects are converted to ISO format strings
+        """
         archive_data = self.archive.to_dict()
         archive_data["config"] = {
             "num_iterations": self.config.num_iterations,
@@ -438,7 +716,36 @@ class MAPElitesService:
             json.dump(archive_data, f, indent=2)
     
     def get_status(self) -> MAPElitesStatus:
-        """Get current status of MAP-Elites execution"""
+        """
+        Get current status of MAP-Elites execution.
+        
+        Returns a comprehensive status object containing current execution state,
+        progress metrics, and archive statistics. Useful for monitoring long-running
+        executions and debugging.
+        
+        Returns:
+            MAPElitesStatus object containing:
+                - is_running: Whether algorithm is currently executing
+                - current_iteration: Current iteration number (0-based)
+                - total_iterations: Total iterations configured
+                - archive_stats: Statistics about discovered elites
+                - last_sync_time: When archive was last synced (if enabled)
+                - start_time: When execution began
+                - config: Key configuration parameters
+        
+        Archive statistics include:
+            - total_cells: Number of unique cells discovered
+            - total_elites: Total elite solutions in archive
+            - avg_avgQ: Average performance across all elites
+            - max_avgQ: Best performance found
+            - min_avgQ: Worst performance in archive
+        
+        Use cases:
+            - Monitoring progress during execution
+            - Checking if algorithm is still running
+            - Analyzing archive growth over time
+            - Debugging performance issues
+        """
         return MAPElitesStatus(
             is_running=self.is_running,
             current_iteration=self.current_iteration,

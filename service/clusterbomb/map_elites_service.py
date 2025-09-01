@@ -191,10 +191,12 @@ class MAPElitesService:
         for traj in initial_trajectories:
             try:
                 # Post trajectory using keyword arguments (returns trajectory ID on success)
-                posted = await warehouse.post_trajectory(**traj)
-                if isinstance(posted, str):  # Returns trajectory ID string on success
+                traj_id = await warehouse.post_trajectory(**traj)
+                if isinstance(traj_id, str):  # Returns trajectory ID string on success
                     success_count += 1
-                self.process_trajectory_for_archive(traj, is_initialization=True)
+                    # Add warehouse-assigned ID to trajectory before processing
+                    traj["traj_id"] = traj_id
+                    self.process_trajectory_for_archive(traj, is_initialization=True)
             except Exception as e:
                 self.log(f"Warning: Failed to post initial trajectory: {e}")
         
@@ -586,14 +588,21 @@ class MAPElitesService:
             # Execute posts concurrently
             results = await asyncio.gather(*post_tasks, return_exceptions=True)
             
-            # Count successes (post_trajectory returns trajectory ID string on success)
-            successes = sum(1 for r in results if isinstance(r, str) and not isinstance(r, Exception))
+            # Process results and add warehouse-assigned IDs
+            successes = 0
+            for i, result in enumerate(results):
+                if isinstance(result, str) and not isinstance(result, Exception):
+                    # Add warehouse-assigned ID to trajectory
+                    new_trajectories[i]["traj_id"] = result
+                    successes += 1
+            
             if successes < len(new_trajectories):
                 self.log(f"Warning: Only {successes}/{len(new_trajectories)} trajectories posted successfully")
         
-        # Process new trajectories in archive
+        # Process new trajectories in archive (only those with IDs)
         for traj in new_trajectories:
-            self.process_trajectory_for_archive(traj)
+            if "traj_id" in traj:  # Only process successfully posted trajectories
+                self.process_trajectory_for_archive(traj)
     
     async def run(self):
         """

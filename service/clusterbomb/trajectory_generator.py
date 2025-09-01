@@ -123,12 +123,9 @@ def run_mutations_sync(
             
             # Create trajectory dictionary
             trajectory = {
-                "traj_id": str(uuid.uuid4()),
                 "steps": trajectory_steps,
                 "num_vars": num_vars,
                 "width": width,
-                "timestamp": datetime.now().isoformat(),
-                "prefix_length": len(prefix_traj)
             }
             
             trajectories.append(trajectory)

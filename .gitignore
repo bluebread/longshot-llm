@@ -295,3 +295,4 @@ output/
 doc/*/_generated
 !library/longshot/env/
 .claude
+cache/

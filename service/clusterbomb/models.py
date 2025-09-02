@@ -36,6 +36,7 @@ class MAPElitesConfig:
     # Service configuration
     warehouse_host: str = "localhost"
     warehouse_port: int = 8000
+    warehouse_timeout: float = 30.0  # HTTP timeout for warehouse requests in seconds
     
     # Output
     verbose: bool = True

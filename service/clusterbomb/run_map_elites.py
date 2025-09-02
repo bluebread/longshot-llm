@@ -85,6 +85,19 @@ Advanced Examples:
         --batch-size 15 \\
         --output exploration_archive.json
 
+    # Typical research setup
+    python run_map_elites.py 
+        --iterations 40 \\
+        --cell-density 5 \\ 
+        --num-vars 6 \\ 
+        --width 6 \\
+        --num-steps 128 \\ # 2 * (2^width)
+        --batch-size 32 \\ # num_workers
+        --init-strategy warehouse \\
+        --timeout 60 \\
+        --strategy performance \\
+        2> log.txt &
+
 Docker Deployment:
     # Build and run as container
     docker build -t clusterbomb-map-elites .
@@ -230,6 +243,9 @@ def main():
     parser.add_argument("--warehouse-port", type=int, 
                        default=8000,
                        help="Warehouse service port (default: 8000)")
+    parser.add_argument("--timeout", type=float,
+                       default=30.0,
+                       help="HTTP timeout for warehouse requests in seconds (default: 30.0)")
     
     # Output options
     parser.add_argument("--output", type=str, 
@@ -262,6 +278,7 @@ def main():
         sync_interval=args.sync_interval,
         warehouse_host=args.warehouse_host,
         warehouse_port=args.warehouse_port,
+        warehouse_timeout=args.timeout,
         verbose=not args.quiet,
         save_archive=not args.no_save,
         archive_path=args.output

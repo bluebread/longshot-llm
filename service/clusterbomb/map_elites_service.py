@@ -117,7 +117,8 @@ class MAPElitesService:
         try:
             async with AsyncWarehouseClient(
                 self.config.warehouse_host,
-                self.config.warehouse_port
+                self.config.warehouse_port,
+                timeout=self.config.warehouse_timeout
             ) as warehouse:
                 # Get trajectories filtered by configuration
                 dataset_response = await warehouse.get_trajectory_dataset(
@@ -155,7 +156,10 @@ class MAPElitesService:
                     self.log(f"  - Max avgQ: {stats['max_avgQ']:.4f}")
                 
         except Exception as e:
+            import traceback
             self.log(f"Error during initialization: {e}")
+            self.log(f"Error type: {type(e).__name__}")
+            self.log(f"Traceback: {traceback.format_exc()}")
             self.log("Starting with empty archive...")
     
     async def generate_initial_population(self, warehouse: AsyncWarehouseClient):
@@ -322,7 +326,7 @@ class MAPElitesService:
         port = self.config.warehouse_port
         
         try:
-            async with AsyncWarehouseClient(host, port) as warehouse:
+            async with AsyncWarehouseClient(host, port, timeout=self.config.warehouse_timeout) as warehouse:
                 # Get trajectories added since last sync
                 dataset_response = await warehouse.get_trajectory_dataset(
                     num_vars=self.config.num_vars,

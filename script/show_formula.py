@@ -35,8 +35,9 @@ import argparse
 import sys
 from typing import Optional, List, Dict, Any
 from longshot.service.warehouse import WarehouseClient
-from longshot.utils import parse_trajectory_to_definition
+from longshot.utils import parse_trajectory_to_definition, parse_formula_definition
 from longshot.literals import Literals
+from longshot.formula import FormulaType
 
 
 def get_trajectory_and_formula(
@@ -189,7 +190,9 @@ def display_formula(
     print(f"\nRaw gate definitions:")
     for i, gate in enumerate(gates):
         # Use Literals to decode the gate
-        literals_obj = Literals(gate & 0xFFFFFFFF, (gate >> 32) & 0xFFFFFFFF)
+        pos_bits = gate & 0xFFFFFFFF
+        neg_bits = (gate >> 32) & 0xFFFFFFFF
+        literals_obj = Literals(pos_bits, neg_bits)
         
         # Build string representation
         literals = []
@@ -200,13 +203,39 @@ def display_formula(
                 literals.append(f"¬x{var_idx}")
         
         gate_str = " ∨ ".join(literals) if literals else "empty"
-        print(f"  Gate {i}: {gate} (0x{gate:016x}) = ({gate_str})")
+        
+        # Print gate with binary representations
+        print(f"  Gate {i}: ({gate_str}) \t {gate} \t pos=0b{pos_bits:b}, neg=0b{neg_bits:b}")
     
     # Display trajectory rewards if available
     if "avgQ" in trajectory:
         avgQs = trajectory["avgQ"]
         if traj_slice < len(avgQs):
             print(f"\nReward at slice {traj_slice}: {avgQs[traj_slice]:.4f}")
+    
+    # Parse formula from gates and calculate avgQ
+    print(f"\nFormula Analysis:")
+    try:
+        # Parse the formula definition to get NormalFormFormula
+        formula = parse_formula_definition(gates, num_vars, FormulaType.Conjunctive)
+        
+        # Calculate avgQ from the formula
+        calculated_avgQ = formula.avgQ()
+        print(f"  Calculated avgQ from formula: {calculated_avgQ:.6f}")
+        
+        # Compare with trajectory avgQ if available
+        if "avgQ" in trajectory and traj_slice < len(trajectory["avgQ"]):
+            stored_avgQ = trajectory["avgQ"][traj_slice]
+            difference = abs(calculated_avgQ - stored_avgQ)
+            match_status = "✓ MATCH" if difference < 1e-6 else "✗ MISMATCH"
+            
+            print(f"  Stored avgQ in trajectory:    {stored_avgQ:.6f}")
+            print(f"  Difference:                   {difference:.6f} {match_status}")
+            
+            if difference >= 1e-6:
+                print(f"\n  WARNING: The calculated avgQ does not match the stored trajectory avgQ!")
+    except Exception as e:
+        print(f"  Error calculating avgQ: {e}")
 
 
 def main():

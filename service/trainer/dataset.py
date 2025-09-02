@@ -136,7 +136,13 @@ class TrajectoryDataset(Dataset):
         Returns:
             The sample at the given index
         """
-        return self.data[idx]
+        func = lambda t, l: l if t == 0 else -l
+        
+        return {
+            "input_ids": [func(t, l) for t, l, _ in self.data[idx]],
+            "attention_mask": [1] * len(self.data[idx]),
+            "labels": [q for _, _, q in self.data[idx]],
+        }
     
 if __name__ == "__main__":
     # Example usage

@@ -137,3 +137,11 @@ class TrajectoryDataset(Dataset):
             The sample at the given index
         """
         return self.data[idx]
+    
+if __name__ == "__main__":
+    # Example usage
+    dataset = TrajectoryDataset(num_vars=3, width=2)
+    print(f"Dataset size: {len(dataset)}")
+    sample = dataset[0]
+    print(f"First sample: {sample}")
+    

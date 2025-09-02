@@ -21,6 +21,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Install longshot library
+# Assuming the library is built and available in parent directories
+COPY ../../library /tmp/library
+RUN pip install -e /tmp/library
+
 # Copy application code
 COPY . .
 
@@ -29,12 +34,10 @@ RUN groupadd -r clusterbomb && useradd -r -g clusterbomb clusterbomb
 RUN chown -R clusterbomb:clusterbomb /app
 USER clusterbomb
 
-# Expose the port the app runs on
-EXPOSE 8060
+# No exposed ports - this is a job executor, not a web service
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8060/health || exit 1
+# No health check needed for job executor
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8060"]
+# Run the MAP-Elites executor
+# Default configuration can be overridden with command line arguments
+CMD ["python", "run_map_elites.py", "--num-vars", "4", "--width", "3", "--iterations", "100"]

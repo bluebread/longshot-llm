@@ -1,64 +1,59 @@
 #!/usr/bin/env python3
 """
-Export Trajectories Script for gym-longshot
+Export Trajectories Script for longshot-llm
 
-This script directly connects to MongoDB and exports trajectory data to a JSON dataset format.
-Credentials are loaded from environment variables for security.
+This script uses the WarehouseClient to export trajectory datasets from the warehouse service.
+It supports filtering by num_vars and width, and outputs to a compact JSON format.
 
 The output JSON structure:
 {
     "trajectories": [
         {
-            "type": [int, ...],        # Token types for each step
-            "litint": [int, ...],      # Token literals for each step  
-            "avgQ": [float, ...]       # Average Q values for each step
+            "traj_id": "uuid",
+            "num_vars": int,
+            "width": int,
+            "steps": [
+                [type, litint, avgQ],  # Each step as a 3-element list
+                ...
+            ]
         },
         ...
     ]
 }
 
 Usage:
-    # Set environment variables first:
-    export MONGO_USER=your_username
-    export MONGO_PASSWORD=your_password
+    # Export all trajectories
+    python script/export_trajectories.py --output trajectories.json
     
-    # Then run:
-    python export_trajectories.py --output-file trajectories.json
+    # Export trajectories with specific num_vars and width
+    python script/export_trajectories.py --output data.json --num-vars 4 --width 3
     
+    # Export from remote warehouse
+    python script/export_trajectories.py --output data.json --host remote.server --port 8080
+
 Options:
-    --output-file       : Output JSON file path (required)
-    --limit             : Maximum number of trajectories to export
-    --all               : Export all trajectories (ignores --limit)
-    --mongo-host        : MongoDB host (default: from MONGO_HOST env or localhost)
-    --mongo-port        : MongoDB port (default: from MONGO_PORT env or 27017)
-    --mongo-db          : MongoDB database name (default: from MONGO_DB env or LongshotWarehouse)
-    --verbose           : Enable verbose logging
+    --output, -o        : Output JSON file path (required)
+    --num-vars          : Filter by number of variables
+    --width             : Filter by formula width
+    --host              : Warehouse host (default: localhost)
+    --port              : Warehouse port (default: 8000)
+    --since             : Filter trajectories after this date (ISO format)
+    --until             : Filter trajectories before this date (ISO format)
+    --include-metadata  : Include traj_id, num_vars, width in output
     --pretty            : Pretty-print JSON output (larger file size)
-    --batch-size        : Process trajectories in batches (default: 1000)
-    
-Example:
-    # Export ALL trajectories
-    python export_trajectories.py --output-file trajectories.json --all
-    
-    # Export with limit and pretty formatting
-    python export_trajectories.py --output-file data.json --limit 100 --pretty
-    
-    # Export with custom MongoDB connection
-    python export_trajectories.py --output-file trajectories.json --mongo-host localhost
+    --verbose           : Enable verbose logging
 """
 
 import argparse
 import json
 import sys
-import os
-from typing import List, Dict, Any, Optional, Iterator
-from datetime import datetime
 import logging
-from contextlib import contextmanager
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+from longshot.service.warehouse import WarehouseClient
 
-def setup_logging(verbose: bool):
+
+def setup_logging(verbose: bool) -> logging.Logger:
     """Configure logging based on verbosity."""
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -68,290 +63,203 @@ def setup_logging(verbose: bool):
     )
     return logging.getLogger(__name__)
 
-def get_mongo_config(args) -> Dict[str, Any]:
-    """Get MongoDB configuration from environment and arguments."""
-    config = {
-        'host': args.mongo_host or os.getenv('MONGO_HOST', 'localhost'),
-        'port': args.mongo_port or int(os.getenv('MONGO_PORT', '27017')),
-        'user': os.getenv('MONGO_USER'),
-        'password': os.getenv('MONGO_PASSWORD'),
-        'database': args.mongo_db or os.getenv('MONGO_DB', 'LongshotWarehouse')
-    }
-    
-    # Override with test defaults if in test mode (for backwards compatibility)
-    if os.getenv('LONGSHOT_TEST_MODE') == '1':
-        config['host'] = config.get('host') or 'mongo-bread'
-        config['user'] = config.get('user') or 'haowei'
-        config['password'] = config.get('password') or 'bread861122'
-    
-    return config
 
-@contextmanager
-def mongodb_connection(config: Dict[str, Any], logger: logging.Logger):
-    """Context manager for MongoDB connections."""
-    client = None
-    try:
-        if not config['user'] or not config['password']:
-            raise ValueError(
-                "MongoDB credentials not provided. "
-                "Please set MONGO_USER and MONGO_PASSWORD environment variables, "
-                "or use LONGSHOT_TEST_MODE=1 for test defaults."
-            )
-        
-        connection_string = f"mongodb://{config['user']}:{config['password']}@{config['host']}:{config['port']}"
-        logger.debug(f"Connecting to MongoDB at {config['host']}:{config['port']} as user '{config['user']}'")
-        
-        client = MongoClient(connection_string, serverSelectionTimeoutMS=5000)
-        # Test connection
-        client.admin.command('ping')
-        logger.info(f"✅ Successfully connected to MongoDB")
-        yield client
-        
-    except ConnectionFailure as e:
-        logger.error(f"❌ Failed to connect to MongoDB: {e}")
-        raise
-    except ServerSelectionTimeoutError as e:
-        logger.error(f"❌ MongoDB connection timeout: {e}")
-        logger.error(f"   Check if MongoDB is running at {config['host']}:{config['port']}")
-        raise
-    except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"❌ Unexpected error connecting to MongoDB: {e}")
-        raise
-    finally:
-        if client:
-            client.close()
-            logger.debug("Closed MongoDB connection")
-
-def fetch_trajectories_streaming(
-    client: MongoClient, 
-    db_name: str, 
-    limit: Optional[int], 
-    batch_size: int,
+def transform_trajectory(
+    trajectory: Dict[str, Any], 
+    include_metadata: bool,
     logger: logging.Logger
-) -> Iterator[Dict[str, Any]]:
-    """Fetch trajectories from MongoDB with streaming and projection."""
-    try:
-        db = client[db_name]
-        trajectory_collection = db["TrajectoryTable"]
-        
-        # Use projection to only fetch required fields
-        projection = {
-            '_id': 1,
-            'steps.token_type': 1,
-            'steps.token_literals': 1,
-            'steps.cur_avgQ': 1
-        }
-        
-        # Count total trajectories
-        total_count = trajectory_collection.count_documents({})
-        logger.info(f"📊 Found {total_count} trajectories in database")
-        
-        # Build cursor with projection
-        cursor = trajectory_collection.find({}, projection)
-        
-        if limit and limit > 0:
-            cursor = cursor.limit(limit)
-            logger.info(f"   Limiting export to {limit} trajectories")
-        
-        # Configure batch size for cursor
-        cursor = cursor.batch_size(batch_size)
-        
-        # Return iterator
-        return cursor
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch trajectories from database: {e}")
-        return iter([])  # Return empty iterator
-
-def transform_trajectory(trajectory: Dict[str, Any], logger: logging.Logger) -> Optional[Dict[str, List]]:
+) -> Optional[Dict[str, Any]]:
     """
-    Transform a trajectory from MongoDB format to the desired output format.
+    Transform a trajectory from warehouse format to the export format.
     
-    Input format (from MongoDB):
-    {
-        "_id": "uuid",
-        "steps": [
-            {
-                "token_type": int,
-                "token_literals": int,
-                "cur_avgQ": float
-            },
-            ...
-        ]
-    }
-    
-    Output format:
-    {
-        "type": [token_type, ...],
-        "litint": [token_literals, ...],
-        "avgQ": [cur_avgQ, ...]
-    }
+    Args:
+        trajectory: Raw trajectory from warehouse
+        include_metadata: Whether to include metadata fields
+        logger: Logger instance
+        
+    Returns:
+        Transformed trajectory or None if invalid
     """
     try:
-        trajectory_id = trajectory.get('_id', 'unknown')
-        steps = trajectory.get("steps", [])
+        traj_id = trajectory.get('traj_id', 'unknown')
+        steps = trajectory.get('steps', [])
         
         if not steps:
-            logger.debug(f"Trajectory {trajectory_id} has no steps, skipping")
+            logger.debug(f"Trajectory {traj_id} has no steps, skipping")
             return None
         
-        # Initialize lists for each field
-        types = []
-        litints = []
-        avgQs = []
-        
-        # Extract data from each step
+        # Validate and keep steps as list of lists
+        validated_steps = []
         for i, step in enumerate(steps):
-            if isinstance(step, dict):
-                # Handle dictionary format (legacy MongoDB format)
-                token_type = step.get("token_type", 0)  # Default to 0 if missing
-                token_literals = step.get("token_literals")
-                cur_avgQ = step.get("cur_avgQ")
-                
-                if token_literals is None or cur_avgQ is None:
-                    logger.debug(f"Missing required fields in step {i} of trajectory {trajectory_id}")
-                    return None
-                    
-                types.append(token_type)
-                litints.append(token_literals)
-                avgQs.append(cur_avgQ)
-            elif isinstance(step, (list, tuple)) and len(step) == 3:
-                # Handle tuple/list format (token_type, token_literals, cur_avgQ)
-                types.append(step[0])
-                litints.append(step[1])
-                avgQs.append(step[2])
+            if isinstance(step, (list, tuple)) and len(step) >= 3:
+                # Keep steps in format: [type, litint, avgQ]
+                validated_steps.append([step[0], step[1], step[2]])
             else:
-                logger.debug(f"Invalid step format in trajectory {trajectory_id}: {step}")
+                logger.debug(f"Invalid step format in trajectory {traj_id}: {step}")
                 return None
         
-        # Validate that all lists have the same length
-        if not (len(types) == len(litints) == len(avgQs)):
-            logger.error(f"Inconsistent field lengths in trajectory {trajectory_id}")
-            return None
-        
-        return {
-            "type": types,
-            "litint": litints,
-            "avgQ": avgQs
+        # Build output dictionary
+        result = {
+            "steps": validated_steps
         }
         
+        # Add metadata if requested
+        if include_metadata:
+            result = {
+                "traj_id": traj_id,
+                "num_vars": trajectory.get('num_vars'),
+                "width": trajectory.get('width'),
+                **result
+            }
+        
+        return result
+        
     except Exception as e:
-        logger.error(f"Failed to transform trajectory {trajectory.get('_id', 'unknown')}: {e}")
+        logger.error(f"Failed to transform trajectory {trajectory.get('traj_id', 'unknown')}: {e}")
         return None
 
-def process_and_export_streaming(
-    cursor: Iterator[Dict[str, Any]],
+
+def export_trajectories(
+    client: WarehouseClient,
     output_file: str,
+    num_vars: Optional[int],
+    width: Optional[int],
+    since: Optional[datetime],
+    until: Optional[datetime],
+    include_metadata: bool,
     pretty: bool,
-    batch_size: int,
     logger: logging.Logger
 ) -> tuple[int, int]:
-    """Process trajectories in a streaming fashion to minimize memory usage."""
+    """
+    Export trajectories from warehouse to JSON file.
+    
+    Returns:
+        Tuple of (processed_count, failed_count)
+    """
     processed_count = 0
     failed_count = 0
     
     try:
-        with open(output_file, 'w') as f:
-            # Start JSON structure
-            f.write('{"trajectories":[')
-            first_trajectory = True
-            
-            batch_count = 0
-            for trajectory in cursor:
-                transformed = transform_trajectory(trajectory, logger)
-                
-                if transformed:
-                    if not first_trajectory:
-                        f.write(',')
-                    
-                    if pretty:
-                        f.write('\n  ')
-                        json.dump(transformed, f, indent=2)
-                    else:
-                        json.dump(transformed, f, separators=(',', ':'))
-                    
-                    first_trajectory = False
-                    processed_count += 1
-                else:
-                    failed_count += 1
-                
-                batch_count += 1
-                if batch_count % batch_size == 0:
-                    logger.debug(f"Processed {batch_count} trajectories...")
-            
-            # Close JSON structure
-            if pretty:
-                f.write('\n]}\n')
+        # Get trajectory dataset with filters
+        logger.info("📊 Fetching trajectory dataset from warehouse...")
+        logger.info(f"   Filters: num_vars={num_vars}, width={width}")
+        if since:
+            logger.info(f"   Since: {since}")
+        if until:
+            logger.info(f"   Until: {until}")
+        
+        dataset = client.get_trajectory_dataset(
+            num_vars=num_vars,
+            width=width,
+            since=since,
+            until=until
+        )
+        
+        trajectories = dataset.get('trajectories', [])
+        logger.info(f"   Found {len(trajectories)} trajectories matching filters")
+        
+        # Transform trajectories
+        logger.info("🔄 Processing trajectories...")
+        transformed_trajectories = []
+        
+        for trajectory in trajectories:
+            transformed = transform_trajectory(trajectory, include_metadata, logger)
+            if transformed:
+                transformed_trajectories.append(transformed)
+                processed_count += 1
             else:
-                f.write(']}')
+                failed_count += 1
+        
+        # Write to output file
+        logger.info(f"💾 Writing to {output_file}...")
+        with open(output_file, 'w') as f:
+            output_data = {"trajectories": transformed_trajectories}
+            if pretty:
+                json.dump(output_data, f, indent=2)
+            else:
+                # Compact format with no spaces
+                json.dump(output_data, f, separators=(',', ':'))
         
         logger.info(f"✅ Successfully exported {processed_count} trajectories to {output_file}")
         
-    except IOError as e:
-        logger.error(f"❌ Failed to write output file: {e}")
-        raise
+        if failed_count > 0:
+            logger.warning(f"⚠️  {failed_count} trajectories failed to process")
+        
     except Exception as e:
-        logger.error(f"❌ Unexpected error during export: {e}")
+        logger.error(f"❌ Export failed: {e}")
         raise
     
     return processed_count, failed_count
 
+
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(
-        description="Export trajectory data directly from MongoDB to JSON format",
+        description="Export trajectory datasets from warehouse service",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog="""
+Examples:
+  # Export all trajectories
+  %(prog)s --output trajectories.json
+
+  # Export trajectories with specific parameters
+  %(prog)s --output data.json --num-vars 4 --width 3
+
+  # Export with metadata included
+  %(prog)s --output data.json --include-metadata
+
+  # Export from remote warehouse
+  %(prog)s --output data.json --host remote.server --port 8080
+        """
     )
     
     # Output arguments
     parser.add_argument(
-        "--output-file", "-o",
+        "--output", "-o",
         required=True,
         help="Output JSON file path"
     )
+    
+    # Filter arguments
     parser.add_argument(
-        "--limit", "-l",
+        "--num-vars",
         type=int,
-        help="Maximum number of trajectories to export"
+        help="Filter by number of variables"
     )
     parser.add_argument(
-        "--all", "-a",
+        "--width",
+        type=int,
+        help="Filter by formula width"
+    )
+    parser.add_argument(
+        "--since",
+        type=str,
+        help="Filter trajectories after this date (ISO format, e.g., 2024-01-01T00:00:00)"
+    )
+    parser.add_argument(
+        "--until",
+        type=str,
+        help="Filter trajectories before this date (ISO format, e.g., 2024-12-31T23:59:59)"
+    )
+    
+    # Warehouse connection arguments
+    parser.add_argument(
+        "--host",
+        default="localhost",
+        help="Warehouse host (default: localhost)"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Warehouse port (default: 8000)"
+    )
+    
+    # Output format arguments
+    parser.add_argument(
+        "--include-metadata",
         action="store_true",
-        help="Export all trajectories (ignores --limit)"
-    )
-    
-    # MongoDB arguments
-    parser.add_argument(
-        "--mongo-host",
-        help="MongoDB host (overrides MONGO_HOST env)"
-    )
-    parser.add_argument(
-        "--mongo-port",
-        type=int,
-        help="MongoDB port (overrides MONGO_PORT env)"
-    )
-    parser.add_argument(
-        "--mongo-db",
-        help="MongoDB database name (overrides MONGO_DB env)"
-    )
-    
-    # Processing arguments
-    parser.add_argument(
-        "--batch-size", "-b",
-        type=int,
-        default=1000,
-        help="Process trajectories in batches (default: 1000)"
-    )
-    
-    # Formatting and logging arguments
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
+        help="Include traj_id, num_vars, width in output"
     )
     parser.add_argument(
         "--pretty", "-p",
@@ -359,65 +267,88 @@ def main():
         help="Pretty-print JSON output (larger file size)"
     )
     
+    # Logging arguments
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose logging"
+    )
+    
     args = parser.parse_args()
     
     # Setup logging
     logger = setup_logging(args.verbose)
     
-    # Get configuration
-    config = get_mongo_config(args)
+    # Parse date filters if provided
+    since = None
+    until = None
+    if args.since:
+        try:
+            since = datetime.fromisoformat(args.since)
+        except ValueError:
+            logger.error(f"Invalid date format for --since: {args.since}")
+            logger.error("Use ISO format, e.g., 2024-01-01T00:00:00")
+            return 1
     
-    logger.info("🚀 Starting trajectory export from MongoDB")
-    logger.info(f"   Database: {config['database']} at {config['host']}:{config['port']}")
+    if args.until:
+        try:
+            until = datetime.fromisoformat(args.until)
+        except ValueError:
+            logger.error(f"Invalid date format for --until: {args.until}")
+            logger.error("Use ISO format, e.g., 2024-12-31T23:59:59")
+            return 1
+    
+    logger.info("🚀 Starting trajectory export from warehouse")
+    logger.info(f"   Warehouse: http://{args.host}:{args.port}")
+    
+    # Initialize warehouse client
+    client = WarehouseClient(host=args.host, port=args.port)
     
     try:
-        with mongodb_connection(config, logger) as client:
-            # Determine limit based on --all flag
-            limit = None if args.all else args.limit
-            if args.all and args.limit:
-                logger.warning("--all flag specified, ignoring --limit")
-            
-            # Fetch trajectories with streaming
-            cursor = fetch_trajectories_streaming(
-                client,
-                config['database'],
-                limit,
-                args.batch_size,
-                logger
-            )
-            
-            # Process and export with streaming
-            logger.info("🔄 Processing and exporting trajectories...")
-            processed_count, failed_count = process_and_export_streaming(
-                cursor,
-                args.output_file,
-                args.pretty,
-                args.batch_size,
-                logger
-            )
-            
-            # Print summary
-            logger.info("")
-            logger.info("=" * 60)
-            logger.info("📋 EXPORT SUMMARY")
-            logger.info("=" * 60)
-            logger.info(f"Database: {config['database']}@{config['host']}:{config['port']}")
-            logger.info(f"Output file: {args.output_file}")
-            logger.info(f"Trajectories exported: {processed_count}")
-            if failed_count > 0:
-                logger.info(f"Trajectories failed: {failed_count}")
-            logger.info(f"Batch size: {args.batch_size}")
-            logger.info(f"Timestamp: {datetime.now().isoformat()}")
-            logger.info("=" * 60)
-            
-            return 0 if processed_count > 0 or failed_count == 0 else 1
-            
-    except (ConnectionFailure, ServerSelectionTimeoutError, ValueError) as e:
-        logger.error("Cannot proceed - MongoDB connection failed")
-        return 1
+        # Export trajectories
+        processed_count, failed_count = export_trajectories(
+            client,
+            args.output,
+            args.num_vars,
+            args.width,
+            since,
+            until,
+            args.include_metadata,
+            args.pretty,
+            logger
+        )
+        
+        # Print summary
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("📋 EXPORT SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Warehouse: http://{args.host}:{args.port}")
+        logger.info(f"Output file: {args.output}")
+        logger.info(f"Trajectories exported: {processed_count}")
+        if failed_count > 0:
+            logger.info(f"Trajectories failed: {failed_count}")
+        if args.num_vars:
+            logger.info(f"Filter num_vars: {args.num_vars}")
+        if args.width:
+            logger.info(f"Filter width: {args.width}")
+        if since:
+            logger.info(f"Filter since: {since.isoformat()}")
+        if until:
+            logger.info(f"Filter until: {until.isoformat()}")
+        logger.info(f"Include metadata: {args.include_metadata}")
+        logger.info(f"Compact format: {not args.pretty}")
+        logger.info(f"Timestamp: {datetime.now().isoformat()}")
+        logger.info("=" * 60)
+        
+        return 0 if processed_count > 0 or failed_count == 0 else 1
+        
     except Exception as e:
         logger.error(f"Export failed: {e}")
         return 1
+    finally:
+        client.close()
+
 
 if __name__ == "__main__":
     try:

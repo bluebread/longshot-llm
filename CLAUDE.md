@@ -4,135 +4,115 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-gym-longshot is a C++/Python reinforcement learning framework for boolean function optimization. It combines formula generation, trajectory processing, and microservice architecture to explore propositional logic formulas within RL environments.
+Longshot LLM is a C++/Python library for boolean function manipulation and optimization, using MAP-Elites algorithms and trajectory-based learning. The project combines low-level C++ performance with Python accessibility through pybind11 bindings.
 
-## Build and Test Commands
+## Core Commands
 
-### Library Build (C++ Extensions)
+### Building the Library
 ```bash
-# Build the Python library with C++ extensions
-cd library
-pip install -e .
+# Install the longshot library in development mode
+cd library && pip install -e . && cd ..
 ```
 
-### Testing
+### Running Tests
 ```bash
-# Run Python tests
-cd test
-pytest .
-
-# Run C++ tests and Python tests
-make test
+# Run Python tests with pytest
+pytest test/
 
 # Run specific test file
-pytest test_trajectory_processor.py
+pytest test/service/test_warehouse.py
+
+# Run C++ tests
+cd test/library && make test
 ```
 
-### Services
+### Running Services
 ```bash
-# Start infrastructure services (Neo4j, Redis, MongoDB, RabbitMQ)
-cd service
-docker-compose up -d
+# Start warehouse service (trajectory storage)
+cd service/warehouse && uvicorn main:app --host 0.0.0.0 --port 8000
 
-# Run warehouse service
-cd service/warehouse
-pip install -r requirements.txt
-python main.py  # Runs on localhost:8000
+# Start clusterbomb service (formula evaluation)
+cd service/clusterbomb && uvicorn main:app --host 0.0.0.0 --port 8060
 
-# Run clusterbomb service  
-cd service/clusterbomb
-pip install -r requirements.txt
-python main.py  # Runs on localhost:8060
+# Or use docker-compose
+cd service && docker-compose up
 ```
 
-### Demo System
+### MAP-Elites Experiments
 ```bash
-# Run V2 system demonstration
-python script/demo_v2_system.py
-```
+# Run MAP-Elites experiments with dataset export
+cd archive/v2/script
+python map_elites_with_dataset.py --num-vars 4 --width 3 --iterations 100
 
-### Database Management
-```bash
-# Clean up all databases (DESTRUCTIVE - use with caution!)
-python script/cleanup_databases.py --dry-run  # See what would be deleted
-python script/cleanup_databases.py --force    # Actually delete all data
+# Run batch experiments
+./run_map_elites_experiments.sh
+
+# Download trajectory dataset
+python download_trajectory_dataset.py --output trajectories.json
+
+# Export trajectories from MongoDB
+MONGO_USER=user MONGO_PASSWORD=pass python export_trajectories.py --output-file data.json --all
 ```
 
 ## Architecture
 
-### Core Components
+### Library Structure (`library/longshot/`)
+- **`_core`**: C++ extension module (built from `core/core.cpp`) providing high-performance boolean operations
+- **`formula/`**: Boolean formula manipulation - `FormulaIsodegrees`, decision trees, reward models
+- **`literals/`**: Term and clause representations for boolean formulas
+- **`service/`**: Client interfaces for warehouse and clusterbomb services
+- **`utils/`**: Utilities for trajectory processing, base64 encoding, formula parsing
 
-1. **Library (`library/longshot/`)**
-   - **agent/**: RL agents and client wrappers for microservices
-     - `ClusterbombAgent`: Client for weapon rollout operations
-     - `WarehouseAgent`: Client for data storage/retrieval  
-     - `TrajectoryProcessor`: Processes trajectories and computes metrics
-   - **circuit/**: Logic circuit representations and operations
-   - **env/**: RL environment for formula optimization
-   - **models/**: Pydantic models for API data structures
-   - **utils/**: Utility functions and formula operations
-   - **core/**: C++ implementation for performance-critical operations
+### Services (`service/`)
+- **Warehouse Service**: FastAPI service for trajectory storage using MongoDB/Redis
+  - Stores and retrieves formula evaluation trajectories
+  - Provides dataset export endpoints
+- **Clusterbomb Service**: FastAPI service for formula evaluation
+  - Evaluates boolean formulas with various strategies
+  - Computes isodegrees and other formula metrics
 
-2. **Microservices (`service/`)**
-   - **warehouse**: Data storage service (FastAPI)
-     - Manages Neo4j (evolution graph), MongoDB (trajectories), Redis (isomorphism cache)
-     - Provides unified API for data operations
-   - **clusterbomb**: Trajectory generation service (FastAPI)  
-     - Generates trajectories using random exploration
-     - Processes results using TrajectoryProcessor locally
+### Archive (`archive/v2/`)
+- Contains MAP-Elites implementation and experimental scripts
+- **`script/`**: Core experiment runners and utilities
+  - `map_elites.py`: Main MAP-Elites algorithm
+  - `map_elites_with_dataset.py`: MAP-Elites with trajectory dataset export
+  - `export_trajectories.py`: MongoDB to JSON exporter
+  - `show_formula.py`: Formula visualization utility
 
-3. **Testing (`test/`)**
-   - Comprehensive test suite with pytest
-   - C++ unit tests with Makefile build system
-   - Tests for all major components and integrations
+## Key Concepts
 
-### Data Flow
+### Trajectories
+Trajectories represent sequences of formula evaluations with three components:
+- `type`: Token types (integers)
+- `litint`: Token literals (integers)  
+- `avgQ`: Average Q values (floats)
 
-1. **Trajectory Generation**: Clusterbomb service generates trajectories from boolean formulas
-2. **Processing**: TrajectoryProcessor computes avgQ values and formula metrics locally
-3. **Storage**: Warehouse stores processed data in Neo4j (graph), MongoDB (trajectories), Redis (hashes)
-4. **Retrieval**: Evolution graph analysis and visualization via warehouse API
+### Formula Representation
+Formulas use gate integer representations that can be parsed into tree structures. The system supports:
+- Variable counting and isodegree computation
+- Decision tree conversion
+- Graph-based analysis
 
-### V2 System Refactor
+### MAP-Elites Algorithm
+The implementation uses multi-dimensional archives to optimize boolean formulas:
+- Cells indexed by formula characteristics (num_vars, width, size)
+- Elite selection strategies: uniform, curiosity, performance
+- Configurable mutation and batch processing
 
-The V2 architecture simplifies the original microservice design:
-- Removes separate trajproc and ranker services (ArmRanker module deleted)
-- Integrates processing directly into weapon services (clusterbomb)
-- Consolidates formula and graph data in single Neo4j nodes
-- Uses unified trajectory storage in MongoDB with cur_avgQ field
-- **Trajectory Format Migration**: Steps now stored as tuples `(token_type, token_literals, cur_avgQ)` for efficiency
-- **BSON Optimization**: MongoDB stores steps as lists instead of dicts (45.9% size reduction)
+## Environment Variables
 
-### Database Schema
-
-- **Neo4j**: Evolution graph with FormulaNode labels containing integrated formula data
-- **MongoDB**: 
-  - Trajectories with simplified schema including cur_avgQ per step
-  - Steps stored as lists `[token_type, token_literals, cur_avgQ]` for BSON efficiency
-  - Backward compatible with legacy dict format
-- **Redis**: WL hash → formula ID mappings for isomorphism detection
-
-### Key Files for Development
-
-- `library/longshot/agent/trajectory_processor.py`: Core trajectory processing logic
-- `service/warehouse/main.py`: Main data service API
-- `service/clusterbomb/main.py`: Trajectory generation service
-- `script/demo_v2_system.py`: Complete system demonstration
-- `doc/microservice.md`: Detailed V2 API specification
+For MongoDB operations:
+- `MONGO_USER`: MongoDB username
+- `MONGO_PASSWORD`: MongoDB password  
+- `MONGO_HOST`: MongoDB host (default: localhost)
+- `MONGO_PORT`: MongoDB port (default: 27017)
+- `MONGO_DB`: Database name (default: LongshotWarehouse)
+- `LONGSHOT_TEST_MODE`: Set to 1 for test mode with default credentials
 
 ## Development Notes
 
-- The system uses both Python and C++ components - ensure C++ compilation works before running tests
-- Microservices require infrastructure services (Docker Compose) to be running
-- V2 refactor is current architecture - older V1 components may be found in archive/
-- Tests expect specific database configurations - check service/docker-compose.yml for credentials
-- Every time you modify the service code and want to test, you must inform me to restart the service
-
-## Recent Changes (2025)
-
-- **Trajectory Schema Migration**: Migrated from dict-based to tuple-based trajectory steps
-  - API format: `(token_type: int, token_literals: int, cur_avgQ: float)`
-  - MongoDB storage: Lists `[token_type, token_literals, cur_avgQ]` for 45.9% BSON reduction
-  - Backward compatibility maintained for legacy data
-- **ArmRanker Removal**: Deleted deprecated ArmRanker module and tests (no longer needed)
-- **ClusterbombAgent Addition**: New client for weapon rollout operations
+- The library uses pybind11 for C++/Python bindings with C++17 standard
+- OpenMP is enabled for parallel processing in C++ code
+- Services use FastAPI with Pydantic for API validation
+- Test coverage includes both Python (pytest) and C++ unit tests
+- The project supports batch processing for large-scale experiments

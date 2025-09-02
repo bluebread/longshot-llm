@@ -1,6 +1,6 @@
 # Clusterbomb Service
 
-A microservice for weapon rollout functionality in the gym-longshot system.
+A microservice for weapon rollout functionality in the longshot-llm system.
 
 ## Overview
 

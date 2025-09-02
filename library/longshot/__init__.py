@@ -10,8 +10,7 @@ within reinforcement learning environments. Major components include:
 - models: neural network architectures used in the system
 - utils: general utility functions
 """
-import longshot.circuit
+import longshot.literals
 import longshot.error
-import longshot.models
 import longshot.utils
-import longshot.env
+import longshot.formula

@@ -1,257 +1,296 @@
 #!/usr/bin/env python3
 """
-Script to display formula string representation given either:
-1. A node_id from the evolution graph
-2. A (traj_id, traj_slice) pair from a trajectory
+Script to display formula representation given a trajectory ID and slice.
 
-This script retrieves the formula definition from the warehouse and
-displays it in a human-readable string format using NormalFormFormula.
+This script retrieves trajectory data from the warehouse and displays
+the formula at a specific slice in a human-readable format.
 
 USAGE:
-    # Display formula from an evolution graph node
-    python script/show_formula.py --node-id abc123-def456-789
-    
     # Display formula from a trajectory at a specific slice
     python script/show_formula.py --traj xyz789-abc123 42
     
-    # Display as DNF formula instead of CNF (default)
-    python script/show_formula.py --node-id abc123 --formula-type DNF
-    
     # Connect to a different warehouse server
-    python script/show_formula.py --node-id abc123 --warehouse-host remote.server --warehouse-port 8080
+    python script/show_formula.py --traj abc123 50 --host remote.server --port 8080
 
 OUTPUT:
     The script will display:
-    1. Formula metadata (type, number of gates, variables, width - all retrieved/calculated automatically)
-    2. Human-readable string representation (e.g., "(x1 ∨ ¬x2 ∨ x3) ∧ (¬x1 ∨ x4)")
-    3. Raw gate definitions in decimal and hexadecimal format
+    1. Trajectory metadata (num_vars, width)
+    2. Formula reconstruction up to the specified slice
+    3. Formula statistics (number of gates, variables used)
     
 EXAMPLES:
     # Retrieve formula from MAP-Elites elite stored in archive
-    # First, identify the traj_id and traj_slice from map_elites_archive.json
     python script/show_formula.py --traj 5f3e4d2c-1a2b-3c4d-5e6f-7a8b9c0d1e2f 127
     
-    # Display formula from evolution graph node created by trajectory processor
-    python script/show_formula.py --node-id node_abc123def
-    
-    # Display a formula in DNF format
-    python script/show_formula.py --traj trajectory_id 50 --formula-type DNF
+    # Display formula at slice 50 from trajectory
+    python script/show_formula.py --traj trajectory_id 50
 
 REQUIREMENTS:
     - Warehouse service must be running (default: localhost:8000)
-    - Valid node_id or trajectory_id must exist in the warehouse
-    - For trajectory queries, slice index must be within bounds
+    - Valid trajectory_id must exist in the warehouse
+    - Slice index must be within bounds
 """
 
 import argparse
 import sys
-from typing import Optional, List
-from longshot.agent import WarehouseAgent
-from longshot.circuit.formula import NormalFormFormula, FormulaType
-from longshot.utils import parse_formula_definition, parse_trajectory_to_definition
+from typing import Optional, List, Dict, Any
+from longshot.service.warehouse import WarehouseClient
+from longshot.utils import parse_trajectory_to_definition, parse_formula_definition
+from longshot.literals import Literals
+from longshot.formula import FormulaType
 
 
-def get_formula_from_node(warehouse: WarehouseAgent, node_id: str) -> tuple[Optional[List[int]], Optional[int]]:
+def get_trajectory_and_formula(
+    warehouse: WarehouseClient, 
+    traj_id: str, 
+    traj_slice: int
+) -> tuple[Optional[Dict[str, Any]], Optional[List[int]], Optional[int], Optional[int]]:
     """
-    Retrieve formula definition and num_vars from a node_id.
+    Retrieve trajectory and reconstruct formula at specified slice.
     
     Args:
-        warehouse: WarehouseAgent instance
-        node_id: Evolution graph node ID
-        
-    Returns:
-        Tuple of (formula definition as list of integers, num_vars), or (None, None) if not found
-    """
-    try:
-        # Get node information
-        node = warehouse.get_evolution_graph_node(node_id)
-        if not node:
-            print(f"Error: Node {node_id} not found")
-            return None, None
-            
-        # Get num_vars from node
-        num_vars = node.get("num_vars")
-        
-        # Get trajectory ID and slice from node
-        traj_id = node.get("traj_id")
-        traj_slice = node.get("traj_slice")
-        
-        if not traj_id:
-            print(f"Error: Node {node_id} has no associated trajectory")
-            return None, None
-            
-        print(f"Node {node_id} -> trajectory {traj_id}, slice {traj_slice}")
-        
-        # Get formula from trajectory (num_vars will be overridden by node's value)
-        formula_def, _ = get_formula_from_trajectory(warehouse, traj_id, traj_slice)
-        return formula_def, num_vars
-        
-    except Exception as e:
-        print(f"Error retrieving node {node_id}: {e}")
-        return None, None
-
-
-def get_formula_from_trajectory(warehouse: WarehouseAgent, traj_id: str, traj_slice: int) -> tuple[Optional[List[int]], Optional[int]]:
-    """
-    Retrieve formula definition and num_vars from a trajectory at a specific slice.
-    
-    Args:
-        warehouse: WarehouseAgent instance
+        warehouse: WarehouseClient instance
         traj_id: Trajectory ID
         traj_slice: Slice index in the trajectory
         
     Returns:
-        Tuple of (formula definition as list of integers, num_vars), or (None, None) if not found
+        Tuple of (trajectory dict, formula gates, num_vars, width), or Nones if not found
     """
     try:
         # Get trajectory
         trajectory = warehouse.get_trajectory(traj_id)
         if not trajectory:
             print(f"Error: Trajectory {traj_id} not found")
-            return None, None
+            return None, None, None, None
             
+        # Extract trajectory components from steps
         steps = trajectory.get("steps", [])
         
+        if not steps:
+            print(f"Error: Trajectory {traj_id} has no steps")
+            return None, None, None, None
+            
         if traj_slice < 0 or traj_slice >= len(steps):
             print(f"Error: Slice {traj_slice} out of range (trajectory has {len(steps)} steps)")
-            return None, None
+            return None, None, None, None
             
-        # Get max_num_vars from trajectory metadata
-        num_vars = trajectory.get("max_num_vars", 4)  # Default to 4 if not found
+        # Steps are in format: [type, litint, avgQ]
+        # Convert to tuples for parse_trajectory_to_definition
+        trajectory_tuples = [(step[0], step[1], step[2]) for step in steps[:traj_slice + 1]]
         
-        # Reconstruct formula up to the specified slice
-        prefix_steps = steps[:traj_slice + 1]
+        # Store full trajectory data for later use
+        trajectory["type"] = [step[0] for step in steps]
+        trajectory["litint"] = [step[1] for step in steps]
+        trajectory["avgQ"] = [step[2] for step in steps]
         
-        # Parse trajectory to get formula definition
-        formula_definition = parse_trajectory_to_definition(prefix_steps)
+        # Count token types up to the slice
+        # Token types: 0=ADD, 1=DEL, 2=EOS
+        add_count = sum(1 for step in steps[:traj_slice + 1] if step[0] == 0)
+        del_count = sum(1 for step in steps[:traj_slice + 1] if step[0] == 1)
+        eos_count = sum(1 for step in steps[:traj_slice + 1] if step[0] == 2)
+        trajectory["add_count"] = add_count
+        trajectory["del_count"] = del_count
+        trajectory["eos_count"] = eos_count
         
-        return formula_definition, num_vars
+        # Get metadata
+        num_vars = trajectory.get("num_vars", 4)  # Default to 4 if not found
+        width = trajectory.get("width", 3)  # Default to 3 if not found
+        
+        # Parse trajectory to get formula gates
+        formula_gates = parse_trajectory_to_definition(trajectory_tuples)
+        
+        return trajectory, formula_gates, num_vars, width
         
     except Exception as e:
         print(f"Error retrieving trajectory {traj_id}: {e}")
-        return None, None
+        return None, None, None, None
 
 
-def display_formula(definition: List[int], num_vars: int, formula_type: FormulaType = FormulaType.Conjunctive):
+def analyze_formula_gates(gates: List[int], num_vars: int) -> Dict[str, Any]:
     """
-    Display formula in human-readable string format.
+    Analyze formula gates to extract statistics.
     
     Args:
-        definition: Formula definition as list of integers
-        num_vars: Number of variables (default 4)
-        formula_type: Formula type (default Conjunctive)
+        gates: List of gate integers
+        num_vars: Number of variables
+        
+    Returns:
+        Dictionary with formula statistics
     """
-    if not definition:
+    stats = {
+        "num_gates": len(gates),
+        "variables_used": set(),
+        "max_width": 0,
+        "gate_types": {"AND": 0, "OR": 0, "NOT": 0}
+    }
+    
+    for gate in gates:
+        # Use Literals to decode the gate
+        literals = Literals(gate & 0xFFFFFFFF, (gate >> 32) & 0xFFFFFFFF)
+        
+        # Get width (number of literals in this gate)
+        width = literals.width
+        stats["max_width"] = max(stats["max_width"], width)
+        
+        # Track which variables are used
+        for var_idx in range(min(num_vars, 32)):
+            if literals.pos & (1 << var_idx):
+                stats["variables_used"].add(f"x{var_idx}")
+            if literals.neg & (1 << var_idx):
+                stats["variables_used"].add(f"¬x{var_idx}")
+    
+    return stats
+
+
+def display_formula(
+    trajectory: Dict[str, Any],
+    gates: List[int], 
+    num_vars: int, 
+    width: int,
+    traj_slice: int
+):
+    """
+    Display formula information and gates.
+    
+    Args:
+        trajectory: Full trajectory data
+        gates: Formula gates as list of integers
+        num_vars: Number of variables
+        width: Formula width
+        traj_slice: Slice index that was reconstructed
+    """
+    if not gates:
         print("Empty formula (no gates)")
         return
         
+    # Get formula statistics
+    stats = analyze_formula_gates(gates, num_vars)
+    
+    # Display trajectory information
+    print(f"\nTrajectory Information:")
+    print(f"  Trajectory ID: {trajectory.get('traj_id', 'unknown')}")
+    print(f"  Total steps: {len(trajectory.get('type', []))}")
+    print(f"  Slice requested: {traj_slice}")
+    print(f"  Number of variables: {num_vars}")
+    print(f"  Width constraint: {width}")
+    
+    # Display token counts
+    print(f"\nToken Counts (up to slice {traj_slice}):")
+    print(f"  ADD tokens: {trajectory.get('add_count', 0)}")
+    print(f"  DEL tokens: {trajectory.get('del_count', 0)}")
+    print(f"  EOS tokens: {trajectory.get('eos_count', 0)}")
+    
+    # Display formula statistics
+    print(f"\nFormula Statistics (up to slice {traj_slice}):")
+    print(f"  Number of gates: {stats['num_gates']}")
+    print(f"  Variables used: {', '.join(sorted(stats['variables_used']))}")
+    print(f"  Maximum gate width: {stats['max_width']}")
+    
+    # Display raw gate definitions
+    print(f"\nRaw gate definitions:")
+    for i, gate in enumerate(gates):
+        # Use Literals to decode the gate
+        pos_bits = gate & 0xFFFFFFFF
+        neg_bits = (gate >> 32) & 0xFFFFFFFF
+        literals_obj = Literals(pos_bits, neg_bits)
+        
+        # Build string representation
+        literals = []
+        for var_idx in range(min(num_vars, 32)):
+            if literals_obj.pos & (1 << var_idx):
+                literals.append(f"x{var_idx}")
+            if literals_obj.neg & (1 << var_idx):
+                literals.append(f"¬x{var_idx}")
+        
+        gate_str = " ∨ ".join(literals) if literals else "empty"
+        
+        # Print gate with binary representations
+        print(f"  Gate {i}: ({gate_str}) \t {gate} \t pos=0b{pos_bits:b}, neg=0b{neg_bits:b}")
+    
+    # Display trajectory rewards if available
+    if "avgQ" in trajectory:
+        avgQs = trajectory["avgQ"]
+        if traj_slice < len(avgQs):
+            print(f"\nReward at slice {traj_slice}: {avgQs[traj_slice]:.4f}")
+    
+    # Parse formula from gates and calculate avgQ
+    print(f"\nFormula Analysis:")
     try:
-        # Parse formula definition
-        formula = parse_formula_definition(definition, num_vars, formula_type)
+        # Parse the formula definition to get NormalFormFormula
+        formula = parse_formula_definition(gates, num_vars, FormulaType.Conjunctive)
         
-        # Convert to NormalFormFormula for string representation
-        if hasattr(formula, 'to_normal_form'):
-            nf_formula = formula.to_normal_form()
-        else:
-            # If it's already a NormalFormFormula
-            nf_formula = formula
+        # Calculate avgQ from the formula
+        calculated_avgQ = formula.avgQ()
+        print(f"  Calculated avgQ from formula: {calculated_avgQ:.6f}")
+        
+        # Compare with trajectory avgQ if available
+        if "avgQ" in trajectory and traj_slice < len(trajectory["avgQ"]):
+            stored_avgQ = trajectory["avgQ"][traj_slice]
+            difference = abs(calculated_avgQ - stored_avgQ)
+            match_status = "✓ MATCH" if difference < 1e-6 else "✗ MISMATCH"
             
-        # Calculate formula width (maximum width among all gates)
-        formula_width = 0
-        if hasattr(nf_formula, 'width'):
-            formula_width = nf_formula.width
-        elif hasattr(formula, 'width'):
-            formula_width = formula.width
-        else:
-            # Calculate manually from gates if not available
-            from longshot.utils import parse_gate_integer_representation
-            for gate in definition:
-                gate_info = parse_gate_integer_representation(gate)
-                formula_width = max(formula_width, gate_info.width)
-        
-        # Display formula information
-        print(f"\nFormula Information:")
-        print(f"  Type: {formula_type.name}")
-        print(f"  Number of gates: {len(definition)}")
-        print(f"  Number of variables: {num_vars}")
-        print(f"  Formula width: {formula_width}")
-        
-        # Display string representation
-        print(f"\nString representation:")
-        print(f"  {nf_formula}")
-        
-        # Display raw gate definitions
-        print(f"\nRaw gate definitions:")
-        for i, gate in enumerate(definition):
-            print(f"  Gate {i}: {gate} (0x{gate:08x})")
+            print(f"  Stored avgQ in trajectory:    {stored_avgQ:.6f}")
+            print(f"  Difference:                   {difference:.6f} {match_status}")
             
+            if difference >= 1e-6:
+                print(f"\n  WARNING: The calculated avgQ does not match the stored trajectory avgQ!")
     except Exception as e:
-        print(f"Error parsing formula: {e}")
+        print(f"  Error calculating avgQ: {e}")
 
 
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="Display formula string representation from node_id or trajectory",
+        description="Display formula representation from trajectory",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Display formula from a node ID
-  %(prog)s --node-id abc123-def456-789
-
   # Display formula from trajectory at specific slice
   %(prog)s --traj xyz789-abc123 42
 
-  # Display as DNF formula
-  %(prog)s --node-id abc123 --formula-type DNF
-  
   # Connect to different warehouse server
-  %(prog)s --node-id abc123 --warehouse-host remote.server --warehouse-port 8080
+  %(prog)s --traj abc123 50 --host remote.server --port 8080
         """
     )
     
-    # Input options (mutually exclusive group)
-    input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--node-id", type=str, help="Evolution graph node ID")
-    input_group.add_argument("--traj", nargs=2, metavar=("TRAJ_ID", "SLICE"),
-                            help="Trajectory ID and slice index")
-    
-    # Formula configuration
-    parser.add_argument("--formula-type", type=str, default="CNF",
-                       choices=["CNF", "DNF"],
-                       help="Formula type (default: CNF)")
+    # Trajectory input
+    parser.add_argument("--traj", nargs=2, metavar=("TRAJ_ID", "SLICE"),
+                       required=True,
+                       help="Trajectory ID and slice index")
     
     # Warehouse configuration
-    parser.add_argument("--warehouse-host", type=str, default="localhost",
+    parser.add_argument("--host", type=str, default="localhost",
                        help="Warehouse host (default: localhost)")
-    parser.add_argument("--warehouse-port", type=int, default=8000,
+    parser.add_argument("--port", type=int, default=8000,
                        help="Warehouse port (default: 8000)")
     
     args = parser.parse_args()
     
-    # Determine formula type
-    formula_type = FormulaType.Conjunctive if args.formula_type == "CNF" else FormulaType.Disjunctive
+    # Parse trajectory arguments
+    traj_id, traj_slice = args.traj
+    try:
+        traj_slice = int(traj_slice)
+    except ValueError:
+        print(f"Error: Slice must be an integer, got '{traj_slice}'")
+        sys.exit(1)
     
-    # Initialize warehouse agent
-    warehouse = WarehouseAgent(args.warehouse_host, args.warehouse_port)
+    # Initialize warehouse client
+    warehouse = WarehouseClient(host=args.host, port=args.port)
     
     try:
-        # Get formula definition and num_vars based on input
-        if args.node_id:
-            print(f"Retrieving formula from node: {args.node_id}")
-            definition, num_vars = get_formula_from_node(warehouse, args.node_id)
-        else:
-            traj_id, traj_slice = args.traj
-            traj_slice = int(traj_slice)
-            print(f"Retrieving formula from trajectory: {traj_id}, slice: {traj_slice}")
-            definition, num_vars = get_formula_from_trajectory(warehouse, traj_id, traj_slice)
+        print(f"Retrieving formula from trajectory: {traj_id}, slice: {traj_slice}")
         
-        if definition is None or num_vars is None:
-            print("Failed to retrieve formula definition or metadata")
+        # Get trajectory and reconstruct formula
+        trajectory, gates, num_vars, width = get_trajectory_and_formula(
+            warehouse, traj_id, traj_slice
+        )
+        
+        if gates is None:
+            print("Failed to retrieve trajectory or reconstruct formula")
             sys.exit(1)
             
         # Display the formula
-        display_formula(definition, num_vars, formula_type)
+        display_formula(trajectory, gates, num_vars, width, traj_slice)
         
     except KeyboardInterrupt:
         print("\nInterrupted by user")
@@ -260,7 +299,7 @@ Examples:
         print(f"Error: {e}")
         sys.exit(1)
     finally:
-        warehouse._client.close()
+        warehouse.close()
 
 
 if __name__ == "__main__":

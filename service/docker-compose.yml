@@ -1,58 +1,4 @@
 services:
-  neo4j:
-    image: neo4j:2025.06.2
-    container_name: neo4j-bread
-    ports:
-      - "7474:7474"   # Web UI
-      - "7687:7687"   # Bolt protocol, used for Python driver, etc.
-    environment:
-      NEO4J_AUTH: "neo4j/bread861122"  # ← Replace with your desired password
-      NEO4JLABS_PLUGINS: '["apoc", "graph-data-science"]'   # Enable plugins
-      NEO4J_apoc_export_file_enabled: "true"   # If you need to export files with APOC
-      NEO4J_apoc_import_file_enabled: "true"   # If you need to import files with APOC
-      NEO4J_apoc_import_file_use__neo4j__config: "true"  # Use Neo4j default import path
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-      - neo4j_import:/var/lib/neo4j/import
-      - neo4j_plugins:/plugins
-    networks:
-      - longshot-net
-
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq-bread
-    ports:
-      - "5672:5672"   # RabbitMQ communication (AMQP protocol)
-      - "15672:15672" # Management interface (http://localhost:15672)
-    environment:
-      RABBITMQ_DEFAULT_USER: haowei
-      RABBITMQ_DEFAULT_PASS: bread861122 
-    networks:
-      - longshot-net
-
-  redis:
-    image: redis:7
-    container_name: redis-bread
-    ports:
-      - "6379:6379"   # Redis port
-    volumes:
-      - redis_data:/data
-    command: ["redis-server", "--requirepass", "bread861122"] # TODO: Add user name
-    networks:
-      - longshot-net
-
-  redisinsight:
-    image: redis/redisinsight:latest
-    container_name: redisinsight-bread
-    ports:
-      - "5540:5540"
-    volumes:
-      - redisinsight_data:/data
-    networks:
-      - longshot-net
-    restart: unless-stopped
-
   mongodb:
     image: mongo:7.0.22-jammy
     container_name: mongo-bread
@@ -104,12 +50,6 @@ services:
   #     start_period: 40s
 
 volumes:
-  neo4j_data:
-  neo4j_logs:
-  neo4j_import:
-  neo4j_plugins:
-  redis_data:
-  redisinsight_data:
   mongo-data:
 
 networks:

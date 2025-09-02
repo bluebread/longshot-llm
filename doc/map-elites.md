@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the implementation plan for adapting the **MAP-Elites (Multi-dimensional Archive of Phenotypic Elites) algorithm** to optimize boolean formulas in the gym-longshot framework. MAP-Elites is a quality-diversity algorithm that maintains a collection of diverse, high-performing solutions organized in a multi-dimensional feature space.
+This document outlines the implementation of the **MAP-Elites (Multi-dimensional Archive of Phenotypic Elites) algorithm** integrated directly into the clusterbomb service for optimizing boolean formulas. MAP-Elites is a quality-diversity algorithm that maintains a collection of diverse, high-performing solutions organized in a multi-dimensional feature space.
 
 ## Background: MAP-Elites Algorithm
 
@@ -37,18 +37,37 @@ class MAPElitesConfig:
     cell_density: int            # Maximum organisms per cell (elites)
     
     # Formula space parameters
-    max_num_vars: int                # Number of boolean variables
-    max_width: int                   # Formula width constraint
-    max_size: int                    # Formula size constraint
+    num_vars: int                # Number of boolean variables
+    width: int                   # Formula width constraint
     
     # Mutation parameters
-    mutate_length: int           # Steps to run in clusterbomb simulation
-    num_mutate: int              # Number of trajectories to collect per mutation
+    num_steps: int               # Steps to run in clusterbomb simulation
+    num_trajectories: int        # Number of trajectories to collect per mutation
     
+    # Machine-related parameters
+    num_workers: int | None       # Number of parallel workers (None for using all cores)
+
     # Optional parameters
     batch_size: int = 10         # Number of parallel mutations
     elite_selection_strategy: str = "uniform"  # How to select elites
     initialization_strategy: str = "warehouse"  # Source of initial population
+    enable_sync: bool = False    # Whether to sync with other instances via warehouse
+    sync_interval: int = 10      # Iterations between syncs (if enabled)
+```
+
+### Command Line Usage
+
+```bash
+# Run MAP-Elites without synchronization (standalone mode)
+python run_map_elites.py --num-vars 10 --width 3 --iterations 100
+
+# Run MAP-Elites with synchronization (collaborative mode)
+python run_map_elites.py --num-vars 10 --width 3 --iterations 100 --enable-sync --sync-interval 5
+
+# Run multiple instances in parallel (each syncing through warehouse)
+python run_map_elites.py --enable-sync &  # Instance 1
+python run_map_elites.py --enable-sync &  # Instance 2
+python run_map_elites.py --enable-sync &  # Instance 3
 ```
 
 ## Algorithm Process Flow
@@ -56,15 +75,45 @@ class MAPElitesConfig:
 ### Phase 1: Initialization
 
 1. **Download Existing Data**
-   ```
-   warehouse.download_trajectory_dataset() → List[Trajectory]
-   ```
-   - Retrieve all existing trajectories from the warehouse service
-   - Extract formulas and their performance metrics (avgQ values)
-
-2. **Build Initial Archive**
    ```python
-    fisod = FormulaIsodegrees(num_vars, [])
+   async with AsyncWarehouseClient() as warehouse:
+       trajectories = await warehouse.get_trajectory_dataset(
+           num_vars=config.num_vars,
+           width=config.width
+       )
+   ```
+   - Retrieve relevant trajectories filtered by `num_vars` and `width` from the warehouse service
+   - Extract formulas and their performance metrics (avgQ values)
+   - Filtering ensures only compatible trajectories are loaded for the current configuration
+
+2. **Handle Empty Warehouse**
+   If no trajectories exist in the warehouse, randomly collect initial trajectories:
+   ```python
+   if not trajectories:
+       # Collect trajectories from initial formulas using clusterbomb
+       trajectories = []
+        # Run clusterbomb simulation to collect trajectory
+        traj_results = run_mutations_sync(
+            num_vars=config.num_vars,
+            width=config.width,
+            num_trajectories=config.initial_population_size ,
+            steps_per_trajectory=config.num_steps,
+            prefix_traj=[],
+            early_stop=True
+        )
+        
+        for trajectory in traj_results:
+            trajectories.append(trajectory)
+            # Send to warehouse immediately
+            await warehouse.post_trajectory(trajectory)
+   ```
+   - Use clusterbomb to collect trajectories through mutation
+   - Store trajectories in warehouse for future use
+   - Ensures algorithm can bootstrap from empty state
+
+3. **Build Initial Archive**
+   ```python
+    fisod = FormulaIsodegrees(config.num_vars, [])
     archive = defaultdict(list)
 
     for trajectory in trajectories:
@@ -79,9 +128,9 @@ class MAPElitesConfig:
             used_variables |= (lits.pos | lits.neg)
 
             # Break the loop if it violates the constraints
-            if used_variables.bit_length() > num_vars:
+            if used_variables.bit_length() > config.num_vars:
                 break
-            if token_type == 0 and lits.width > width:
+            if token_type == 0 and lits.width > config.width:
                 break
 
             if token_type == 0:
@@ -93,76 +142,237 @@ class MAPElitesConfig:
 
             cell_id = fisod.feature  # Immutable tuple identifier
            
-            if cell_id not in archive or cur_avgQ > archive[cell_id].avgQ:
-                archive[cell_id] = Elite(
-                    traj_id=tid, 
+            # Initialize cell if needed
+            if cell_id not in archive:
+                archive[cell_id] = []
+            
+            cell_elites = archive[cell_id]
+            
+            # Add if under capacity
+            if len(cell_elites) < config.cell_density:
+                cell_elites.append(Elite(
+                    traj_id=tid,
+                    traj_slice=i,
+                    avgQ=cur_avgQ
+                ))
+                cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
+            # Replace worst if better and at capacity
+            elif cur_avgQ > min(e.avgQ for e in cell_elites):
+                # Find and replace worst elite
+                min_idx = min(range(len(cell_elites)), 
+                             key=lambda i: cell_elites[i].avgQ)
+                cell_elites[min_idx] = Elite(
+                    traj_id=tid,
                     traj_slice=i,
                     avgQ=cur_avgQ
                 )
+                cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
    ```
-   - Process trajectories incrementally to build FormulaFeatures
+   - Process trajectories incrementally to build FormulaIsodegrees
    - Map formulas to cells based on their feature representation
-   - Keep only the best-performing formula per cell (elite selection)
+   - Maintain up to `cell_density` elites per cell (sorted by performance)
 
 ### Phase 2: Main Evolution Loop
 
 Repeat for `num_iterations`:
 
-#### Step 1: Elite Selection
+#### Step 1: Archive Synchronization (Optional)
 ```python
-def select_elites(archive, strategy="uniform"):
-    populated_cells = [cell for cell in archive if archive[cell] is not None]
+# Only sync if enabled and at sync interval
+if config.enable_sync and iteration % config.sync_interval == 0:
+    last_sync = await sync_archive_with_warehouse(archive, last_sync_time, config)
+else:
+    # Skip synchronization in standalone mode
+    pass
+
+async def sync_archive_with_warehouse(archive, last_sync_time, config):
+    """
+    Fetch new trajectories from warehouse to update local archive.
+    This includes trajectories from other clusterbomb instances.
+    Only called when enable_sync is True.
+    """
+    async with AsyncWarehouseClient() as warehouse:
+        # Get trajectories added since last sync
+        new_trajectories = await warehouse.get_trajectory_dataset(
+            since=last_sync_time,
+            num_vars=config.num_vars,
+            width=config.width
+        )
+    
+    # Update local archive with trajectories from all sources
+    for trajectory in new_trajectories:
+        update_archive_from_trajectory(archive, trajectory, config)
+    
+    return datetime.now()
+
+def update_archive_from_trajectory(archive, trajectory, config):
+    """Process a trajectory and update the archive with its steps."""
+    fisod = FormulaIsodegrees(config.num_vars, [])
+    
+    for i, step in enumerate(trajectory.steps):
+        token_type, litint, cur_avgQ = step
+        
+        # Incrementally update formula
+        if token_type == 0:  # ADD
+            fisod.add_gate(litint)
+        elif token_type == 1:  # DELETE
+            fisod.remove_gate(litint)
+        elif token_type == 2:  # EOS
+            break
+        
+        # Update archive for this step
+        cell_id = fisod.feature
+        if cell_id not in archive:
+            archive[cell_id] = []
+        
+        cell_elites = archive[cell_id]
+        
+        # Check if we should add this elite
+        if len(cell_elites) < config.cell_density:
+            cell_elites.append(Elite(
+                traj_id=trajectory.traj_id,
+                traj_slice=i,
+                avgQ=cur_avgQ
+            ))
+            cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
+        elif cur_avgQ > min(e.avgQ for e in cell_elites):
+            # Replace worst elite
+            min_idx = min(range(len(cell_elites)), 
+                         key=lambda j: cell_elites[j].avgQ)
+            cell_elites[min_idx] = Elite(
+                traj_id=trajectory.traj_id,
+                traj_slice=i,
+                avgQ=cur_avgQ
+            )
+            cell_elites.sort(key=lambda x: x.avgQ, reverse=True)
+```
+
+#### Step 2: Elite Selection
+```python
+def select_elites(archive, strategy="uniform", batch_size=10):
+    # Get all populated cells (cells with at least one elite)
+    populated_cells = [cell for cell in archive if len(archive[cell]) > 0]
     
     if strategy == "uniform":
         # Uniform random selection from populated cells
-        return random.sample(populated_cells, min(batch_size, len(populated_cells)))
+        selected_cells = random.sample(
+            populated_cells, 
+            min(batch_size, len(populated_cells))
+        )
     elif strategy == "curiosity":
         # Prefer less-explored or boundary cells
-        return select_curious_cells(populated_cells)
+        selected_cells = select_curious_cells(populated_cells, batch_size)
     elif strategy == "performance":
         # Bias toward high-performing cells
-        return select_high_performing_cells(populated_cells)
+        selected_cells = select_high_performing_cells(populated_cells, batch_size)
+    
+    # For each selected cell, pick a random elite from that cell
+    selected_elites = []
+    for cell in selected_cells:
+        elite = random.choice(archive[cell])  # Pick random elite from cell
+        selected_elites.append((cell, elite))
+    
+    return selected_elites
 ```
 
-#### Step 2: Mutation via ClusterbombAgent
+#### Step 3: Mutation and Trajectory Collection
 ```python
-for selected_cell in selected_cells:
-    elite = archive[selected_cell]
-    traj = trajectories_lookup[elite.traj_id]
-    
-    # Send elite formula to clusterbomb for mutation
-    request = RolloutRequest(
-        num_vars=num_vars,
-        width=width,
-        size=size,
-        num_trajectories=num_mutate,
-        steps_per_trajectory=mutate_length,
-        prefix_traj=traj[:elite.traj_slice+1],
+import asyncio
+from typing import List
+from multiprocessing import Pool
+from functools import partial
+
+def run_mutation_job(args):
+    """Worker function for parallel mutation execution."""
+    elite, traj_slice, config = args
+    # This runs in a separate process
+    trajectories = run_mutations_sync(
+        num_vars=config.num_vars,
+        width=config.width,
+        num_trajectories=config.num_trajectories,
+        steps_per_trajectory=config.num_steps,
+        prefix_traj=elite[:traj_slice+1],
         early_stop=True
     )
+    return trajectories
+
+async def post_trajectory_with_retry(warehouse, trajectory, max_retries=3):
+    """Post a trajectory with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            return await warehouse.post_trajectory(trajectory)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Failed to post trajectory after {max_retries} attempts: {e}")
+                raise
+            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+async def mutate_elites(warehouse, selected_elites, trajectories_lookup, config):
+    new_trajectories = []
+    post_tasks = []
     
-    response = clusterbomb_agent.weapon_rollout(request)
-    new_trajectories = response.trajectories
+    # Prepare mutation jobs for parallel execution
+    mutation_jobs = []
+    for cell_id, elite in selected_elites:
+        traj = trajectories_lookup[elite.traj_id]
+        mutation_jobs.append((traj, elite.traj_slice, config))
+    
+    # Use multiprocessing Pool to run mutations in parallel across CPU cores
+    num_workers = config.num_workers if config.num_workers else None  # None uses all cores
+    with Pool(processes=num_workers) as pool:
+        # Dispatch mutation jobs evenly across worker processes
+        mutation_results = pool.map(run_mutation_job, mutation_jobs)
+    
+    # Flatten results and prepare for posting to warehouse
+    for mutated_trajectories in mutation_results:
+        # Create retry-enabled post tasks
+        post_tasks.extend([
+            post_trajectory_with_retry(warehouse, trajectory) 
+            for trajectory in mutated_trajectories
+        ])
+        
+        new_trajectories.extend(mutated_trajectories)
+    
+    # Execute all POST requests with error handling
+    results = await asyncio.gather(*post_tasks, return_exceptions=True)
+    
+    # Check for failures and report
+    failures = [r for r in results if isinstance(r, Exception)]
+    if failures:
+        print(f"Warning: {len(failures)} trajectories failed to post after retries")
+        # Log failures for debugging but continue execution
+        for failure in failures:
+            print(f"  Error: {failure}")
+
+    return new_trajectories
 ```
 
-#### Step 3: Process Mutations
+#### Step 4: Process Mutations
 ```python
 for trajectory in new_trajectories:
-    for step in trajectory:
-        # Extract mutated formula and its performance
-        mutant_formula = step.formula
-        mutant_avgQ = step.cur_avgQ
+    # Initialize FormulaIsodegrees for this trajectory
+    fisod = FormulaIsodegrees(config.num_vars, [])
+    
+    for i, step in enumerate(trajectory.steps):
+        token_type, litint, cur_avgQ = step
         
-        # Calculate feature for placement in archive
-        feature = FormulaIsodegrees(num_vars, mutant_formula.gates)
-        cell_id = feature.feature
+        # Incrementally update formula based on token type
+        if token_type == 0:  # ADD operation
+            fisod.add_gate(litint)
+        elif token_type == 1:  # DELETE operation
+            fisod.remove_gate(litint)
+        elif token_type == 2:  # EOS (end of sequence)
+            break
+        
+        # Get current formula feature
+        cell_id = fisod.feature  # Immutable tuple identifier
         
         # Update archive if improvement or new cell
-        if should_update_cell(archive, cell_id, mutant_avgQ, cell_density):
-            update_cell(archive, cell_id, mutant_formula, mutant_avgQ)
+        if should_update_cell(archive, cell_id, cur_avgQ, config.cell_density):
+            update_cell(archive, cell_id, trajectory.traj_id, i, cur_avgQ)
 ```
 
-#### Step 4: Archive Update
+#### Step 5: Archive Update
 ```python
 def update_cell(archive, cell_id, traj_id, traj_slice, avgQ):
     cell_elites = archive[cell_id]
@@ -187,55 +397,115 @@ After completing all iterations:
    - Performance distribution across cells
    - Diversity metrics
 
-2. **Elite Export**
-   - Save all elites to warehouse
-   - Generate visualization of the feature space
-   - Export best formulas per complexity level
+2. **Final Analysis**
+   ```python
+   # The archive already contains all discovered elites
+   # No need to download from warehouse
+   
+   # Generate statistics from local archive
+   total_cells = len(archive)
+   total_elites = sum(len(cell_elites) for cell_elites in archive.values())
+   
+   # Export best formulas per complexity level
+   best_by_complexity = {}
+   for cell_id, elites in archive.items():
+       complexity = len(cell_id)  # Using feature dimension as complexity metric
+       if complexity not in best_by_complexity:
+           best_by_complexity[complexity] = []
+       best_by_complexity[complexity].extend(elites)
+   
+   # Sort each complexity level by performance
+   for complexity in best_by_complexity:
+       best_by_complexity[complexity].sort(key=lambda e: e.avgQ, reverse=True)
+   ```
+   - Analyze the local archive which already contains all discovered elites
+   - Generate visualization of the feature space from archive data
+   - Export best formulas per complexity level directly from archive
 
 ## Data Flow Integration
 
-### Service Interactions
+### Service Architecture
 
 ```
 graph LR
-    A[MAP-Elites Controller] --> B[Warehouse Service]
-    A --> C[ClusterbombAgent]
-    C --> D[Clusterbomb Service]
-    D --> E[TrajectoryProcessor]
-    E --> C
-    C --> A
+    A[Clusterbomb Service with MAP-Elites] --> B[Warehouse Service]
     B --> A
-    A --> B
 ```
 
-1. **Warehouse Service**
-   - Initial data retrieval: `GET /trajectories`
-   - Elite storage: `POST /formulas` with avgQ metadata
-   - Graph updates: `PUT /evolution-graph` with parent-child relationships
+The clusterbomb service now directly implements MAP-Elites algorithm with multi-instance support:
 
-2. **ClusterbombAgent**
-   - Mutation requests: Send elite formulas for exploration
-   - Trajectory retrieval: Receive mutated formulas with performance metrics
+1. **Clusterbomb Service (MAP-Elites Engine)**
+   - Runs as an autonomous container executing MAP-Elites algorithm
+   - **Supports multiple concurrent instances** for distributed exploration
+   - Directly generates and evaluates trajectory mutations
+   - Maintains a local elite archive that synchronizes with global state
+   - No external API endpoints - operates as a job executor
 
-3. **TrajectoryProcessor** (within Clusterbomb)
-   - Computes avgQ values for trajectory steps
-   - Ensures consistent performance evaluation
+2. **Warehouse Service Integration**
+   - **Initialization**: Retrieves existing trajectories via `AsyncWarehouseClient`
+   - **Optional Synchronization**: When `enable_sync=True`, fetches new trajectories from other instances
+   - **Continuous Updates**: Pushes new trajectories asynchronously during execution
+   - **Standalone Mode**: When `enable_sync=False`, operates independently without syncing
+   - All communication uses async patterns for optimal performance
+
+3. **Operating Modes**
+
+   **Standalone Mode** (`enable_sync=False`):
+   ```python
+   # Run independently without synchronization
+   # Faster iteration, no network overhead
+   # Best for single-machine exploration
+   python run_map_elites.py --num-vars 10 --width 3
+   ```
+   
+   **Collaborative Mode** (`enable_sync=True`):
+   ```python
+   # At startup - load global state filtered by configuration
+   trajectories = await warehouse.get_trajectory_dataset(
+       num_vars=config.num_vars,
+       width=config.width
+   )
+   
+   # Each iteration - conditionally sync with other instances
+   if config.enable_sync and iteration % config.sync_interval == 0:
+       last_sync = await sync_archive_with_warehouse(archive, last_sync_time, config)
+   
+   # During execution - share discoveries immediately
+   # NOTE: Each trajectory is sent as soon as it's collected,
+   # not batched until iteration end
+   for trajectory in new_trajectories:
+       await warehouse.post_trajectory(trajectory)
+   ```
+   
+   **Multi-Instance Benefits**:
+   - Multiple clusterbomb instances can run simultaneously when sync is enabled
+   - Each maintains its own local archive
+   - Archives are periodically synchronized through the warehouse (controlled by `sync_interval`)
+   - Discoveries from one instance benefit all others
+   - Enables massive parallel exploration of the solution space
+   - Can dynamically enable/disable sync based on needs
 
 ## Implementation Considerations
 
 ### Performance Optimizations
 
-1. **Batch Processing**
-   - Send multiple elites to clusterbomb in parallel
+1. **Multiprocessing for Mutations**
+   - Utilizes `multiprocessing.Pool` to parallelize mutation jobs across CPU cores
+   - Configurable worker count via `num_workers` parameter (None uses all available cores)
+   - Each mutation runs in a separate process for true parallelism
+   - Pool.map automatically distributes jobs evenly across workers
+
+2. **Batch Processing**
+   - Send multiple elites for mutation in parallel
    - Process trajectory responses in batches
    - Update archive in bulk operations
 
-2. **Caching**
+3. **Caching**
    - Cache FormulaIsodegrees computations
    - Maintain formula hash → feature mapping
    - Store frequently accessed elites in memory
 
-3. **Incremental Updates**
+4. **Incremental Updates**
    - Process trajectories step-by-step
    - Update features incrementally along trajectory
    - Avoid redundant feature recalculation
@@ -277,7 +547,7 @@ The algorithm terminates when:
 1. **Adaptive Parameters**
    - Dynamic cell_density based on archive coverage
    - Adaptive mutation rates based on improvement trends
-   - Variable mutate_length based on formula complexity
+   - Variable num_steps based on formula complexity
 
 2. **Advanced Feature Spaces**
    - Multi-dimensional features beyond FormulaIsodegrees

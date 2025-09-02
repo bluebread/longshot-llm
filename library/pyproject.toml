@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 # target-version = "py37"
 
 [project]
-name = "gym-longshot"
+name = "longshot-llm"
 version = "0.1.0"
 authors = [
   { name="bluebread", email="hotbead70127@gmail.com" },

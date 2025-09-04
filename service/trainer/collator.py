@@ -3,7 +3,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 
-class TrajectoryCollector:
+class TrajectoryCollator:
     """
     Data collator for TrajectoryDataset that forms batches for Hugging Face training.
     
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     from dataset import TrajectoryDataset
     
     dataset = TrajectoryDataset(num_vars=3, width=2)
-    collector = TrajectoryCollector()
+    collector = TrajectoryCollator()
     sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
     batch = collector(sample_batch)
     

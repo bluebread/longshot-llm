@@ -296,3 +296,5 @@ doc/*/_generated
 !library/longshot/env/
 .claude
 cache/
+log/
+trainer_output/

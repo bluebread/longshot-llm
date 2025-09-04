@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 from transformers import GPT2Config, GPT2Model, GPT2PreTrainedModel
-from transformers.modeling_outputs import CausalLMOutputWithPast
 
 class GPT2ForLongshot(GPT2PreTrainedModel):
     def __init__(
@@ -42,8 +41,8 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         q = labels
         q_hat = y
         
-        l1 = F.mse_loss(torch.exp(- d_hat), torch.exp(- d))
-        l2 = F.mse_loss(q_hat, q)
+        l1 = F.mse_loss(torch.exp(- d_hat), torch.exp(- d), reduction='mean')
+        l2 = F.mse_loss(q_hat, q, reduction='mean')
         loss = self.alpha * l1 + self.beta * l2
         
         return loss
@@ -53,7 +52,6 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         input_ids: torch.LongTensor, 
         attention_mask: torch.LongTensor = None, 
         labels: torch.FloatTensor = None,
-        retrun_dict: bool = False
     ):
         """
         Args:
@@ -86,27 +84,18 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         loss = None
         if labels is not None:
             attn = attention_mask
-            loss = self.loss_function(y * attn, labels * attn)
+            loss = self.loss_function(y * attn, labels * attn).unsqueeze(0)
             
-        if not retrun_dict:
-            return (loss, y) if loss is not None else y
-        
-        return CausalLMOutputWithPast(
-            loss=loss,
-            logits=y,
-            past_key_values=None,
-            hidden_states=None,
-            attentions=None
-        )
+        return (loss, y, x) if loss is not None else (y, x)
         
 
 if __name__ == "__main__":
     # Example usage
     from dataset import TrajectoryDataset
-    from collector import TrajectoryCollector
+    from service.trainer.collator import TrajectoryCollator
     
     dataset = TrajectoryDataset(num_vars=3, width=2)
-    collector = TrajectoryCollector()
+    collector = TrajectoryCollator()
     sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
     batch = collector(sample_batch)
     
@@ -130,8 +119,9 @@ if __name__ == "__main__":
         config=model_config
     )
     
-    loss, logits = model(**batch)
+    loss, logits, hidden_states = model(**batch)
     
     print("Embedding Dimension (gate): ", model.n_embed_gate)
     print("Loss: ", loss)
     print("Logits: \n", logits)
+    print("Hidden States: \n", hidden_states)

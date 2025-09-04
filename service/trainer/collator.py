@@ -13,9 +13,11 @@ class TrajectoryCollator:
     
     def __init__(
         self,
+        num_vars: int,
         padding_value: int = 0,
         label_padding_value: float = -100.0,
-        return_tensors: str = "pt"
+        return_tensors: str = "pt",
+        permute_input: bool = False,
     ):
         """
         Initialize the TrajectoryCollector.
@@ -25,10 +27,61 @@ class TrajectoryCollator:
             label_padding_value: Value to use for padding labels (default: -100.0 for loss ignoring)
             return_tensors: Type of tensors to return ("pt" for PyTorch)
         """
+        self.num_vars = num_vars
         self.padding_value = padding_value
         self.label_padding_value = label_padding_value
         self.return_tensors = return_tensors
+        self.permute_input = permute_input
     
+    
+    def _random_permutation(self) -> torch.Tensor:
+        n = self.num_vars
+        
+        perm = torch.randperm(n, dtype=torch.int64).repeat(2)
+        sgn = torch.randint(0, 2, (n,), dtype=torch.int64)
+        perm[:n] += sgn * n
+        perm[n:] += (1 - sgn) * n
+            
+        return perm
+
+
+    def _convert_to_binary(self, input_ids: torch.Tensor) -> torch.Tensor:
+        # Embed input ids
+        x = torch.abs(input_ids)
+        concat_later = []
+        
+        for i in range(self.num_vars):
+            pos_z = ((x >> i) & 0x1).unsqueeze(-1)
+            concat_later.append(pos_z)
+        
+        for i in range(self.num_vars):
+            neg_z = ((x >> (i + 32)) & 0x1).unsqueeze(-1)
+            concat_later.append(neg_z)
+        
+        return torch.cat(concat_later, dim=-1)
+    
+    
+    def _permute_tensor(self, input_bin: torch.Tensor, perm: torch.Tensor) -> torch.Tensor:
+        return input_bin.index_select(-1, perm)
+
+
+    def _convert_to_ids(self, input_bin: torch.Tensor) -> torch.Tensor:
+        x = input_bin
+        pos_w = [(1 << i) for i in range(self.num_vars)]
+        neg_w = [(1 << (i + 32)) for i in range(self.num_vars)]
+        w = torch.tensor(pos_w + neg_w, dtype=torch.int64, device=input_bin.device)
+        y = x @ w
+        return y.squeeze(-1)
+
+
+    def _permute(self, input_ids: torch.Tensor) -> torch.Tensor:
+        sign = 1 - 2 * (input_ids < 0).int()
+        input_bin = self._convert_to_binary(input_ids)
+        perm = self._random_permutation()
+        permuted_bin = self._permute_tensor(input_bin, perm)
+        return self._convert_to_ids(permuted_bin) * sign
+
+
     def __call__(self, features: List[Dict[str, Any]], **kwargs) -> Dict[str, torch.Tensor]:
         """
         Collate a list of samples from TrajectoryDataset into a batch.
@@ -69,6 +122,9 @@ class TrajectoryCollator:
             batch_first=True, 
             padding_value=self.label_padding_value
         )
+        
+        if self.permute_input:
+            input_ids_padded = self._permute(input_ids_padded)
         
         batch = {
             "input_ids": input_ids_padded,

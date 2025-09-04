@@ -151,3 +151,10 @@ if __name__ == "__main__":
     sample = dataset[0]
     print(f"First sample: {sample}")
     
+    from torch.utils.data import random_split
+    
+    train_size = int(0.8 * len(dataset))
+    eval_size = len(dataset) - train_size
+    train_dataset, eval_dataset = random_split(dataset, [train_size, eval_size])
+
+    print(f"Train size: {len(train_dataset)}, Eval size: {len(eval_dataset)}")

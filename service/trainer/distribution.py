@@ -4,7 +4,7 @@ from torch.distributions import constraints
 from torch.distributions import Distribution, Gumbel, Bernoulli
 
 
-class GumbelTopK(Distribution):
+class GumbelTopKSubset(Distribution):
     arg_constraints = { 
         "_phi": constraints.real_vector,
     }
@@ -18,7 +18,7 @@ class GumbelTopK(Distribution):
         validate_args = None
     ):
         """
-        Initialize the GumbelTopK distribution.
+        Initialize the GumbelTopKSubset distribution.
         Args:
             phi (torch.Tensor): A tensor of shape (..., n) representing the weights for the distribution.
             k (int): The number of top elements to sample.
@@ -42,8 +42,8 @@ class GumbelTopK(Distribution):
         self._validate_args = validate_args
         
         # Calculate temporary variables
-        self.alpha = torch.exp(phi)
-        self.beta = torch.softmax(phi, dim=-1)
+        self._alpha = torch.exp(phi)
+        self._beta = torch.softmax(phi, dim=-1)
         
         # Initialize the distribution
         batch_shape = phi.shape[:-1]
@@ -96,7 +96,7 @@ class GumbelTopK(Distribution):
         """
         k = values.size(-1)
         masks = torch.arange(1 << k).unsqueeze(1)
-        masks = masks.bitwise_and(1 << torch.arange(k)).eq(0).int()
+        masks = masks.bitwise_and(1 << torch.arange(k)).eq(0).float()
 
         return values @ masks.transpose(0, 1)
 
@@ -111,17 +111,23 @@ class GumbelTopK(Distribution):
         if len(b_prefix) > len(a_prefix):
             raise ValueError(f"B has too many prefix dims {b_prefix}, cannot align with A {a_prefix}")
 
-        # 對齊從後面開始比
+        # Handle empty batch dimension case
+        if len(b_prefix) == 0 and len(a_prefix) > 0:
+            # B has no batch dims, need to add them
+            B_expanded = B
+            for _ in range(len(a_prefix)):
+                B_expanded = B_expanded.unsqueeze(0)
+            expand_shape = (*a_prefix, B.shape[-1])
+            return B_expanded.expand(expand_shape)
+        
         if b_prefix != a_prefix[-len(b_prefix):]:
             raise ValueError(f"Prefix dims do not align: A {a_prefix}, B {b_prefix}")
 
-        # 補上缺少的 batch 維度
         num_missing = len(a_prefix) - len(b_prefix)
         B_expanded = B
         for _ in range(num_missing):
             B_expanded = B_expanded.unsqueeze(0)
 
-        # expand 到完整 batch size
         expand_shape = (*a_prefix, B.shape[-1])
         B_expanded = B_expanded.expand(expand_shape)
 
@@ -135,30 +141,50 @@ class GumbelTopK(Distribution):
         Returns:
             torch.Tensor: A tensor containing the log probabilities of the given samples.
         """
-        phi = self._phi
+        beta = self._beta
         n = self._phi.size(-1)
         k = self._k
         prob_shape = value.shape[:-1]
 
         assert value.shape[-1] == k, "The last dimension of `value` must be equal to `k`"
 
-        phi_expanded = self._align_dim_except_last(value, self._phi)
-        v = phi_expanded.gather(dim=-1, index=value)
+        beta_expanded = self._align_dim_except_last(value, beta)
+        v = beta_expanded.gather(dim=-1, index=value)
         soc = self._sum_over_complements(v)
         g = 1 / (1 - soc)
 
         dp = torch.zeros(*prob_shape, 2 ** n)
 
-        for S in range(2 ** n):
+        for S in range(2 ** k):
             if S.bit_count() <= 1:
                 dp[..., S] = 1
+                continue
 
             Q = [S ^ (1 << i) for i in range(n) if (S & (1 << i)) > 0]
             fQ = dp[..., Q]
             gQ = g[..., Q]
             dp[..., S] = (fQ * gQ).sum(dim=-1)
 
-        x = torch.log(dp[..., (1 << n) - 1])
-        x = x + torch.log(phi_expanded).sum(dim=-1)
+        x = torch.log(dp[..., (1 << k) - 1])
+        x = x + torch.log(v).sum(dim=-1)
 
         return x
+
+
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    phi = torch.randn(2, 5)
+    k = 2
+    dist = GumbelTopKSubset(phi, k, statis_freq=1000)
+
+    samples = dist.sample((1,))
+    log_probs = dist.log_prob(samples)
+    entropy_estimate = dist.entropy()
+
+    print("Samples:")
+    print(samples)
+    print("Log probabilities:")
+    print(log_probs)
+    print("Estimated entropy:")
+    print(entropy_estimate)
+    

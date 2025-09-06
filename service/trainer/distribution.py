@@ -64,10 +64,11 @@ class GumbelTopKSubset(Distribution):
             raise ValueError("`k` must be a positive integer (>=1)")
         
         # Initialize parameters
-        self._phi = phi.to()
+        self._phi = phi
         self._k = k
         self._gumbel = Gumbel(0, 1)
         self._validate_args = validate_args
+        self._device = phi.device
         
         # Calculate temporary variables
         self._alpha = torch.exp(phi)
@@ -100,7 +101,8 @@ class GumbelTopKSubset(Distribution):
             phi = self._phi
             g = self._gumbel
             k = self._k
-            x = phi + g.sample(sample_shape + phi.shape)
+            noise = g.sample(sample_shape + phi.shape).to(self._device)
+            x = phi + noise
             
             return torch.topk(x, k, dim=-1).indices
         
@@ -129,7 +131,7 @@ class GumbelTopKSubset(Distribution):
         k = self._k
         batch_shape = self._phi.shape[:-1]
         subsets = list(combinations(range(n), k))
-        ss = torch.tensor(subsets)
+        ss = torch.tensor(subsets, device=self._device, dtype=torch.long)
         
         if batch_shape:
             for _ in batch_shape:
@@ -159,8 +161,8 @@ class GumbelTopKSubset(Distribution):
             values[..., 0] + values[..., 2].
         """
         k = values.size(-1)
-        masks = torch.arange(1 << k).unsqueeze(1)
-        masks = masks.bitwise_and(1 << torch.arange(k)).eq(0).float()
+        masks = torch.arange(1 << k, device=values.device).unsqueeze(1)
+        masks = masks.bitwise_and(1 << torch.arange(k, device=values.device)).eq(0).float()
 
         return values @ masks.transpose(0, 1)
 
@@ -248,7 +250,7 @@ class GumbelTopKSubset(Distribution):
         soc = self._sum_over_complements(v)
         g = 1 / (1 - soc)
 
-        dp = torch.zeros(*prob_shape, 2 ** n)
+        dp = torch.zeros(*prob_shape, 2 ** n, device=self._device)
 
         for S in range(2 ** k):
             if S.bit_count() <= 1:
@@ -263,6 +265,17 @@ class GumbelTopKSubset(Distribution):
         x = torch.log(dp[..., (1 << k) - 1])
         x = x + torch.log(v).sum(dim=-1)
 
+        # Let Y = {i1, i2, ..., im} be a subset of {1, 2, ..., k}
+        # The definition of f:
+        #   - |Y| > 1: f(Y) = Σ_{j=1}^{m} f(Y\{ij}) * g(Y\{ij})
+        #   - |Y| = 1: f(Y) = 1
+        # The definition of g:
+        #   - Y = ∅: g(Y) = inf
+        #   - |Y| > 0: g(Y) = 1 / (1 - Σ beta[ij] for ij not in Y)
+        #   - Y = {1, 2,..., k}: g(Y) = 1 / (1 - 0) = 1
+        # The probability of selecting subset S = {i1, i2,...,ik} is:
+        #   - p(S) = f({1, 2,...,k}) * Π beta[i]
+        #   - log p(S) = log f({1, 2,...,k}) + Σ log beta[i]
         return x
 
 
@@ -307,7 +320,8 @@ if __name__ == "__main__":
         est_prob = count / num_samples
         
         # Theoretical probability from distribution
-        logp = dist.log_prob(torch.tensor(list(subset)).unsqueeze(0)).item()
+        subset_tensor = torch.tensor(list(subset), device=dist._device, dtype=torch.long).unsqueeze(0)
+        logp = dist.log_prob(subset_tensor).item()
         cal_prob = math.exp(logp)
         
         print(f"Subset: {set(subset)}, Estimated Prob.: {est_prob:.6f}, Calculated Prob.: {cal_prob:.6f}")

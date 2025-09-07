@@ -3,32 +3,38 @@ from collections import defaultdict
 from itertools import combinations
 import torch
 from torch.distributions import constraints
-from torch.distributions import Distribution, Gumbel
+from torch.distributions import Distribution, Gumbel, Bernoulli
 
 
-class GumbelTopKSubset(Distribution):
+class GumbelTopKSubsetWithSign(Distribution):
     """
-    A distribution for sampling k-element subsets from n elements using the Gumbel-Top-k trick.
+    Distribution for sampling signed k-element subsets using Gumbel-Top-k with sign modulation.
     
-    This distribution samples subsets of size k from n elements where each element i has 
-    weight exp(phi[i]). The sampling is done using Gumbel noise added to the logits,
-    followed by taking the top-k elements.
+    This distribution combines subset selection with sign assignment, where:
+    1. A k-element subset is sampled from n elements using Gumbel-Top-k trick based on phi logits
+    2. Each selected element is assigned a sign (±1) based on psi logits via Bernoulli sampling
     
-    The distribution supports batched operations and provides exact log probability
-    computation using dynamic programming.
+    The output is a tensor of shape (..., 2k) containing [indices, signs] where indices
+    indicate selected elements and signs indicate their polarity (0 or 1).
+    
+    Mathematical formulation:
+    - Subset selection: P(S) ∝ Π_{i∈S} exp(phi[i]) using Gumbel-max trick
+    - Sign assignment: P(sign[i]=1) = sigmoid(psi[i]) for each selected element i
+    - Joint probability: P(S, signs) = P(S) * Π_{i∈S} P(sign[i])
     
     Args:
-        phi: Logits/weights for each element, shape (..., n)
-        k: Number of elements to select in each subset
-        statis_freq: Number of samples for entropy estimation
+        phi: Selection logits for each element, shape (..., n)
+        psi: Sign logits for each element, shape (..., n), must be non-negative
+        k: Number of elements to select (subset size)
         validate_args: Whether to validate input arguments
     
     Attributes:
-        _phi: The input logits
-        _k: Subset size
-        _alpha: Exponentiated logits (exp(phi))
-        _beta: Softmax probabilities (softmax(phi))
-        _gumbel: Standard Gumbel distribution for sampling
+        _phi: Selection logits for subset sampling
+        _psi: Sign logits for Bernoulli sign assignment  
+        _k: Number of elements in each subset
+        _beta: Softmax probabilities from phi
+        _gumbel: Standard Gumbel(0,1) for noise injection
+        _device: Device placement for tensors
     """
     arg_constraints = { 
         "_phi": constraints.real_vector,
@@ -38,23 +44,24 @@ class GumbelTopKSubset(Distribution):
     def __init__(
         self, 
         phi: torch.Tensor, 
+        psi: torch.Tensor, 
         k: int, 
         validate_args = None
     ):
         """
-        Initialize the GumbelTopKSubset distribution.
+        Initialize the GumbelTopKSubsetWithSign distribution.
         
         Args:
-            phi: A tensor of shape (..., n) representing the logits/weights for n elements.
-                Higher values indicate higher probability of selection.
-            k: The number of elements to select in each subset. Must be positive and 
-                less than or equal to n.
-            validate_args: Whether to validate input arguments. If True, checks that
-                inputs satisfy constraints.
+            phi: Selection logits of shape (..., n) for n elements.
+                Higher values increase selection probability.
+            psi: Sign logits of shape (..., n) for sign assignment.
+                Must match phi's shape. Used as Bernoulli logits for sign sampling.
+            k: Number of elements to select, must satisfy 1 <= k <= n.
+            validate_args: Enable input validation if True.
         
         Raises:
-            TypeError: If phi is not a torch.Tensor or k is not an int.
-            ValueError: If phi is not at least 1-dimensional, or k is not positive.
+            TypeError: If phi/psi are not torch.Tensor or k is not int.
+            ValueError: If shapes don't match, dimensions invalid, or k out of range.
         """
         if not isinstance(phi, torch.Tensor) or not isinstance(k, int):
             raise TypeError("`phi` must be torch.Tensor, and `k` must be int")
@@ -62,16 +69,18 @@ class GumbelTopKSubset(Distribution):
             raise ValueError("`phi` must be at least 1-dimensional")
         if not isinstance(k, int) or k <= 0:
             raise ValueError("`k` must be a positive integer (>=1)")
+        if phi.shape != psi.shape:
+            raise ValueError("`phi` and `psi` must have the same shape")
         
         # Initialize parameters
         self._phi = phi
+        self._psi = psi # must be [0, +inf]
         self._k = k
         self._gumbel = Gumbel(0, 1)
         self._validate_args = validate_args
         self._device = phi.device
         
         # Calculate temporary variables
-        self._alpha = torch.exp(phi)
         self._beta = torch.softmax(phi, dim=-1)
         
         # Initialize the distribution
@@ -82,20 +91,21 @@ class GumbelTopKSubset(Distribution):
         
     def sample(self, sample_shape=torch.Size()):
         """
-        Sample k-element subsets using the Gumbel-Top-k trick.
+        Sample signed k-element subsets via Gumbel-Top-k and Bernoulli sampling.
         
-        The sampling process:
-        1. Add Gumbel noise to each logit phi[i]
-        2. Select indices of the k largest perturbed values
-        3. Return these indices as the sampled subset
+        Sampling algorithm:
+        1. Add Gumbel(0,1) noise to phi logits
+        2. Select top-k indices based on perturbed values
+        3. Extract corresponding psi values for selected indices
+        4. Sample signs from Bernoulli(sigmoid(psi)) for each selected element
+        5. Concatenate indices and signs into output tensor
         
         Args:
-            sample_shape: Shape of samples to draw. The returned tensor will have
-                shape sample_shape + batch_shape + event_shape.
+            sample_shape: Additional sample dimensions to prepend.
         
         Returns:
-            Tensor of shape (..., k) containing indices of selected elements.
-            Each row represents one k-element subset sampled from the distribution.
+            Tensor of shape (..., 2k) containing [indices, signs].
+            First k elements are selected indices, last k are binary signs.
         """
         with torch.no_grad():
             phi = self._phi
@@ -103,29 +113,34 @@ class GumbelTopKSubset(Distribution):
             k = self._k
             noise = g.sample(sample_shape + phi.shape).to(self._device)
             x = phi + noise
+            idx = torch.topk(x, k, dim=-1).indices
+            psi_extended = self._align_dim_except_last(idx, self._psi)
+            psi_sub = psi_extended.gather(dim=-1, index=idx)
+            bernoulli = Bernoulli(logits=psi_sub)
+            sgn = bernoulli.sample().to(self._device)
             
-            return torch.topk(x, k, dim=-1).indices
+            return torch.cat((idx, sgn), dim=-1).to(torch.int64)
         
         
     def entropy(self):
         """
-        Compute the exact entropy of the GumbelTopKSubset distribution.
+        Compute exact entropy of the joint distribution over subsets and signs.
         
-        The entropy measures the uncertainty in sampling k-element subsets from n elements.
-        It is computed as H = -Σ p(S) log p(S) where the sum is over all possible 
-        k-element subsets S.
+        Calculates total entropy as H(S,signs) = H(S) + H(signs|S) where:
+        - H(S): Entropy of subset selection via enumeration of C(n,k) subsets
+        - H(signs|S): Expected entropy of sign assignments given selected subset
         
-        This method enumerates all C(n,k) possible subsets, computes their log probabilities
-        using the log_prob method, and calculates the entropy using the formula:
-        H = -Σ exp(log_p) * log_p
+        The computation:
+        1. Enumerates all possible k-subsets
+        2. Computes subset selection entropy: -Σ P(S) log P(S)
+        3. Computes conditional sign entropy: Σ P(S) * H(signs|S)
+        4. Returns total entropy as sum of both components
         
         Returns:
-            Tensor of shape batch_shape containing the entropy value(s).
-            Higher values indicate more uncertainty in subset selection.
+            Tensor of shape batch_shape with total entropy values.
         
-        Note:
-            This exact computation has complexity O(C(n,k)) which becomes expensive
-            for large n and k. For n=10, k=5, there are 252 subsets to evaluate.
+        Complexity:
+            O(C(n,k)) - becomes expensive for large n,k combinations.
         """
         n = self._phi.size(-1)
         k = self._k
@@ -138,27 +153,37 @@ class GumbelTopKSubset(Distribution):
                 ss = ss.unsqueeze(1)
             ss = ss.expand(-1, *batch_shape, -1)
             
-        x = self.log_prob(ss)
+        x = self._log_prob_subset(ss)
+        y = torch.exp(x)
+        psi_extended = self._align_dim_except_last(ss, self._psi)
+        psi_sub = psi_extended.gather(dim=-1, index=ss)
+        bernoulli = Bernoulli(logits=psi_sub)
         
-        return (- x * torch.exp(x)).sum(dim=0)
+        es = (- x * y).sum(dim=0) # entropy of subset selection0
+        eb = (y * bernoulli.entropy().sum(dim=-1)).sum(dim=0) # entropy of sign selection
+        
+        # H(A, B) = H(A) + H(B|A)
+        return es + eb
     
 
     def _sum_over_complements(self, values: torch.Tensor):
         """
-        Compute sum-over-complements using dynamic programming in parallel.
+        Parallel computation of subset sums via bit manipulation.
         
-        For each subset S of {0, 1, ..., k-1}, computes the sum of values[i]
-        for all i in S. This is done for all 2^k subsets simultaneously using
-        bit manipulation and matrix multiplication.
+        Efficiently computes sums for all 2^k possible subsets of k elements
+        using vectorized operations. Each subset is represented by a bitmask.
+        
+        Algorithm:
+        - Creates 2^k x k binary matrix where row i represents subset mask i
+        - Matrix multiplication computes all subset sums in parallel
         
         Args:
-            values: Tensor of shape (..., k) containing values to sum.
+            values: Tensor (..., k) with values to aggregate.
         
         Returns:
-            Tensor of shape (..., 2^k) where element [..., mask] contains
-            the sum of values[..., i] for all i where bit i is set in mask.
-            For example, element [..., 5] (binary 101) contains 
-            values[..., 0] + values[..., 2].
+            Tensor (..., 2^k) where position [..., mask] contains sum of
+            values at indices where mask has bit set. Example: mask=5 (0b101)
+            yields values[...,0] + values[...,2].
         """
         k = values.size(-1)
         masks = torch.arange(1 << k, device=values.device).unsqueeze(1)
@@ -169,23 +194,22 @@ class GumbelTopKSubset(Distribution):
 
     def _align_dim_except_last(self, A: torch.Tensor, B: torch.Tensor):
         """
-        Align dimensions of tensor B to match A's batch dimensions.
+        Broadcast B to match A's batch dimensions while preserving last dimension.
         
-        This helper function ensures B has the same batch dimensions as A
-        (all dimensions except the last one). It handles broadcasting by
-        adding singleton dimensions and expanding as needed.
+        Handles dimension alignment for gather operations by:
+        1. Adding singleton dimensions to B as needed
+        2. Expanding B to match A's batch shape
+        3. Preserving B's original last dimension
         
         Args:
-            A: Reference tensor with target batch dimensions.
-            B: Tensor to align, must have compatible batch dimensions.
+            A: Target tensor defining batch shape.
+            B: Source tensor to align.
         
         Returns:
-            B expanded to have the same batch dimensions as A, with its
-            original last dimension preserved.
+            B broadcasted to shape (*A.shape[:-1], B.shape[-1]).
         
         Raises:
-            ValueError: If B has incompatible prefix dimensions that cannot
-                be aligned with A.
+            ValueError: If B's prefix dims incompatible with A's batch dims.
         """
         a_prefix = A.shape[:-1]
         b_prefix = B.shape[:-1]
@@ -215,38 +239,37 @@ class GumbelTopKSubset(Distribution):
 
         return B_expanded
 
-    def log_prob(self, value: torch.Tensor):
+    def _log_prob_subset(self, idx: torch.Tensor):
         """
-        Compute the log probability of given k-element subsets.
+        Compute exact log probability of k-element subsets via dynamic programming.
         
-        Uses dynamic programming to compute the exact log probability of
-        sampling the given subsets. The computation involves:
-        1. Gathering the softmax probabilities for selected indices
-        2. Computing sum-over-complements for dynamic programming
-        3. Building up probabilities using the DP recurrence relation
-        4. Computing final log probability with appropriate normalization
+        Implements the recurrence relation for subset probabilities:
+        - f({i}) = 1 for singleton sets
+        - f(S) = Σ_{j∈S} f(S\{j}) * g(S\{j}) for |S| > 1
+        - g(S) = 1 / (1 - Σ_{i∉S} β[i]) where β = softmax(φ)
+        - P(S) = f(S) * Π_{i∈S} β[i]
+        
+        The DP builds up probabilities for progressively larger subsets
+        using bit manipulation to track subset membership.
         
         Args:
-            value: Tensor of shape (..., k) containing indices of k-element
-                subsets. Each row should contain k distinct indices from
-                {0, 1, ..., n-1} representing a subset.
+            idx: Tensor (..., k) with k distinct indices per subset.
         
         Returns:
-            Tensor containing log probabilities for each subset.
-            Shape matches value.shape[:-1].
+            Log probabilities with shape idx.shape[:-1].
         
         Raises:
-            AssertionError: If the last dimension of value is not equal to k.
+            AssertionError: If idx's last dimension ≠ k.
         """
         beta = self._beta
         n = self._phi.size(-1)
         k = self._k
-        prob_shape = value.shape[:-1]
+        prob_shape = idx.shape[:-1]
 
-        assert value.shape[-1] == k, "The last dimension of `value` must be equal to `k`"
+        assert idx.shape[-1] == k, "The last dimension of `value` must be equal to `k`"
 
-        beta_expanded = self._align_dim_except_last(value, beta)
-        v = beta_expanded.gather(dim=-1, index=value)
+        beta_expanded = self._align_dim_except_last(idx, beta)
+        v = beta_expanded.gather(dim=-1, index=idx)
         soc = self._sum_over_complements(v)
         g = 1 / (1 - soc)
 
@@ -277,52 +300,189 @@ class GumbelTopKSubset(Distribution):
         #   - p(S) = f({1, 2,...,k}) * Π beta[i]
         #   - log p(S) = log f({1, 2,...,k}) + Σ log beta[i]
         return x
+    
+    def log_prob(self, value) -> torch.Tensor:
+        """
+        Compute log probability of signed subset samples.
+        
+        Decomposes the joint probability as:
+        log P(indices, signs) = log P(indices) + log P(signs|indices)
+        
+        Args:
+            value: Tensor (..., 2k) containing [indices, signs].
+                First k elements are subset indices, last k are binary signs.
+        
+        Returns:
+            Log probability tensor with shape value.shape[:-1].
+        
+        Raises:
+            AssertionError: If value's last dimension ≠ 2k.
+        """
+        assert value.shape[-1] == 2 * self._k, "The last dimension of `value` must be equal to 2*k"
+        k = self._k
+        idx, sgn = torch.split(value, [k, k], dim=-1)
+        psi_extended = self._align_dim_except_last(idx, self._psi)
+        psi_sub = psi_extended.gather(dim=-1, index=idx)
+        bernoulli = Bernoulli(logits=psi_sub)
+        logp_idx = self._log_prob_subset(idx)
+        logp_sgn = bernoulli.log_prob(sgn.float()).sum(dim=-1)
+        
+        return logp_idx + logp_sgn
+
+
+class GateTokenDistribution(Distribution):
+    """
+    Distribution for gate token generation combining type and literal sampling.
+    
+    Generates tokens consisting of:
+    1. Token type: Binary indicator sampled from Bernoulli(sigmoid(zeta))
+    2. Literals: Signed k-subset sampled from GumbelTopKSubsetWithSign
+    
+    The output format is [type, indices, signs] with total dimension 2k+1.
+    """
+    arg_constraints = { 
+        "_phi": constraints.real_vector,
+    }
+    has_rsample = False
+    
+    def __init__(
+        self, 
+        param: torch.Tensor, 
+        k: int, 
+        validate_args = None
+    ):
+        """
+        Initialize the GateTokenDistribution.
+        
+        Args:
+            param: Parameter tensor (..., 2n+1) containing [zeta, phi, psi] where:
+                - zeta (1): Bernoulli logit for token type
+                - phi (n): Selection logits for subset sampling
+                - psi (n): Sign logits for sign assignment
+            k: Subset size for literal sampling, must satisfy 1 <= k <= n.
+            validate_args: Enable input validation if True.
+        
+        Raises:
+            AssertionError: If param dimensions invalid or k out of range.
+        """
+        n = param.size(-1) // 2
+        
+        assert param.size(-1) == 2 * n + 1, "The last dimension of `param` must be equal to 2n+1"
+        assert 1 <= k <= n, "`k` must be a positive integer (>=1) and less than or equal to n"
+        
+        zeta, phi, psi = torch.split(param, [1, n, n], dim=-1)
+        zeta = zeta.squeeze(-1)
+        
+        self._n = n
+        self._k = k
+        self.ttype_dist = Bernoulli(logits=zeta)
+        self.literals_dist = GumbelTopKSubsetWithSign(phi, psi, k, validate_args)
+        
+        
+    def sample(self, sample_shape=torch.Size()):
+        """
+        Sample gate tokens with type and signed literals.
+        
+        Returns:
+            Tensor (..., 2k+1) containing [type, indices, signs].
+        """
+        t = self.ttype_dist.sample(sample_shape).to(self._device)
+        l = self.literals_dist.sample(sample_shape).to(self._device)
+        
+        return torch.cat((t.unsqueeze(-1), l), dim=-1)  
+        
+        
+    def entropy(self):
+        """
+        Compute total entropy as sum of type and literal entropies.
+        
+        Returns:
+            Total entropy H(type) + H(literals).
+        """
+        return self.ttype_dist.entropy() + self.literals_dist.entropy()
+    
+    
+    def log_prob(self, value: torch.Tensor):
+        """
+        Compute log probability of gate token samples.
+        
+        Args:
+            value: Tensor (..., 2k+1) containing [type, indices, signs].
+        
+        Returns:
+            Log probability as sum of type and literal log probabilities.
+        """
+        t, l = torch.split(value, [1, 2 * self._k], dim=-1)
+        t = t.squeeze(-1)
+        
+        logp_t = self.ttype_dist.log_prob(t)
+        logp_l = self.literals_dist.log_prob(l)
+        
+        return logp_t + logp_l
 
 
 if __name__ == "__main__":
     # Set random seed for reproducibility
     torch.manual_seed(0)
-    
+
     # Test configuration
-    phi = torch.randn(5)  # Random logits for 5 elements
-    k = 2  # Select top-k elements (subset size)
-    num_samples = 10000  # Number of samples to generate for testing
+    import torch.nn.functional as F
+    n = 5
+    k = 3  # Select top-k elements (subset size)
+    zeta = F.softplus(torch.randn(1))  # Random logit for Bernoulli
+    phi = torch.randn(n)  # Random logits for 5 elements
+    psi = F.softplus(torch.randn(n)) # Random logits for sign selection (positive)
+    num_samples = 30000  # Number of samples to generate for testing
     
     # Create the Gumbel Top-K Subset distribution
-    dist = GumbelTopKSubset(phi, k)
+    dist = GumbelTopKSubsetWithSign(phi, psi, k)
 
     # Generate samples and compute their properties
     samples = dist.sample((num_samples,))
     log_probs = dist.log_prob(samples)
-    entropy_estimate = dist.entropy()
+    entropy = dist.entropy()
 
     # Display basic results
+    print(f"Bernoulli logit (zeta): {zeta.item():.4f}")
     print("Phi (logits):")
     print(phi)
+    print("Psi (sign logits):")
+    print(psi)
+    print(f"Sampling {num_samples} subsets of size {k} from {n} elements")
     print("Samples:")
     print(samples)
     print("Log probabilities:")
     print(log_probs)
-    print("Estimated entropy:")
-    print(entropy_estimate)
+    
+    idx, sgn = torch.split(samples, [k, k], dim=-1)
+    literals = (idx + 1) * (1 - 2 * sgn)
     
     # Count occurrences of each unique subset
     lookup = defaultdict(int)
-    for row in samples:
+    for row in literals:
         s = set(row.tolist())
         lookup[frozenset(s)] += 1
     
     # Compare empirical vs theoretical probabilities
     print("\nSubset probability comparison:")
     print("-" * 60)
+    est_entropy = 0
+    
     for subset, count in lookup.items():
         # Empirical probability from sampling
         est_prob = count / num_samples
+        est_entropy += - (est_prob * math.log(est_prob))
         
         # Theoretical probability from distribution
-        subset_tensor = torch.tensor(list(subset), device=dist._device, dtype=torch.long).unsqueeze(0)
+        l = torch.tensor(list(subset), device=dist._device, dtype=torch.long)
+        s = l.lt(0).int()
+        l = torch.abs(l) - 1
+        subset_tensor = torch.cat([l, s], dim=-1)
         logp = dist.log_prob(subset_tensor).item()
         cal_prob = math.exp(logp)
         
-        print(f"Subset: {set(subset)}, Estimated Prob.: {est_prob:.6f}, Calculated Prob.: {cal_prob:.6f}")
+        print(f"Subset {set(subset)}: {est_prob:.6f} (est.) - {cal_prob:.6f} (cal.) = {est_prob - cal_prob: .6f}")
+    
+    print("Calculated entropy:", entropy.item())
+    print(f"Estimated entropy: {est_entropy:.6f}")
     

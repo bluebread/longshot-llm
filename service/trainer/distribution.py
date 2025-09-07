@@ -413,7 +413,7 @@ class GateTokenDistribution(Distribution):
             Log probability as sum of type and literal log probabilities.
         """
         t, l = torch.split(value, [1, 2 * self._k], dim=-1)
-        t = t.squeeze(-1)
+        t = t.squeeze(-1).float()
         
         logp_t = self.ttype_dist.log_prob(t)
         logp_l = self.literals_dist.log_prob(l)

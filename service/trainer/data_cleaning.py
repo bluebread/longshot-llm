@@ -47,7 +47,7 @@ def download_trajectories(
         port: Warehouse service port
         num_vars: Filter by number of variables
         width: Filter by width parameter
-        timeout: Request timeout in seconds (note: not used in WarehouseClient)
+        timeout: Request timeout in seconds
         logger: Logger instance
         
     Returns:
@@ -61,6 +61,8 @@ def download_trajectories(
     
     try:
         with WarehouseClient(host, port) as client:
+            # Configure timeout on the internal httpx client
+            client._client.timeout = timeout
             dataset = client.get_trajectory_dataset(num_vars=num_vars, width=width)
             trajectories = dataset.get("trajectories", [])
             logger.info(f"Downloaded {len(trajectories)} trajectories")
@@ -230,8 +232,6 @@ def process_trajectories(
         # Create processed trajectory with truncated steps
         processed_traj = {
             "traj_id": traj.get("traj_id"),
-            "num_vars": traj.get("num_vars"),
-            "width": traj.get("width"),
             "steps": truncated_steps
         }
         
@@ -242,6 +242,29 @@ def process_trajectories(
     
     logger.info(f"Processed {len(processed)} trajectories")
     return processed
+
+
+def calculate_max_avgq_in_dataset(trajectories: List[Dict[str, Any]]) -> float:
+    """
+    Calculate the maximum avgQ value across all trajectories in the dataset.
+    
+    Args:
+        trajectories: List of trajectory dictionaries with steps
+        
+    Returns:
+        Maximum avgQ value found across all trajectories, or 0.0 if no trajectories
+    """
+    if not trajectories:
+        return 0.0
+    
+    max_avgq = 0.0
+    for traj in trajectories:
+        steps = traj.get("steps", [])
+        if steps:
+            traj_max = get_max_avgq(steps)
+            max_avgq = max(max_avgq, traj_max)
+    
+    return max_avgq
 
 
 def create_output_dataset(
@@ -270,6 +293,9 @@ def create_output_dataset(
     Returns:
         Complete dataset dictionary
     """
+    # Calculate maximum avgQ across all trajectories in the dataset
+    max_avgq = calculate_max_avgq_in_dataset(trajectories)
+    
     return {
         "metadata": {
             "num_vars": num_vars,
@@ -281,19 +307,21 @@ def create_output_dataset(
             "downloaded_count": original_count,
             "filtered_count": filtered_count,
             "removed_count": original_count - filtered_count,
-            "processed_count": len(trajectories)
+            "processed_count": len(trajectories),
+            "max_avgq": max_avgq
         },
         "trajectories": trajectories
     }
 
 
-def save_dataset_to_file(dataset: Dict[str, Any], output_file: str, logger: logging.Logger):
+def save_dataset_to_file(dataset: Dict[str, Any], output_file: str, compact: bool, logger: logging.Logger):
     """
     Save the dataset to a JSON file.
     
     Args:
         dataset: Complete dataset dictionary
         output_file: Output file path
+        compact: Whether to use compact JSON formatting (no indentation)
         logger: Logger instance
         
     Raises:
@@ -303,7 +331,10 @@ def save_dataset_to_file(dataset: Dict[str, Any], output_file: str, logger: logg
     
     try:
         with open(output_file, 'w') as f:
-            json.dump(dataset, f, indent=2)
+            if compact:
+                json.dump(dataset, f, separators=(',', ':'))
+            else:
+                json.dump(dataset, f, indent=2)
         
         logger.info(f"Dataset saved successfully to {output_file}")
         logger.info(f"Total trajectories in output: {len(dataset['trajectories'])}")
@@ -311,6 +342,26 @@ def save_dataset_to_file(dataset: Dict[str, Any], output_file: str, logger: logg
     except IOError as e:
         logger.error(f"Failed to save dataset to {output_file}: {e}")
         raise
+
+
+def get_output_file_path(args: argparse.Namespace) -> str:
+    """
+    Get the output file path based on arguments.
+    
+    Args:
+        args: Parsed arguments
+        
+    Returns:
+        Full path to output file
+    """
+    import os
+    
+    if args.output:
+        return args.output
+    else:
+        # Generate filename based on num_vars and width
+        filename = f"n{args.num_vars}w{args.width}.json"
+        return os.path.join(args.output_dir, filename)
 
 
 def validate_arguments(args: argparse.Namespace) -> None:
@@ -335,14 +386,37 @@ def validate_arguments(args: argparse.Namespace) -> None:
     if args.timeout <= 0:
         raise ValueError(f"timeout must be positive, got {args.timeout}")
     
-    # Check if output directory exists and is writable
-    import os
-    output_dir = os.path.dirname(args.output)
-    if output_dir and not os.path.exists(output_dir):
-        raise ValueError(f"Output directory does not exist: {output_dir}")
+    # Either --output or --output-dir must be specified
+    if not args.output and not args.output_dir:
+        raise ValueError("Either --output or --output-dir must be specified")
     
-    if output_dir and not os.access(output_dir, os.W_OK):
-        raise ValueError(f"Output directory is not writable: {output_dir}")
+    # If both are specified, --output takes precedence but warn user
+    if args.output and args.output_dir:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("Both --output and --output-dir specified; using --output")
+    
+    import os
+    
+    # Check output file path if specified
+    if args.output:
+        output_dir = os.path.dirname(args.output)
+        if output_dir and not os.path.exists(output_dir):
+            raise ValueError(f"Output directory does not exist: {output_dir}")
+        
+        if output_dir and not os.access(output_dir, os.W_OK):
+            raise ValueError(f"Output directory is not writable: {output_dir}")
+    
+    # Check output directory if specified
+    if args.output_dir:
+        if not os.path.exists(args.output_dir):
+            raise ValueError(f"Output directory does not exist: {args.output_dir}")
+        
+        if not os.access(args.output_dir, os.W_OK):
+            raise ValueError(f"Output directory is not writable: {args.output_dir}")
+        
+        if not os.path.isdir(args.output_dir):
+            raise ValueError(f"Output directory is not a directory: {args.output_dir}")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -353,7 +427,8 @@ def parse_arguments() -> argparse.Namespace:
         epilog="""
 Examples:
   %(prog)s --num-vars 4 --width 3 --threshold 0.5 --output cleaned_data.json
-  %(prog)s --num-vars 3 --width 2 --threshold 0.8 --host remote.server --port 8080 --output data.json --verbose
+  %(prog)s --num-vars 3 --width 2 --threshold 0.8 --output-dir ./data --compact
+  %(prog)s --num-vars 4 --width 3 --threshold 0.5 --output-dir ./output --verbose
         """
     )
     
@@ -382,8 +457,13 @@ Examples:
     parser.add_argument(
         "--output", 
         type=str, 
-        required=True,
         help="Output JSON file path for cleaned dataset"
+    )
+    
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        help="Output directory for cleaned dataset (used when --output is not specified)"
     )
     
     # Optional arguments
@@ -414,6 +494,12 @@ Examples:
         help="Enable verbose logging"
     )
     
+    parser.add_argument(
+        "--compact",
+        action="store_true", 
+        help="Output compact JSON without indentation (smaller file size)"
+    )
+    
     args = parser.parse_args()
     validate_arguments(args)
     return args
@@ -424,10 +510,14 @@ def main():
     args = parse_arguments()
     logger = setup_logging(args.verbose)
     
+    # Determine output file path
+    output_file = get_output_file_path(args)
+    
     try:
         logger.info("Starting trajectory data cleaning script")
         logger.info(f"Parameters: num_vars={args.num_vars}, width={args.width}, "
                    f"threshold={args.threshold}")
+        logger.info(f"Output file: {output_file}")
         
         # Step 1: Download trajectories from warehouse
         trajectories = download_trajectories(
@@ -442,7 +532,7 @@ def main():
                 [], args.num_vars, args.width, args.threshold,
                 args.host, args.port, 0, 0
             )
-            save_dataset_to_file(dataset, args.output, logger)
+            save_dataset_to_file(dataset, output_file, args.compact, logger)
             return
         
         # Step 2: Filter trajectories by avgQ threshold
@@ -457,7 +547,7 @@ def main():
                 [], args.num_vars, args.width, args.threshold,
                 args.host, args.port, original_count, len(filtered_trajectories)
             )
-            save_dataset_to_file(dataset, args.output, logger)
+            save_dataset_to_file(dataset, output_file, args.compact, logger)
             return
         
         # Step 3: Truncate trajectories to last highest avgQ step
@@ -470,7 +560,7 @@ def main():
         )
         
         # Step 5: Save to file
-        save_dataset_to_file(dataset, args.output, logger)
+        save_dataset_to_file(dataset, output_file, args.compact, logger)
         
         logger.info("Data cleaning completed successfully")
         

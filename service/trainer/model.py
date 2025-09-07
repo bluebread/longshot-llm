@@ -1,15 +1,18 @@
 import torch
 import torch.nn.functional as F
 from transformers import GPT2Config, GPT2Model, GPT2PreTrainedModel
+from distribution import GateTokenDistribution
 
 class GPT2ForLongshot(GPT2PreTrainedModel):
     def __init__(
         self, 
         num_vars: int,
+        width: int,
         n_embed_lit: int,
         ub_q: float,
         alpha: float,
         beta: float,
+        gamma: float,
         config: GPT2Config
     ):
         """
@@ -18,34 +21,61 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         
         # 0,1 for ADD/DEL types, 2-4 for positive/negative/omitted literals
         self.num_vars = num_vars
+        self.width = width
         self.n_embed_lit = n_embed_lit
         self.vocab_size = 3 * num_vars + 2
         self.n_embed_gate = n_embed_lit * (num_vars + 1)
         self.ub_q = ub_q
         self.alpha = alpha
         self.beta = beta
+        self.gamma = gamma
         
         self.embedding = torch.nn.Embedding(self.vocab_size, n_embed_lit)
         self.proj1 = torch.nn.Linear(self.n_embed_gate, config.n_embd)
         self.model = GPT2Model(config)
-        self.proj2 = torch.nn.Linear(config.n_embd, 1)
+        self.proj2 = torch.nn.Linear(config.n_embd, 2 * num_vars + 2)
         
         self.init_weights()
     
     
-    def loss_function(self, y, labels):
+    def loss_function(
+        self, 
+        y: torch.Tensor, 
+        input_ids: torch.Tensor, 
+        labels: torch.Tensor, 
+        attn: torch.Tensor
+    ):
         """
         """
+        param, q = torch.split(y, [2 * self.num_vars + 1, 1], dim=-1)
+        dist = GateTokenDistribution(param, self.width)
+        nxt_ids = input_ids[..., 0:]
+        
+        # The loss of predicting next tokens
+        tt = (nxt_ids < 0).int().unsqueeze(-1) # token type
+        s = torch.abs(nxt_ids)
+        x = torch.cat([
+            (((s >> i) & 0x1) | ((s >> (i + 32 - 1)) & 0x2)).unsqueeze(-1)
+            for i in range(self.num_vars)
+        ], dim=-1) # encoded literals
+        idx = torch.topk(x, self.width, dim=-1).indices
+        sgn = (s.unsqueeze(-1) & (1 << (idx + 32))).gt(0).int()
+        nxt = torch.cat([tt, idx, sgn], dim=-1) # next tokens
+        loss_nxt = (- dist.log_prob(nxt) * attn[..., 0:]).sum()
+        
+        # The loss of avgQ
+        q = q.squeeze(-1) * attn
+        labels = labels * attn
         d = (self.ub_q - labels)
-        d_hat = (self.ub_q - y)
+        d_hat = (self.ub_q - q)
         q = labels
-        q_hat = y
+        q_hat = q
         
         l1 = F.mse_loss(torch.exp(- d_hat), torch.exp(- d), reduction='mean')
         l2 = F.mse_loss(q_hat, q, reduction='mean')
-        loss = self.alpha * l1 + self.beta * l2
+        loss_avgQ = self.alpha * l1 + self.beta * l2
         
-        return loss
+        return loss_avgQ + self.gamma * loss_nxt
 
     def forward(
         self, 
@@ -79,23 +109,26 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
             use_cache=False,
             return_dict=False
         )
-        y = self.proj2(x).squeeze(-1)
+        y = self.proj2(x)
         
         loss = None
         if labels is not None:
             attn = attention_mask
-            loss = self.loss_function(y * attn, labels * attn).unsqueeze(0)
+            loss = self.loss_function(y, input_ids, labels, attn).unsqueeze(0)
             
-        return (loss, y, x) if loss is not None else (y, x)
+        return (loss, y) if loss is not None else y
         
 
 if __name__ == "__main__":
     # Example usage
     from dataset import TrajectoryDataset
-    from service.trainer.collator import TrajectoryCollator
+    from collator import TrajectoryCollator
     
-    dataset = TrajectoryDataset(num_vars=3, width=2)
-    collector = TrajectoryCollator()
+    n = 3
+    k = 2
+    
+    dataset = TrajectoryDataset(num_vars=n, width=k)
+    collector = TrajectoryCollator(num_vars=n)
     sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
     batch = collector(sample_batch)
     
@@ -111,17 +144,18 @@ if __name__ == "__main__":
     )
     
     model = GPT2ForLongshot(
-        num_vars=3,
+        num_vars=n,
+        width=k,
         n_embed_lit=16,
         ub_q=3.0,
-        alpha=0.9,
-        beta=0.1,
+        alpha=0.0,
+        beta=0.0,
+        gamma=1.0,
         config=model_config
     )
     
-    loss, logits, hidden_states = model(**batch)
+    loss, logits = model(**batch)
     
     print("Embedding Dimension (gate): ", model.n_embed_gate)
     print("Loss: ", loss)
-    print("Logits: \n", logits)
-    print("Hidden States: \n", hidden_states)
+    print(f"Logits {logits.shape}: \n", logits)

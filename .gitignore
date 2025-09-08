@@ -297,4 +297,5 @@ doc/*/_generated
 .claude
 cache/
 log/
+data/
 trainer_output/

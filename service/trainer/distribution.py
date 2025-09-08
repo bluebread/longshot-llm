@@ -262,31 +262,31 @@ class GumbelTopKSubsetWithSign(Distribution):
             AssertionError: If idx's last dimension ≠ k.
         """
         beta = self._beta
-        n = self._phi.size(-1)
         k = self._k
-        prob_shape = idx.shape[:-1]
+        # n = self._phi.size(-1)
+        # prob_shape = idx.shape[:-1]
 
         assert idx.shape[-1] == k, "The last dimension of `value` must be equal to `k`"
 
         beta_expanded = self._align_dim_except_last(idx, beta)
         v = beta_expanded.gather(dim=-1, index=idx)
-        soc = self._sum_over_complements(v)
-        g = 1 / (1 - soc)
+        # soc = self._sum_over_complements(v)
+        # g = 1 / (1 - soc)
 
-        dp = torch.zeros(*prob_shape, 2 ** n, device=self._device)
+        # dp = torch.zeros(*prob_shape, 2 ** n, device=self._device)
 
-        for S in range(2 ** k):
-            if S.bit_count() <= 1:
-                dp[..., S] = 1
-                continue
+        # for S in range(2 ** k):
+        #     if S.bit_count() <= 1:
+        #         dp[..., S] = 1
+        #         continue
 
-            Q = [S ^ (1 << i) for i in range(n) if (S & (1 << i)) > 0]
-            fQ = dp[..., Q]
-            gQ = g[..., Q]
-            dp[..., S] = (fQ * gQ).sum(dim=-1)
+        #     Q = [S ^ (1 << i) for i in range(n) if (S & (1 << i)) > 0]
+        #     fQ = dp[..., Q]
+        #     gQ = g[..., Q]
+        #     dp[..., S] = (fQ * gQ).sum(dim=-1)
 
-        x = torch.log(dp[..., (1 << k) - 1])
-        x = x + torch.log(v).sum(dim=-1)
+        # x = torch.log(dp[..., (1 << k) - 1])
+        # x = x + torch.log(v).sum(dim=-1)
 
         # Let Y = {i1, i2, ..., im} be a subset of {1, 2, ..., k}
         # The definition of f:
@@ -299,7 +299,8 @@ class GumbelTopKSubsetWithSign(Distribution):
         # The probability of selecting subset S = {i1, i2,...,ik} is:
         #   - p(S) = f({1, 2,...,k}) * Π beta[i]
         #   - log p(S) = log f({1, 2,...,k}) + Σ log beta[i]
-        return x
+        # return x
+        return torch.log(v).sum(dim=-1)
     
     def log_prob(self, value) -> torch.Tensor:
         """
@@ -454,35 +455,35 @@ if __name__ == "__main__":
     print("Log probabilities:")
     print(log_probs)
     
-    idx, sgn = torch.split(samples, [k, k], dim=-1)
-    literals = (idx + 1) * (1 - 2 * sgn)
+    # idx, sgn = torch.split(samples, [k, k], dim=-1)
+    # literals = (idx + 1) * (1 - 2 * sgn)
     
-    # Count occurrences of each unique subset
-    lookup = defaultdict(int)
-    for row in literals:
-        s = set(row.tolist())
-        lookup[frozenset(s)] += 1
+    # # Count occurrences of each unique subset
+    # lookup = defaultdict(int)
+    # for row in literals:
+    #     s = set(row.tolist())
+    #     lookup[frozenset(s)] += 1
     
-    # Compare empirical vs theoretical probabilities
-    print("\nSubset probability comparison:")
-    print("-" * 60)
-    est_entropy = 0
+    # # Compare empirical vs theoretical probabilities
+    # print("\nSubset probability comparison:")
+    # print("-" * 60)
+    # est_entropy = 0
     
-    for subset, count in lookup.items():
-        # Empirical probability from sampling
-        est_prob = count / num_samples
-        est_entropy += - (est_prob * math.log(est_prob))
+    # for subset, count in lookup.items():
+    #     # Empirical probability from sampling
+    #     est_prob = count / num_samples
+    #     est_entropy += - (est_prob * math.log(est_prob))
         
-        # Theoretical probability from distribution
-        l = torch.tensor(list(subset), device=dist._device, dtype=torch.long)
-        s = l.lt(0).int()
-        l = torch.abs(l) - 1
-        subset_tensor = torch.cat([l, s], dim=-1)
-        logp = dist.log_prob(subset_tensor).item()
-        cal_prob = math.exp(logp)
+    #     # Theoretical probability from distribution
+    #     l = torch.tensor(list(subset), device=dist._device, dtype=torch.long)
+    #     s = l.lt(0).int()
+    #     l = torch.abs(l) - 1
+    #     subset_tensor = torch.cat([l, s], dim=-1)
+    #     logp = dist.log_prob(subset_tensor).item()
+    #     cal_prob = math.exp(logp)
         
-        print(f"Subset {set(subset)}: {est_prob:.6f} (est.) - {cal_prob:.6f} (cal.) = {est_prob - cal_prob: .6f}")
+    #     print(f"Subset {set(subset)}: {est_prob:.6f} (est.) - {cal_prob:.6f} (cal.) = {est_prob - cal_prob: .6f}")
     
-    print("Calculated entropy:", entropy.item())
-    print(f"Estimated entropy: {est_entropy:.6f}")
+    # print("Calculated entropy:", entropy.item())
+    # print(f"Estimated entropy: {est_entropy:.6f}")
     

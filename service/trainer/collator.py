@@ -138,9 +138,11 @@ if __name__ == "__main__":
     # Example usage
     from dataset import TrajectoryDataset
     
-    dataset = TrajectoryDataset(num_vars=3, width=2)
-    collector = TrajectoryCollator()
-    sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
+    n = 3
+    k = 2
+    dataset = TrajectoryDataset(num_vars=n, width=k, local_file="data/n3w2.json")
+    collector = TrajectoryCollator(num_vars=k)
+    sample_batch = [dataset[i] for i in range(10)]  # Get 4 samples
     batch = collector(sample_batch)
     
     import pprint

@@ -2,6 +2,7 @@ from transformers import TrainingArguments, Trainer
 from transformers import GPT2Config
 from transformers import set_seed
 from torch.utils.data import random_split
+from datetime import datetime
 
 from dataset import TrajectoryDataset
 from collator import TrajectoryCollator
@@ -11,28 +12,32 @@ if __name__ == "__main__":
 
     set_seed(42)
 
-    dataset = TrajectoryDataset(num_vars=3, width=2)
+    n = 3
+    w = 2
+    dataset = TrajectoryDataset(local_file=f'./data/n{n}w{w}.json')
 
     train_size = int(0.8 * len(dataset))
     eval_size = len(dataset) - train_size
     train_dataset, eval_dataset = random_split(dataset, [train_size, eval_size])
     
-    collector = TrajectoryCollator()
+    collector = TrajectoryCollator(num_vars=n, permute_input=True)
 
     model_config = GPT2Config(
         vocab_size=1,  # Not used since we provide embeddings directly
         n_positions=64,
-        n_embd=64,
-        n_layer=4,
-        n_head=4,
+        n_embd=256,
+        n_layer=12,
+        n_head=8,
     )
 
     model = GPT2ForLongshot(
-        num_vars=3,
+        num_vars=n,
+        width=w,
         n_embed_lit=16,
-        ub_q=3.0,
-        alpha=0.5,
-        beta=0.5,
+        ub_q=float(n),
+        alpha=1,
+        beta=30,
+        gamma=0.7,
         config=model_config
     )
 
@@ -40,7 +45,8 @@ if __name__ == "__main__":
     # - learning rate schedule
     # - weight decay
     # - gradient clipping
-    # - fp16 training
+
+    curtime = datetime.now().isoformat()
 
     training_args = TrainingArguments(
         # Output and evaluation
@@ -52,13 +58,14 @@ if __name__ == "__main__":
         push_to_hub=False,
         # Logging
         report_to="tensorboard", 
+        logging_dir=f"./log/{curtime}",
         logging_strategy="steps", 
         logging_steps=50,
         # Hyperparameters
         learning_rate=2e-5,
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=16,
-        num_train_epochs=3,
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
+        num_train_epochs=300,
         weight_decay=0.00,
     )
 
@@ -71,3 +78,4 @@ if __name__ == "__main__":
     )
 
     trainer.train(resume_from_checkpoint=False)
+    model.save_pretrained(f'./models/n{n}w{w}-{curtime}')

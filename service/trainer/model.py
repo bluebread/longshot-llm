@@ -16,6 +16,21 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         config: GPT2Config
     ):
         """
+        Initialize GPT2ForLongshot model for boolean formula trajectory learning.
+        
+        This model extends GPT2 to predict next tokens and Q-values for boolean formula
+        trajectories. It uses gate token distributions for next-token prediction and
+        combines multiple loss components for trajectory learning.
+        
+        Args:
+            num_vars: Number of boolean variables in the formulas
+            width: Maximum width for gate token distributions
+            n_embed_lit: Embedding dimension for literal tokens
+            ub_q: Upper bound for Q-values, used in loss computation
+            alpha: Weight for exponential MSE loss component
+            beta: Weight for Q-value MSE loss component  
+            gamma: Weight for next-token prediction loss
+            config: GPT2 configuration object
         """
         super().__init__(config)
         
@@ -46,6 +61,21 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         attn: torch.Tensor
     ):
         """
+        Compute combined loss for next-token prediction and Q-value regression.
+        
+        The loss combines three components:
+        1. Next-token prediction using gate token distribution log probabilities
+        2. Exponential MSE loss between predicted and true Q-value distances from upper bound
+        3. Direct MSE loss between predicted and true Q-values
+        
+        Args:
+            y: Model output tensor of shape (..., 2*num_vars + 2)
+            input_ids: Input token IDs of shape (..., seq_len)
+            labels: True Q-values of shape (..., seq_len)
+            attn: Attention mask of shape (..., seq_len)
+            
+        Returns:
+            Combined loss scalar tensor
         """
         param, q = torch.split(y, [2 * self.num_vars + 1, 1], dim=-1)
         dist = GateTokenDistribution(param, self.width)
@@ -61,7 +91,7 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         idx = torch.topk(x, self.width, dim=-1).indices
         sgn = (s.unsqueeze(-1) & (1 << (idx + 32))).gt(0).int()
         nxt = torch.cat([tt, idx, sgn], dim=-1) # next tokens
-        loss_nxt = (- dist.log_prob(nxt) * attn[..., 0:]).sum()
+        loss_nxt = (- dist.log_prob(nxt) * attn[..., 0:]).mean()
         
         # The loss of avgQ
         q = q.squeeze(-1) * attn
@@ -84,12 +114,27 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         labels: torch.FloatTensor = None,
     ):
         """
+        Forward pass through the GPT2ForLongshot model.
+        
+        Processes input token IDs through embedding, projection, GPT2 backbone,
+        and final projection to produce gate token distribution parameters and Q-values.
+        
+        The input encoding uses bit manipulation to extract:
+        - Token types (ADD/DEL operations) from sign bit
+        - Literal encodings from variable bits
+        - Sign information for literals
+        
         Args:
-            input_ids: Tensor of shape (batch_size, seq_len)
-            attention_mask: Optional tensor of shape (batch_size, seq_len)
+            input_ids: Integer tensor of shape (batch_size, seq_len) containing 
+                      encoded boolean formula tokens
+            attention_mask: Optional binary tensor of shape (batch_size, seq_len)
+                          indicating which tokens to attend to
+            labels: Optional float tensor of shape (batch_size, seq_len) containing
+                   true Q-values for loss computation
         
         Returns:
-            Tensor of shape (batch_size, seq_len) with predicted Q-values
+            If labels provided: Tuple of (loss, predictions)
+            Otherwise: Predictions tensor of shape (batch_size, seq_len, 2*num_vars + 2)
         """
         # Embed input ids
         x = torch.abs(input_ids)

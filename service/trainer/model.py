@@ -96,13 +96,13 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         # The loss of avgQ
         q = q.squeeze(-1) * attn
         labels = labels * attn
-        d = (self.ub_q - labels)
-        d_hat = (self.ub_q - q)
-        q = labels
-        q_hat = q
+        D = (self.ub_q - labels)
+        D_hat = (self.ub_q - q)
+        Q = labels
+        Q_hat = q
         
-        l1 = F.mse_loss(torch.exp(- d_hat), torch.exp(- d), reduction='mean')
-        l2 = F.mse_loss(q_hat, q, reduction='mean')
+        l1 = F.mse_loss(Q_hat, Q, reduction='mean')
+        l2 = F.mse_loss(torch.exp(- D_hat), torch.exp(- D), reduction='mean')
         loss_avgQ = self.alpha * l1 + self.beta * l2
         
         return loss_avgQ + self.gamma * loss_nxt
@@ -146,10 +146,10 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
             concat_later.append(z)
             assert torch.all((z >= base) & (z < base + 3)), "Literal encoding out of range"
         
-        x = torch.cat([self.embedding(c) for c in concat_later], dim=-1)
-        x = self.proj1(x)
+        a = torch.cat([self.embedding(c) for c in concat_later], dim=-1)
+        z = self.proj1(a)
         x, = self.model(
-            inputs_embeds=x, 
+            inputs_embeds=z, 
             attention_mask=attention_mask, 
             use_cache=False,
             return_dict=False

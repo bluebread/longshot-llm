@@ -25,30 +25,6 @@ services:
       - longshot-net
     restart: unless-stopped
 
-  # warehouse:
-  #   build:
-  #     context: ./warehouse
-  #     dockerfile: dockerfile
-  #   container_name: warehouse-bread
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8000:8000"   # Warehouse API port
-  #   environment:
-  #     - PYTHONPATH=/app
-  #   depends_on:
-  #     - mongodb
-  #     - neo4j
-  #     - redis
-  #     - rabbitmq
-  #   networks:
-  #     - longshot-net
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 40s
-
 volumes:
   mongo-data:
 

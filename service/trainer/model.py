@@ -91,7 +91,7 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         idx = torch.topk(x, self.width, dim=-1).indices
         sgn = (s.unsqueeze(-1) & (1 << (idx + 32))).gt(0).int()
         nxt = torch.cat([tt, idx, sgn], dim=-1) # next tokens
-        loss_nxt = (- dist.log_prob(nxt) * attn[..., 0:]).mean()
+        loss_nxt = (- dist.log_prob_dual(nxt) * attn[..., 0:]).mean()
         
         # The loss of avgQ
         q = q.squeeze(-1) * attn

@@ -272,6 +272,14 @@ Download a specific model file (ZIP archive). Users are responsible for decompre
     - `200 OK`: File successfully streamed
     - `404 Not Found`: Model file not found
 
+
+##### Implementation Notes
+
+- **Tag Filtering**: When filtering by tags, the query uses MongoDB's `$all` operator to ensure models contain ALL specified tags.
+- **File Streaming**: Downloads use GridFS streaming to efficiently handle large model files without loading them entirely into memory.
+- **Metadata Queries**: All model queries operate on GridFS metadata for efficient filtering before file retrieval.
+
+
 #### `POST /models/upload`
 Upload a new model as a ZIP archive with associated metadata.
 
@@ -319,12 +327,6 @@ Upload a new model as a ZIP archive with associated metadata.
 - **Status Codes:**
     - `200 OK`: Successfully purged all models
     - `500 Internal Server Error`: Failed to purge models
-
-#### Implementation Notes
-
-- **Tag Filtering**: When filtering by tags, the query uses MongoDB's `$all` operator to ensure models contain ALL specified tags.
-- **File Streaming**: Downloads use GridFS streaming to efficiently handle large model files without loading them entirely into memory.
-- **Metadata Queries**: All model queries operate on GridFS metadata for efficient filtering before file retrieval.
 
 
 #### `GET /health`

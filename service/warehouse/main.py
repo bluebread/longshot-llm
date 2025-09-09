@@ -2,13 +2,18 @@
 FastAPI application for the Warehouse microservice.
 """
 
-from fastapi import FastAPI, HTTPException, Query
-from pymongo import MongoClient
+from fastapi import FastAPI, HTTPException, Query, File, UploadFile, Form
+from fastapi.responses import StreamingResponse
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from gridfs import GridFS
 from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
 import logging
 from typing import Optional
+import zipfile
+from io import BytesIO
+from bson import ObjectId
 
 from longshot.service.api_models import (
     QueryTrajectoryInfoResponse,
@@ -18,7 +23,11 @@ from longshot.service.api_models import (
     TrajectoryDatasetResponse,
     OptimizedTrajectoryInfo,
     SuccessResponse,
-    PurgeResponse
+    PurgeResponse,
+    ModelMetadata,
+    ModelsListResponse,
+    ModelUploadResponse,
+    ModelsPurgeResponse
 )
 
 logging.basicConfig(
@@ -31,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 mongo_client = MongoClient("mongodb://haowei:bread861122@mongo-bread:27017")
 mongodb = mongo_client["LongshotWarehouse"]
+gridfs = GridFS(mongodb)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -47,6 +57,16 @@ async def lifespan(_: FastAPI):
         mongodb.create_collection("TrajectoryTable", check_exists=True)
         # TODO: Add index on timestamp field for efficient range queries
         mongodb["TrajectoryTable"].create_index("timestamp")
+        
+        # Initialize GridFS indexes for Parameter Server
+        # Create index on metadata.upload_date for latest model retrieval
+        mongodb["fs.files"].create_index([("metadata.upload_date", DESCENDING)])
+        # Create compound index for efficient queries
+        mongodb["fs.files"].create_index([
+            ("metadata.num_vars", ASCENDING),
+            ("metadata.width", ASCENDING),
+            ("metadata.upload_date", DESCENDING)
+        ])
     except Exception:
         pass
     
@@ -227,6 +247,197 @@ async def purge_trajectories():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to purge trajectories: {str(e)}"
+        )
+
+
+# Parameter Server endpoints
+@app.get("/models", response_model=ModelsListResponse)
+async def get_models(
+    num_vars: int = Query(..., ge=1, le=32, description="Number of variables"),
+    width: int = Query(..., ge=1, le=32, description="Width parameter"),
+    tags: Optional[list[str]] = Query(None, description="Filter by tags (models must contain ALL specified tags)")
+):
+    """Retrieve models matching the specified criteria."""
+    # Build query filter
+    query_filter = {
+        "metadata.num_vars": num_vars,
+        "metadata.width": width
+    }
+    
+    # Add tag filter if specified
+    if tags:
+        query_filter["metadata.tags"] = {"$all": tags}
+    
+    # Query GridFS files
+    files_cursor = mongodb["fs.files"].find(query_filter).sort("metadata.upload_date", DESCENDING)
+    
+    models = []
+    for file_doc in files_cursor:
+        model = ModelMetadata(
+            model_id=str(file_doc["_id"]),
+            filename=file_doc["filename"],
+            num_vars=file_doc["metadata"]["num_vars"],
+            width=file_doc["metadata"]["width"],
+            tags=file_doc["metadata"].get("tags", []),
+            upload_date=file_doc["metadata"]["upload_date"],
+            size=file_doc["length"],
+            download_url=f"/models/download/{str(file_doc['_id'])}"
+        )
+        models.append(model)
+    
+    return ModelsListResponse(models=models, count=len(models))
+
+
+@app.get("/models/latest", response_model=ModelMetadata)
+async def get_latest_model(
+    num_vars: int = Query(..., ge=1, le=32, description="Number of variables"),
+    width: int = Query(..., ge=1, le=32, description="Width parameter")
+):
+    """Retrieve the most recently uploaded model for the specified num_vars and width."""
+    # Query for the latest model
+    query_filter = {
+        "metadata.num_vars": num_vars,
+        "metadata.width": width
+    }
+    
+    file_doc = mongodb["fs.files"].find_one(
+        query_filter,
+        sort=[("metadata.upload_date", DESCENDING)]
+    )
+    
+    if not file_doc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No model found for num_vars={num_vars} and width={width}"
+        )
+    
+    return ModelMetadata(
+        model_id=str(file_doc["_id"]),
+        filename=file_doc["filename"],
+        num_vars=file_doc["metadata"]["num_vars"],
+        width=file_doc["metadata"]["width"],
+        tags=file_doc["metadata"].get("tags", []),
+        upload_date=file_doc["metadata"]["upload_date"],
+        size=file_doc["length"],
+        download_url=f"/models/download/{str(file_doc['_id'])}"
+    )
+
+
+@app.get("/models/download/{model_id}")
+async def download_model(model_id: str):
+    """Download a specific model file (ZIP archive)."""
+    try:
+        # Convert string ID to ObjectId
+        file_id = ObjectId(model_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid model ID format")
+    
+    # Check if file exists
+    if not gridfs.exists(file_id):
+        raise HTTPException(status_code=404, detail="Model file not found")
+    
+    # Get the file
+    grid_file = gridfs.get(file_id)
+    
+    # Stream the file content
+    def iterfile():
+        while True:
+            chunk = grid_file.read(8192)  # Read in 8KB chunks
+            if not chunk:
+                break
+            yield chunk
+    
+    return StreamingResponse(
+        iterfile(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{grid_file.filename}"'
+        }
+    )
+
+
+@app.post("/models/upload", response_model=ModelUploadResponse, status_code=201)
+async def upload_model(
+    file: UploadFile = File(..., description="ZIP archive containing the model"),
+    num_vars: int = Form(..., ge=1, le=32, description="Number of variables"),
+    width: int = Form(..., ge=1, le=32, description="Width parameter"),
+    tags: Optional[str] = Form(None, description="Comma-separated list of tags")
+):
+    """Upload a new model as a ZIP archive with associated metadata."""
+    # Validate file is a ZIP
+    content = await file.read()
+    try:
+        with zipfile.ZipFile(BytesIO(content)):
+            pass  # Just validate it's a valid ZIP
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=422,
+            detail="File is not a valid ZIP archive"
+        )
+    
+    # Parse tags
+    tag_list = []
+    if tags:
+        tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    
+    # Prepare metadata
+    upload_date = datetime.now()
+    metadata = {
+        "num_vars": num_vars,
+        "width": width,
+        "tags": tag_list,
+        "upload_date": upload_date,
+        "content_type": "application/zip"
+    }
+    
+    # Store in GridFS
+    file_id = gridfs.put(
+        content,
+        filename=file.filename,
+        metadata=metadata
+    )
+    
+    return ModelUploadResponse(
+        model_id=str(file_id),
+        filename=file.filename,
+        num_vars=num_vars,
+        width=width,
+        tags=tag_list,
+        upload_date=upload_date,
+        size=len(content),
+        message="Model uploaded successfully"
+    )
+
+
+@app.delete("/models/purge", response_model=ModelsPurgeResponse)
+async def purge_models():
+    """Completely purge all models from GridFS storage."""
+    try:
+        # Get count and total size before deletion
+        files_cursor = mongodb["fs.files"].find({})
+        deleted_count = 0
+        freed_space = 0
+        
+        for file_doc in files_cursor:
+            freed_space += file_doc["length"]
+            deleted_count += 1
+        
+        # Delete all files from GridFS
+        for file_doc in mongodb["fs.files"].find({}):
+            gridfs.delete(file_doc["_id"])
+        
+        return ModelsPurgeResponse(
+            success=True,
+            deleted_count=deleted_count,
+            message=f"Successfully purged {deleted_count} models from GridFS",
+            freed_space=freed_space,
+            timestamp=datetime.now()
+        )
+    except Exception as e:
+        logger.error(f"Failed to purge models: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to purge models: {str(e)}"
         )
 
 

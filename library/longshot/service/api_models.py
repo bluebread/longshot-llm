@@ -69,6 +69,46 @@ class PurgeResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
 
 
+# Parameter Server models
+class ModelMetadata(BaseModel):
+    """Model metadata stored in GridFS."""
+    model_id: str = Field(..., description="GridFS file ID")
+    filename: str = Field(..., description="Original filename")
+    num_vars: int = Field(..., ge=1, le=32, description="Number of variables")
+    width: int = Field(..., ge=1, le=32, description="Width parameter")
+    tags: list[str] = Field(default_factory=list, description="User-defined tags")
+    upload_date: datetime = Field(default_factory=datetime.now, description="Upload timestamp")
+    size: int = Field(..., description="File size in bytes")
+    download_url: str = Field(..., description="Download URL for the model")
+
+
+class ModelsListResponse(BaseModel):
+    """Response model for listing models."""
+    models: list[ModelMetadata] = Field(..., description="List of matching models")
+    count: int = Field(..., description="Number of models returned")
+
+
+class ModelUploadResponse(BaseModel):
+    """Response model for model upload."""
+    model_id: str = Field(..., description="GridFS file ID")
+    filename: str = Field(..., description="Original filename")
+    num_vars: int = Field(..., description="Number of variables")
+    width: int = Field(..., description="Width parameter")
+    tags: list[str] = Field(default_factory=list, description="User-defined tags")
+    upload_date: datetime = Field(..., description="Upload timestamp")
+    size: int = Field(..., description="File size in bytes")
+    message: str = Field(default="Model uploaded successfully", description="Success message")
+
+
+class ModelsPurgeResponse(BaseModel):
+    """Response model for models purge operation."""
+    success: bool
+    deleted_count: int
+    message: str
+    freed_space: int = Field(..., description="Total freed space in bytes")
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
 # Generic response models
 class SuccessResponse(BaseModel):
     """Generic success response."""

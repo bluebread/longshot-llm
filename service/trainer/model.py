@@ -1,9 +1,20 @@
+import math
+from itertools import combinations
 import torch
 import torch.nn.functional as F
+from torch.distributions import Bernoulli
 from transformers import GPT2Config, GPT2Model, GPT2PreTrainedModel
-from distribution import GateTokenDistribution
+from transformers import GenerationMixin, PretrainedConfig
+from transformers.modeling_outputs import (
+    CausalLMOutputWithPast,
+    BaseModelOutputWithPastAndCrossAttentions
+)
 
-class GPT2ForLongshot(GPT2PreTrainedModel):
+
+class GPT2ForLongshotConfig(PretrainedConfig):
+    """
+    """
+    
     def __init__(
         self, 
         num_vars: int,
@@ -13,87 +24,162 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         alpha: float,
         beta: float,
         gamma: float,
-        config: GPT2Config
+        share_semantic: bool,
+        universal: bool,
+        gpt2_config: GPT2Config
     ):
         """
-        Initialize GPT2ForLongshot model for boolean formula trajectory learning.
-        
-        This model extends GPT2 to predict next tokens and Q-values for boolean formula
-        trajectories. It uses gate token distributions for next-token prediction and
-        combines multiple loss components for trajectory learning.
-        
-        Args:
-            num_vars: Number of boolean variables in the formulas
-            width: Maximum width for gate token distributions
-            n_embed_lit: Embedding dimension for literal tokens
-            ub_q: Upper bound for Q-values, used in loss computation
-            alpha: Weight for exponential MSE loss component
-            beta: Weight for Q-value MSE loss component  
-            gamma: Weight for next-token prediction loss
-            config: GPT2 configuration object
         """
-        super().__init__(config)
-        
-        # 0,1 for ADD/DEL types, 2-4 for positive/negative/omitted literals
         self.num_vars = num_vars
         self.width = width
         self.n_embed_lit = n_embed_lit
-        self.vocab_size = 3 * num_vars + 2
-        self.n_embed_gate = n_embed_lit * (num_vars + 1)
         self.ub_q = ub_q
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
+        self.share_semantic = share_semantic
+        self.universal = universal
+        self.gpt2_config = gpt2_config
         
-        self.embedding = torch.nn.Embedding(self.vocab_size, n_embed_lit)
-        self.proj1 = torch.nn.Linear(self.n_embed_gate, config.n_embd)
-        self.model = GPT2Model(config)
-        self.proj2 = torch.nn.Linear(config.n_embd, 2 * num_vars + 2)
+        self.n_token_char = 5 if share_semantic else 3 * num_vars + 2
+        self.vocab_size = 2 * math.comb(num_vars, width) * (2 ** width)
+        self.n_embed_gate = self.n_embed_lit * (self.num_vars + 1)
+        self.dim_model_output = 2 * num_vars + 2
+        
+        super().__init__()
+        
+
+class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
+    """
+    """
+    
+    def __init__(self, config: GPT2ForLongshotConfig):
+        """
+        """
+        super().__init__(config.gpt2_config)
+        
+        # 0,1 for ADD/DEL types, 2-4 for positive/negative/omitted literals
+        self.cofnig = config
+        self.gpt2_config = config.gpt2_config
+        self.num_vars = config.num_vars
+        self.width = config.width
+        self.n_embed_lit = config.n_embed_lit
+        self.vocab_size = config.vocab_size
+        self.n_embed_gate = config.n_embed_gate
+        self.ub_q = config.ub_q
+        self.alpha = config.alpha
+        self.beta = config.beta
+        self.gamma = config.gamma
+        self.share_semantic = config.share_semantic
+        self.universal = config.universal
+        
+        self.embedding = torch.nn.Embedding(config.n_token_char, config.n_embed_lit)
+        self.proj1 = torch.nn.Linear(self.n_embed_gate, config.gpt2_config.n_embd)
+        self.model = GPT2Model(config.gpt2_config)
+        # TODO: change proj2 from single Linear layer to MLP
+        self.proj2 = torch.nn.Linear(config.gpt2_config.n_embd, config.dim_model_output)
         
         self.init_weights()
     
+        # Remove positional encoding (PE) from GPT2Model
+        self.model.wpe = torch.nn.Embedding(
+            config.gpt2_config.n_positions, 
+            config.gpt2_config.n_embd
+        )
+        with torch.no_grad():
+            self.model.wpe.weight.fill_(0)
+            self.model.wpe.weight.requires_grad = False
     
-    def loss_function(
-        self, 
-        y: torch.Tensor, 
-        input_ids: torch.Tensor, 
-        labels: torch.Tensor, 
-        attn: torch.Tensor
-    ):
-        """
-        Compute combined loss for next-token prediction and Q-value regression.
+    
+    def _decode_input_to_embedding(self, input_ids: torch.Tensor) -> tuple[torch.Tensor]:
+        x = torch.abs(input_ids)
+        concat_later = [(input_ids < 0).int()] # token type
+        base_fn = lambda i: 2 if self.share_semantic else 3 * i + 2
         
-        The loss combines three components:
-        1. Next-token prediction using gate token distribution log probabilities
-        2. Exponential MSE loss between predicted and true Q-value distances from upper bound
-        3. Direct MSE loss between predicted and true Q-values
+        for i in range(self.num_vars):
+            z = (((x >> i) & 0x1) | ((x >> (i + 32 - 1)) & 0x2))
+            concat_later.append(z)
+        
+        concat_embd_idx = [
+            self.embedding(c + base_fn(i)) 
+            for i, c in enumerate(concat_later)
+        ]
+        
+        decoded_input = torch.cat(concat_later, dim=-1)
+        embd = torch.cat(concat_embd_idx, dim=-1)
+        
+        return embd, decoded_input
+    
+
+    def _sum_over_subsets(self, values: torch.Tensor, complement: bool) -> torch.Tensor:
+        """
+        Parallel computation of subset sums via bit manipulation.
+        
+        Efficiently computes sums for all 2^k possible subsets of k elements
+        using vectorized operations. Each subset is represented by a bitmask.
+        
+        Algorithm:
+        - Creates 2^k x k binary matrix where row i represents subset mask i
+        - Matrix multiplication computes all subset sums in parallel
         
         Args:
-            y: Model output tensor of shape (..., 2*num_vars + 2)
-            input_ids: Input token IDs of shape (..., seq_len)
-            labels: True Q-values of shape (..., seq_len)
-            attn: Attention mask of shape (..., seq_len)
-            
+            values: Tensor (..., k) with values to aggregate.
+        
         Returns:
-            Combined loss scalar tensor
+            Tensor (..., 2^k) where position [..., mask] contains sum of
+            values at indices where mask has bit set. Example: mask=5 (0b101)
+            yields values[...,0] + values[...,2].
         """
-        param, q = torch.split(y, [2 * self.num_vars + 1, 1], dim=-1)
-        dist = GateTokenDistribution(param, self.width)
-        nxt_ids = input_ids[..., 0:]
+        k = values.size(-1)
+        masks = torch.arange(1 << k, device=values.device).unsqueeze(1)
+        masks = masks.bitwise_and(1 << torch.arange(k, device=values.device))
+
+        # TODO: need to check
+        if complement:
+            masks = masks.eq(0).float()
+        else:
+            masks = masks.ne(0).float()
+
+        return values @ masks.transpose(0, 1)
+    
+    
+    def _sum_over_combinations(self, values: torch.Tensor) -> torch.Tensor:
+        """
+        """
+        di = math.comb(self.num_vars, self.width)
+        ss = torch.zeros((di, self.num_vars), dtype=torch.uint8)
         
-        # The loss of predicting next tokens
-        tt = (nxt_ids < 0).int().unsqueeze(-1) # token type
-        s = torch.abs(nxt_ids)
-        x = torch.cat([
-            (((s >> i) & 0x1) | ((s >> (i + 32 - 1)) & 0x2)).unsqueeze(-1)
-            for i in range(self.num_vars)
-        ], dim=-1) # encoded literals
-        idx = torch.topk(x, self.width, dim=-1).indices
-        sgn = (s.unsqueeze(-1) & (1 << (idx + 32))).gt(0).int()
-        nxt = torch.cat([tt, idx, sgn], dim=-1) # next tokens
-        loss_nxt = (- dist.log_prob_dual(nxt) * attn[..., 0:]).mean()
+        for i, c in enumerate(combinations(range(self.num_vars), self.width)):
+            ss[i, list(c)] = 1
         
-        # The loss of avgQ
+        return values @ ss.transpose(0, 1)
+    
+    
+    def _gather_combinations(self, values: torch.Tensor) -> torch.Tensor:
+        """
+        """    
+        subsets = list(combinations(range(self.num_vars), self.width))
+        ss = torch.tensor(subsets, device=self.device, dtype=torch.long)
+        batch_shape = values.shape[:-1]
+        
+        for _ in batch_shape:
+            ss.unsqueeze(0)
+        ss = ss.expand(*batch_shape, -1, -1)
+        
+        values = values.unsqueeze(-2)
+        values = values.expand(*((-1,) * len(batch_shape)), len(subsets), -1)
+        
+        return values.gather(dim=-1, index=ss)
+
+    
+    def _calculate_avgQ_loss(
+        self, 
+        q: torch.Tensor,
+        labels: torch.Tensor, 
+        attn: torch.Tensor
+    ) -> torch.Tensor | None:
+        """
+        """
         q = q.squeeze(-1) * attn
         labels = labels * attn
         D = (self.ub_q - labels)
@@ -103,104 +189,136 @@ class GPT2ForLongshot(GPT2PreTrainedModel):
         
         l1 = F.mse_loss(Q_hat, Q, reduction='mean')
         l2 = F.mse_loss(torch.exp(- D_hat), torch.exp(- D), reduction='mean')
-        loss_avgQ = self.alpha * l1 + self.beta * l2
         
-        return loss_avgQ + self.gamma * loss_nxt
+        return self.alpha * l1 + self.beta * l2
+        
+        
+    def _calculate_token_loss(
+        self, 
+        zeta: torch.Tensor, # [batch, seq, 1]
+        phi: torch.Tensor, # [batch, seq, n]
+        psi: torch.Tensor, # [batch, seq, n]
+        decoded_input: torch.Tensor, # [batch, seq, n + 1]
+        attn: torch.Tensor # [batch, seq]
+    ) -> torch.Tensor | None:
+        """
+        """
+        nxt_tokens = decoded_input[..., 0:, :] # [batch, seq, n + 1]
+        tt = nxt_tokens[..., 0] # [batch, seq - 1, 1]
+        x = nxt_tokens[..., 1:] # [batch, seq - 1, n]
+        idx = torch.topk(x, self.width, dim=-1).indices # [batch, seq - 1, w]
+        sgn = x.eq(2).int() # [batch, seq - 1, w]
+        
+        ze = zeta[..., :-1, :] # [batch, seq - 1, 1]
+        ph = phi[..., :-1, :].gather(dim=-1, index=idx) # [batch, seq - 1, w]
+        ps = psi[..., :-1, :].gather(dim=-1, index=idx) # [batch, seq - 1, w]
+        tb = Bernoulli(logits=ze)
+        sb = Bernoulli(logits=ps)
+        
+        tp = tb.log_prob(tt).squeeze(-1)
+        ip = ph.sum(dim=-1)
+        sp = sb.log_prob(sgn).sum(dim=-1)
+        logp = (tp + ip + sp) * attn[..., 0:]
+        
+        return - logp.mean()
+        
+    def _calculate_logits(
+        self, 
+        zeta: torch.Tensor, 
+        phi: torch.Tensor, 
+        psi: torch.Tensor,
+        slice_indices: torch.Tensor | slice,
+    ) -> torch.Tensor:
+        """
+        """
+        n = self.num_vars
+        w = self.width
+        dt = 2
+        di = math.comb(n, w)
+        ds = 2 ** w
+        d = dt * di * ds
+        assert d == self.vocab_size, "logits size doesn't match the size of the vocabulary"
+        
+        ze = zeta[..., slice_indices, :]
+        ph = phi[..., slice_indices, :]
+        ps = psi[..., slice_indices, :]
+        batch_shape = ph.shape[:-1]
+        
+        add_p = - F.softplus(ze)
+        del_p = torch.log(1 - 1 / (1 + torch.exp(ze)))
+        logp_t = torch.cat([add_p, del_p], dim=-1) # [batch, seq, 2]
 
+        logp_i = self._sum_over_combinations(ph) # [batch, seq, C(n,w)]
+        
+        pp = self._gather_combinations(- F.softplus(ps))
+        np = self._gather_combinations(torch.log(1 - 1 / (1 + torch.exp(ps))))
+        pp = self._sum_over_subsets(pp, complement=False)
+        np = self._sum_over_subsets(np, complement=True)
+        logp_s = pp + np # [batch, seq, C(n,w), 2**w]
+        
+        logp_t = logp_t[..., :, None, None] # [batch, seq, 2, 1, 1]
+        logp_i = logp_i[..., None, :, None] # [batch, seq, 1, C(n,w), 1]
+        logp_s = logp_s[..., None, :, :] # [batch, seq, 1, C(n,w), 2**w]
+        
+        return (logp_t + logp_i + logp_s).view(*batch_shape, d)
+        
+    
     def forward(
         self, 
-        input_ids: torch.LongTensor, 
-        attention_mask: torch.LongTensor = None, 
-        labels: torch.FloatTensor = None,
-    ):
+        input_ids: torch.LongTensor = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        attention_mask: torch.FloatTensor = None,
+        labels: torch.LongTensor = None,
+        use_cache: bool = None,
+        output_attentions: bool = None,
+        output_hidden_states: bool = None,
+        return_dict: bool = None,
+        logits_to_keep: int | torch.Tensor = 0,
+    ) -> tuple[torch.Tensor, ...] | CausalLMOutputWithPast:
         """
-        Forward pass through the GPT2ForLongshot model.
-        
-        Processes input token IDs through embedding, projection, GPT2 backbone,
-        and final projection to produce gate token distribution parameters and Q-values.
-        
-        The input encoding uses bit manipulation to extract:
-        - Token types (ADD/DEL operations) from sign bit
-        - Literal encodings from variable bits
-        - Sign information for literals
-        
-        Args:
-            input_ids: Integer tensor of shape (batch_size, seq_len) containing 
-                      encoded boolean formula tokens
-            attention_mask: Optional binary tensor of shape (batch_size, seq_len)
-                          indicating which tokens to attend to
-            labels: Optional float tensor of shape (batch_size, seq_len) containing
-                   true Q-values for loss computation
-        
-        Returns:
-            If labels provided: Tuple of (loss, predictions)
-            Otherwise: Predictions tensor of shape (batch_size, seq_len, 2*num_vars + 2)
         """
-        # Embed input ids
-        x = torch.abs(input_ids)
-        concat_later = [(input_ids < 0).int()]
+        n = self.num_vars
+        attn = attention_mask
         
-        for i in range(self.num_vars):
-            base = 3 * i + 2
-            z = (((x >> i) & 0x1) | ((x >> (i + 32 - 1)) & 0x2)) + base
-            concat_later.append(z)
-            assert torch.all((z >= base) & (z < base + 3)), "Literal encoding out of range"
-        
-        a = torch.cat([self.embedding(c) for c in concat_later], dim=-1)
-        z = self.proj1(a)
-        x, = self.model(
-            inputs_embeds=z, 
+        slice_indices = logits_to_keep
+        if isinstance(logits_to_keep, int):
+            slice_indices = slice(-logits_to_keep, None)
+            
+        x, decoded_input = self._decode_input_to_embedding(input_ids)
+        x = self.proj1(x)
+        transformer_outputs: BaseModelOutputWithPastAndCrossAttentions = self.model(
+            inputs_embeds=x, 
+            past_key_values=past_key_values,
             attention_mask=attention_mask, 
-            use_cache=False,
-            return_dict=False
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True
         )
-        y = self.proj2(x)
+        past_key_values = transformer_outputs.past_key_values if use_cache else None
+        hidden_state = transformer_outputs.last_hidden_state
+        attentions = transformer_outputs.attentions
+        y = self.proj2(hidden_state)
+        zeta, phi, psi, q = torch.split(y, [1, n, n, 1], dim=-1)
         
         loss = None
         if labels is not None:
-            attn = attention_mask
-            loss = self.loss_function(y, input_ids, labels, attn).unsqueeze(0)
+            loss_avgQ = self._calculate_avgQ_loss(q, labels, attn)
+            loss_token = self._calculate_token_loss(zeta, phi, psi, decoded_input, attn)
+            loss = loss_avgQ + loss_token
             
-        return (loss, y) if loss is not None else y
-        
+        logits = self._calculate_logits(zeta, phi, psi, slice_indices)
+    
+        if not return_dict:
+            return (
+                v for v in [loss, logits, past_key_values, hidden_state, attentions]
+                if v is not None
+            )
 
-if __name__ == "__main__":
-    # Example usage
-    from dataset import TrajectoryDataset
-    from collator import TrajectoryCollator
-    
-    n = 3
-    k = 2
-    
-    dataset = TrajectoryDataset(num_vars=n, width=k)
-    collector = TrajectoryCollator(num_vars=n)
-    sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
-    batch = collector(sample_batch)
-    
-    from transformers import set_seed
-    set_seed(42)
-    
-    model_config = GPT2Config(
-        vocab_size=1,  # Not used since we provide embeddings directly
-        n_positions=64,
-        n_embd=64,
-        n_layer=4,
-        n_head=4,
-    )
-    
-    model = GPT2ForLongshot(
-        num_vars=n,
-        width=k,
-        n_embed_lit=16,
-        ub_q=3.0,
-        alpha=0.0,
-        beta=0.0,
-        gamma=1.0,
-        config=model_config
-    )
-    
-    loss, logits = model(**batch)
-    
-    print("Embedding Dimension (gate): ", model.n_embed_gate)
-    print("Loss: ", loss)
-    print(f"Logits {logits.shape}: \n", logits)
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=past_key_values,
+            hidden_states=hidden_state,
+            attentions=attentions,
+        )

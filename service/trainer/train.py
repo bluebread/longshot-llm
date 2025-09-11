@@ -38,7 +38,7 @@ if __name__ == "__main__":
         alpha=1,
         beta=30,
         gamma=0.7,
-        config=model_config
+        gpt2_config=model_config
     )
 
     # TODO: Trainer arguments to be tuned

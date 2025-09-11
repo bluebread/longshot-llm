@@ -74,21 +74,20 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         self.universal = config.universal
         
         self.embedding = torch.nn.Embedding(config.n_token_char, config.n_embed_lit)
-        self.proj1 = torch.nn.Linear(self.n_embed_gate, config.gpt2_config.n_embd)
-        self.model = GPT2Model(config.gpt2_config)
-        # TODO: change proj2 from single Linear layer to MLP
-        self.proj2 = torch.nn.Linear(config.gpt2_config.n_embd, config.dim_model_output)
+        self.proj = torch.nn.Linear(self.n_embed_gate, config.gpt2_config.n_embd)
+        self.gpt2_model = GPT2Model(config.gpt2_config)
+        self.mlp = torch.nn.Linear(config.gpt2_config.n_embd, config.dim_model_output)
         
         self.init_weights()
     
         # Remove positional encoding (PE) from GPT2Model
-        self.model.wpe = torch.nn.Embedding(
+        self.gpt2_model.wpe = torch.nn.Embedding(
             config.gpt2_config.n_positions, 
             config.gpt2_config.n_embd
         )
         with torch.no_grad():
-            self.model.wpe.weight.fill_(0)
-            self.model.wpe.weight.requires_grad = False
+            self.gpt2_model.wpe.weight.fill_(0)
+            self.gpt2_model.wpe.weight.requires_grad = False
     
     
     def _decode_input_to_embedding(self, input_ids: torch.Tensor) -> tuple[torch.Tensor]:
@@ -101,11 +100,11 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
             concat_later.append(z)
         
         concat_embd_idx = [
-            self.embedding(c + base_fn(i)) 
+            self.embedding(c + base_fn(i - 1)) if i > 0 else self.embedding(c)
             for i, c in enumerate(concat_later)
         ]
         
-        decoded_input = torch.cat(concat_later, dim=-1)
+        decoded_input = torch.cat([c.unsqueeze(-1) for c in concat_later], dim=-1)
         embd = torch.cat(concat_embd_idx, dim=-1)
         
         return embd, decoded_input
@@ -147,7 +146,7 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         """
         """
         di = math.comb(self.num_vars, self.width)
-        ss = torch.zeros((di, self.num_vars), dtype=torch.uint8)
+        ss = torch.zeros((di, self.num_vars), dtype=torch.float)
         
         for i, c in enumerate(combinations(range(self.num_vars), self.width)):
             ss[i, list(c)] = 1
@@ -203,11 +202,10 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
     ) -> torch.Tensor | None:
         """
         """
-        nxt_tokens = decoded_input[..., 0:, :] # [batch, seq, n + 1]
-        tt = nxt_tokens[..., 0] # [batch, seq - 1, 1]
-        x = nxt_tokens[..., 1:] # [batch, seq - 1, n]
+        nxt_tokens = decoded_input[..., 1:, :] # [batch, seq, n + 1]
+        tt, x = torch.split(nxt_tokens, [1, n], dim=-1)
         idx = torch.topk(x, self.width, dim=-1).indices # [batch, seq - 1, w]
-        sgn = x.eq(2).int() # [batch, seq - 1, w]
+        sgn = x.gather(dim=-1, index=idx).eq(2).int() # [batch, seq - 1, w]
         
         ze = zeta[..., :-1, :] # [batch, seq - 1, 1]
         ph = phi[..., :-1, :].gather(dim=-1, index=idx) # [batch, seq - 1, w]
@@ -215,12 +213,12 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         tb = Bernoulli(logits=ze)
         sb = Bernoulli(logits=ps)
         
-        tp = tb.log_prob(tt).squeeze(-1)
+        tp = tb.log_prob(tt.float()).squeeze(-1)
         ip = ph.sum(dim=-1)
-        sp = sb.log_prob(sgn).sum(dim=-1)
-        logp = (tp + ip + sp) * attn[..., 0:]
+        sp = sb.log_prob(sgn.float()).sum(dim=-1)
+        logp = (tp + ip + sp) * attn[..., 1:]
         
-        return - logp.mean()
+        return - self.gamma * logp.mean()
         
     def _calculate_logits(
         self, 
@@ -247,8 +245,10 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         add_p = - F.softplus(ze)
         del_p = torch.log(1 - 1 / (1 + torch.exp(ze)))
         logp_t = torch.cat([add_p, del_p], dim=-1) # [batch, seq, 2]
+        print(logp_t.shape)
 
         logp_i = self._sum_over_combinations(ph) # [batch, seq, C(n,w)]
+        print(logp_i.shape)
         
         pp = self._gather_combinations(- F.softplus(ps))
         np = self._gather_combinations(torch.log(1 - 1 / (1 + torch.exp(ps))))
@@ -265,16 +265,16 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
     
     def forward(
         self, 
-        input_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor,
+        attention_mask: torch.FloatTensor,
         past_key_values: tuple[tuple[torch.Tensor]] = None,
-        attention_mask: torch.FloatTensor = None,
         labels: torch.LongTensor = None,
-        use_cache: bool = None,
-        output_attentions: bool = None,
-        output_hidden_states: bool = None,
-        return_dict: bool = None,
+        use_cache: bool = False,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+        return_dict: bool = False,
         logits_to_keep: int | torch.Tensor = 0,
-    ) -> tuple[torch.Tensor, ...] | CausalLMOutputWithPast:
+    ) -> tuple[torch.Tensor] | CausalLMOutputWithPast:
         """
         """
         n = self.num_vars
@@ -285,8 +285,8 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
             slice_indices = slice(-logits_to_keep, None)
             
         x, decoded_input = self._decode_input_to_embedding(input_ids)
-        x = self.proj1(x)
-        transformer_outputs: BaseModelOutputWithPastAndCrossAttentions = self.model(
+        x = self.proj(x)
+        gpt2_outputs: BaseModelOutputWithPastAndCrossAttentions = self.gpt2_model(
             inputs_embeds=x, 
             past_key_values=past_key_values,
             attention_mask=attention_mask, 
@@ -295,23 +295,25 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
             output_hidden_states=output_hidden_states,
             return_dict=True
         )
-        past_key_values = transformer_outputs.past_key_values if use_cache else None
-        hidden_state = transformer_outputs.last_hidden_state
-        attentions = transformer_outputs.attentions
-        y = self.proj2(hidden_state)
+        past_key_values = gpt2_outputs.past_key_values if use_cache else None
+        hidden_states = gpt2_outputs.hidden_states if output_hidden_states else None
+        attentions = gpt2_outputs.attentions if output_attentions else None
+        last_hidden_state = gpt2_outputs.last_hidden_state
+        
+        y = self.mlp(last_hidden_state)
         zeta, phi, psi, q = torch.split(y, [1, n, n, 1], dim=-1)
         
         loss = None
         if labels is not None:
             loss_avgQ = self._calculate_avgQ_loss(q, labels, attn)
             loss_token = self._calculate_token_loss(zeta, phi, psi, decoded_input, attn)
-            loss = loss_avgQ + loss_token
+            loss = (loss_avgQ + loss_token).unsqueeze(0)
             
         logits = self._calculate_logits(zeta, phi, psi, slice_indices)
     
         if not return_dict:
             return (
-                v for v in [loss, logits, past_key_values, hidden_state, attentions]
+                v for v in [loss, logits, past_key_values, hidden_states, attentions]
                 if v is not None
             )
 
@@ -319,6 +321,54 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
             loss=loss,
             logits=logits,
             past_key_values=past_key_values,
-            hidden_states=hidden_state,
+            hidden_states=hidden_states,
             attentions=attentions,
         )
+        
+        
+
+if __name__ == "__main__":
+    # Example usage
+    from dataset import TrajectoryDataset
+    from collator import TrajectoryCollator
+    
+    n = 3
+    k = 2
+    
+    dataset = TrajectoryDataset(num_vars=n, width=k)
+    collector = TrajectoryCollator(num_vars=n)
+    sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
+    batch = collector(sample_batch)
+    
+    from transformers import set_seed
+    set_seed(42)
+    
+    config = GPT2ForLongshotConfig(
+        num_vars=n,
+        width=k,
+        n_embed_lit=16,
+        ub_q=3.0,
+        alpha=0.0,
+        beta=0.0,
+        gamma=1.0,
+        share_semantic=False,
+        universal=False,
+        gpt2_config=GPT2Config(
+            vocab_size=1,  # Not used since we provide embeddings directly
+            n_positions=64,
+            n_embd=64,
+            n_layer=4,
+            n_head=4,
+        )
+    )
+    
+    model = GPT2ForLongshot(config)
+    
+    loss, logits = model(**batch)
+    
+    print("Embedding Dimension (gate): ", model.n_embed_gate)
+    print("Loss: ", loss)
+    print(f"Logits {logits.shape}: \n", logits)
+    
+    # TODO: test permutation-invariance
+    # TODO: test sequence generation

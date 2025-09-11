@@ -142,22 +142,24 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         return values @ masks.transpose(0, 1)
     
     
-    def _sum_over_combinations(self, values: torch.Tensor) -> torch.Tensor:
+    def _sum_over_combinations(self, values: torch.Tensor, k: int) -> torch.Tensor:
         """
         """
-        di = math.comb(self.num_vars, self.width)
-        ss = torch.zeros((di, self.num_vars), dtype=torch.float)
+        n = values.shape[-1]
+        di = math.comb(n, k)
+        ss = torch.zeros((di, n ), dtype=torch.float)
         
-        for i, c in enumerate(combinations(range(self.num_vars), self.width)):
+        for i, c in enumerate(combinations(range(n ), k)):
             ss[i, list(c)] = 1
         
         return values @ ss.transpose(0, 1)
     
     
-    def _gather_combinations(self, values: torch.Tensor) -> torch.Tensor:
+    def _gather_combinations(self, values: torch.Tensor, k: int) -> torch.Tensor:
         """
         """    
-        subsets = list(combinations(range(self.num_vars), self.width))
+        n = values.shape[-1]
+        subsets = list(combinations(range(n), k))
         ss = torch.tensor(subsets, device=self.device, dtype=torch.long)
         batch_shape = values.shape[:-1]
         
@@ -245,13 +247,11 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         add_p = - F.softplus(ze)
         del_p = torch.log(1 - 1 / (1 + torch.exp(ze)))
         logp_t = torch.cat([add_p, del_p], dim=-1) # [batch, seq, 2]
-        print(logp_t.shape)
 
-        logp_i = self._sum_over_combinations(ph) # [batch, seq, C(n,w)]
-        print(logp_i.shape)
+        logp_i = self._sum_over_combinations(ph, self.width) # [batch, seq, C(n,w)]
         
-        pp = self._gather_combinations(- F.softplus(ps))
-        np = self._gather_combinations(torch.log(1 - 1 / (1 + torch.exp(ps))))
+        pp = self._gather_combinations(- F.softplus(ps), self.width)
+        np = self._gather_combinations(torch.log(1 - 1 / (1 + torch.exp(ps))), self.width)
         pp = self._sum_over_subsets(pp, complement=False)
         np = self._sum_over_subsets(np, complement=True)
         logp_s = pp + np # [batch, seq, C(n,w), 2**w]
@@ -265,24 +265,34 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
     
     def forward(
         self, 
-        input_ids: torch.LongTensor,
-        attention_mask: torch.FloatTensor,
+        input_ids: torch.LongTensor = None,
+        attention_mask: torch.FloatTensor = None,
         past_key_values: tuple[tuple[torch.Tensor]] = None,
         labels: torch.LongTensor = None,
         use_cache: bool = False,
         output_attentions: bool = False,
         output_hidden_states: bool = False,
-        return_dict: bool = False,
+        return_dict: bool = True,
         logits_to_keep: int | torch.Tensor = 0,
+        cache_position: torch.LongTensor = None,  # For generation compatibility
+        position_ids: torch.LongTensor = None,  # For generation compatibility
+        inputs_embeds: torch.FloatTensor = None,  # For generation compatibility
+        **kwargs,  # Catch any other generation-specific args
     ) -> tuple[torch.Tensor] | CausalLMOutputWithPast:
         """
         """
         n = self.num_vars
+        
+        # Handle attention mask - create if not provided
+        if attention_mask is None and input_ids is not None:
+            attention_mask = torch.ones_like(input_ids, dtype=torch.float)
         attn = attention_mask
         
         slice_indices = logits_to_keep
-        if isinstance(logits_to_keep, int):
+        if isinstance(logits_to_keep, int) and logits_to_keep > 0:
             slice_indices = slice(-logits_to_keep, None)
+        elif logits_to_keep == 0:
+            slice_indices = slice(None)  # Keep all logits
             
         x, decoded_input = self._decode_input_to_embedding(input_ids)
         x = self.proj(x)
@@ -337,8 +347,11 @@ if __name__ == "__main__":
     
     dataset = TrajectoryDataset(num_vars=n, width=k)
     collector = TrajectoryCollator(num_vars=n)
-    sample_batch = [dataset[i] for i in range(4)]  # Get 4 samples
+    sample_batch = [dataset[i] for i in range(1)]  # Get 4 samples
     batch = collector(sample_batch)
+    # a = batch["input_ids"]
+    # a[:, [0,1]] = a[:, [1,0]]
+    # batch["input_ids"] = a
     
     from transformers import set_seed
     set_seed(42)
@@ -348,9 +361,9 @@ if __name__ == "__main__":
         width=k,
         n_embed_lit=16,
         ub_q=3.0,
-        alpha=0.0,
-        beta=0.0,
-        gamma=1.0,
+        alpha=1,
+        beta=20,
+        gamma=1,
         share_semantic=False,
         universal=False,
         gpt2_config=GPT2Config(
@@ -364,11 +377,52 @@ if __name__ == "__main__":
     
     model = GPT2ForLongshot(config)
     
-    loss, logits = model(**batch)
+    # Test forward pass
+    outputs = model(**batch, return_dict=True)
     
+    print("Input IDs: \n", batch["input_ids"])
     print("Embedding Dimension (gate): ", model.n_embed_gate)
-    print("Loss: ", loss)
-    print(f"Logits {logits.shape}: \n", logits)
+    if outputs.loss is not None:
+        print("Loss: ", outputs.loss.item())
+    print(f"Logits {outputs.logits.shape}: \n", outputs.logits)
     
-    # TODO: test permutation-invariance
     # TODO: test sequence generation
+    
+    # Test sequence generation
+    print("\n--- Testing Sequence Generation ---")
+    print(f"Vocabulary size: {model.vocab_size}")
+    
+    # The model uses encoded gate tokens, not vocabulary indices
+    # For generation, we need a way to convert between them
+    # For now, let's test that generation mechanics work
+    
+    # Use the actual encoded tokens from the dataset
+    prompt = batch["input_ids"][:, :2]  # Take first 2 tokens as prompt
+    print(f"Prompt shape: {prompt.shape}")
+    print(f"Prompt (encoded gate tokens): {prompt.tolist()}")
+    
+    # The generate method produces vocabulary indices (0-23 for vocab_size=24)
+    # But the model forward pass expects encoded gate tokens
+    # This is a design mismatch that needs addressing
+    
+    print("\nNote: The model expects encoded gate tokens as input, but")
+    print("generation produces vocabulary indices. This mismatch means")
+    print("the generated sequences won't be meaningful without proper")
+    print("conversion between vocabulary indices and gate encodings.")
+    
+    # For demonstration, let's create a simple prompt with small values
+    # These won't be meaningful gate tokens but will show generation works
+    simple_prompt = torch.tensor([[0, 1]], dtype=torch.long)
+    print(f"\nSimple prompt (for testing): {simple_prompt.tolist()}")
+    
+    print("\n1. Greedy generation (from simple prompt):")
+    with torch.no_grad():
+        greedy_output = model.generate(
+            input_ids=simple_prompt,
+            max_length=8,
+            do_sample=False,
+            pad_token_id=0,
+        )
+    print(f"   Generated vocabulary indices: {greedy_output[0].tolist()}")
+    print(f"   (These are vocab indices 0-{model.vocab_size-1}, not gate encodings)")
+    

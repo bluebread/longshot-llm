@@ -1,4 +1,4 @@
-from transformers import TrainingArguments, Trainer
+from transformers import TrainingArguments
 from transformers import GPT2Config
 from transformers import set_seed
 from torch.utils.data import random_split
@@ -8,6 +8,7 @@ import os
 from dataset import TrajectoryDataset
 from collator import TrajectoryCollator
 from model import GPT2ForLongshot, GPT2ForLongshotConfig
+from custom_trainer import LongshotTrainer
 
 if __name__ == "__main__":
 
@@ -32,19 +33,19 @@ if __name__ == "__main__":
         vocab_size=1,  # Not used since we provide embeddings directly
         n_positions=64,
         n_embd=256,
-        n_layer=12,
+        n_layer=18,
         n_head=8,
     )
 
     model_config = GPT2ForLongshotConfig(
         num_vars=n,
         width=w,
-        n_embed_lit=16,
+        n_embed_lit=32,
         ub_q=float(n),
         alpha=1,
         beta=40,
         gamma=0.2,
-        share_semantic=False,
+        share_semantic=True,
         universal=False,
         gpt2_config=gpt2_config
     )
@@ -75,11 +76,11 @@ if __name__ == "__main__":
         learning_rate=2e-5,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
-        num_train_epochs=100,
+        num_train_epochs=600,
         weight_decay=0.00,
     )
 
-    trainer = Trainer(
+    trainer = LongshotTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,

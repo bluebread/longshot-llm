@@ -176,8 +176,9 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         q: torch.Tensor,
         labels: torch.Tensor, 
         attn: torch.Tensor
-    ) -> torch.Tensor | None:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
+        Returns: (total_avgQ_loss, l1, l2)
         """
         q = q.squeeze(-1) * attn
         labels = labels * attn
@@ -189,7 +190,7 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         l1 = F.mse_loss(Q_hat, Q, reduction='mean')
         l2 = F.mse_loss(torch.exp(- D_hat), torch.exp(- D), reduction='mean')
         
-        return self.alpha * l1 + self.beta * l2
+        return self.alpha * l1 + self.beta * l2, l1, l2
         
         
     def _calculate_token_loss(
@@ -317,10 +318,20 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         zeta, phi, psi, q = torch.split(y, [1, n, n, 1], dim=-1)
         
         loss = None
+        # Store loss components for logging
+        self.loss_components = {}
         if labels is not None:
-            loss_avgQ = self._calculate_avgQ_loss(q, labels, attn)
+            loss_avgQ, l1, l2 = self._calculate_avgQ_loss(q, labels, attn)
             loss_token = self._calculate_token_loss(zeta, phi, psi, decoded_input, attn)
             loss = (loss_avgQ + loss_token).unsqueeze(0)
+            
+            # Store individual components for logging
+            self.loss_components = {
+                'l1_mse': l1.detach().item(),
+                'l2_exp': l2.detach().item(),
+                'avgQ_loss': loss_avgQ.detach().item(),
+                'token_loss': loss_token.detach().item(),
+            }
             
         logits = self._calculate_logits(zeta, phi, psi, slice_indices)
     

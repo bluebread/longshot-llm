@@ -59,7 +59,6 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         super().__init__(config.gpt2_config)
         
         # 0,1 for ADD/DEL types, 2-4 for positive/negative/omitted literals
-        self.cofnig = config
         self.gpt2_config = config.gpt2_config
         self.num_vars = config.num_vars
         self.width = config.width
@@ -133,7 +132,6 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         masks = torch.arange(1 << k, device=values.device).unsqueeze(1)
         masks = masks.bitwise_and(1 << torch.arange(k, device=values.device))
 
-        # TODO: need to check
         if complement:
             masks = masks.eq(0).float()
         else:
@@ -147,9 +145,9 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         """
         n = values.shape[-1]
         di = math.comb(n, k)
-        ss = torch.zeros((di, n ), dtype=torch.float)
+        ss = torch.zeros((di, n), dtype=torch.float, device=values.device)
         
-        for i, c in enumerate(combinations(range(n ), k)):
+        for i, c in enumerate(combinations(range(n), k)):
             ss[i, list(c)] = 1
         
         return values @ ss.transpose(0, 1)
@@ -160,7 +158,7 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         """    
         n = values.shape[-1]
         subsets = list(combinations(range(n), k))
-        ss = torch.tensor(subsets, device=self.device, dtype=torch.long)
+        ss = torch.tensor(subsets, device=values.device, dtype=torch.long)
         batch_shape = values.shape[:-1]
         
         for _ in batch_shape:
@@ -204,23 +202,26 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
     ) -> torch.Tensor | None:
         """
         """
-        nxt_tokens = decoded_input[..., 1:, :] # [batch, seq, n + 1]
+        n = self.num_vars
+        nxt_tokens = decoded_input[..., 1:, :] # [batch, seq - 1, n + 1]
         tt, x = torch.split(nxt_tokens, [1, n], dim=-1)
         idx = torch.topk(x, self.width, dim=-1).indices # [batch, seq - 1, w]
         sgn = x.gather(dim=-1, index=idx).eq(2).int() # [batch, seq - 1, w]
         
         ze = zeta[..., :-1, :] # [batch, seq - 1, 1]
-        ph = phi[..., :-1, :].gather(dim=-1, index=idx) # [batch, seq - 1, w]
+        # Convert phi to log probabilities first
+        ph_logprobs = F.log_softmax(phi[..., :-1, :], dim=-1)  # [batch, seq - 1, n]
+        ph = ph_logprobs.gather(dim=-1, index=idx) # [batch, seq - 1, w]
         ps = psi[..., :-1, :].gather(dim=-1, index=idx) # [batch, seq - 1, w]
         tb = Bernoulli(logits=ze)
         sb = Bernoulli(logits=ps)
         
         tp = tb.log_prob(tt.float()).squeeze(-1)
-        ip = ph.sum(dim=-1)
+        ip = ph.sum(dim=-1)  # Sum of log probs of selected indices
         sp = sb.log_prob(sgn.float()).sum(dim=-1)
         logp = (tp + ip + sp) * attn[..., 1:]
         
-        return - self.gamma * logp.mean()
+        return -self.gamma * logp.mean()
         
     def _calculate_logits(
         self, 
@@ -248,7 +249,9 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         del_p = torch.log(1 - 1 / (1 + torch.exp(ze)))
         logp_t = torch.cat([add_p, del_p], dim=-1) # [batch, seq, 2]
 
-        logp_i = self._sum_over_combinations(ph, self.width) # [batch, seq, C(n,w)]
+        # Convert phi to log probabilities for subset selection
+        ph_logprobs = F.log_softmax(ph, dim=-1)
+        logp_i = self._sum_over_combinations(ph_logprobs, self.width) # [batch, seq, C(n,w)]
         
         pp = self._gather_combinations(- F.softplus(ps), self.width)
         np = self._gather_combinations(torch.log(1 - 1 / (1 + torch.exp(ps))), self.width)

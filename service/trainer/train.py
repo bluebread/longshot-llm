@@ -3,14 +3,20 @@ from transformers import GPT2Config
 from transformers import set_seed
 from torch.utils.data import random_split
 from datetime import datetime
+import os
 
 from dataset import TrajectoryDataset
 from collator import TrajectoryCollator
-from model import GPT2ForLongshot
+from model import GPT2ForLongshot, GPT2ForLongshotConfig
 
 if __name__ == "__main__":
 
     set_seed(42)
+    
+    # Set device to cuda:1
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    # Alternative: You can also use torch.cuda.set_device(1)
+    # torch.cuda.set_device(1)
 
     n = 3
     w = 2
@@ -22,7 +28,7 @@ if __name__ == "__main__":
     
     collector = TrajectoryCollator(num_vars=n, permute_input=True)
 
-    model_config = GPT2Config(
+    gpt2_config = GPT2Config(
         vocab_size=1,  # Not used since we provide embeddings directly
         n_positions=64,
         n_embd=256,
@@ -30,16 +36,20 @@ if __name__ == "__main__":
         n_head=8,
     )
 
-    model = GPT2ForLongshot(
+    model_config = GPT2ForLongshotConfig(
         num_vars=n,
         width=w,
         n_embed_lit=16,
         ub_q=float(n),
         alpha=1,
-        beta=30,
-        gamma=0.7,
-        gpt2_config=model_config
+        beta=40,
+        gamma=0.2,
+        share_semantic=False,
+        universal=False,
+        gpt2_config=gpt2_config
     )
+
+    model = GPT2ForLongshot(model_config)
 
     # TODO: Trainer arguments to be tuned
     # - learning rate schedule
@@ -65,7 +75,7 @@ if __name__ == "__main__":
         learning_rate=2e-5,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
-        num_train_epochs=450,
+        num_train_epochs=100,
         weight_decay=0.00,
     )
 

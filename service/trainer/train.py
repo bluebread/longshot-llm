@@ -77,7 +77,7 @@ if __name__ == "__main__":
         learning_rate=2e-5,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
-        num_train_epochs=600,
+        num_train_epochs=350,
         weight_decay=0.00,
     )
 
@@ -89,5 +89,5 @@ if __name__ == "__main__":
         data_collator=collector,
     )
 
-    trainer.train(resume_from_checkpoint=True)
+    trainer.train(resume_from_checkpoint=False)
     model.save_pretrained(f'./models/n{n}w{w}-{curtime}')

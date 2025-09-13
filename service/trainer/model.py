@@ -1,4 +1,7 @@
 import math
+import os
+import json
+from safetensors.torch import save_file
 from itertools import combinations
 import torch
 import torch.nn.functional as F
@@ -13,23 +16,29 @@ from transformers.modeling_outputs import (
 
 class GPT2ForLongshotConfig(PretrainedConfig):
     """
+    Configuration class for GPT2ForLongshot model.
     """
+    model_type = "gpt2_for_longshot"
     
     def __init__(
         self, 
-        num_vars: int,
-        width: int,
-        n_embed_lit: int,
-        ub_q: float,
-        alpha: float,
-        beta: float,
-        gamma: float,
-        share_semantic: bool,
-        universal: bool,
-        gpt2_config: GPT2Config
+        num_vars: int = None,
+        width: int = None,
+        n_embed_lit: int = None,
+        ub_q: float = None,
+        alpha: float = None,
+        beta: float = None,
+        gamma: float = None,
+        share_semantic: bool = None,
+        universal: bool = None,
+        gpt2_config: dict = None,
+        **kwargs
     ):
         """
+        Initialize configuration with JSON-serializable parameters.
         """
+        super().__init__(**kwargs)
+        
         self.num_vars = num_vars
         self.width = width
         self.n_embed_lit = n_embed_lit
@@ -39,27 +48,53 @@ class GPT2ForLongshotConfig(PretrainedConfig):
         self.gamma = gamma
         self.share_semantic = share_semantic
         self.universal = universal
-        self.gpt2_config = gpt2_config
         
-        self.n_token_char = 5 if share_semantic else 3 * num_vars + 2
-        self.vocab_size = 2 * math.comb(num_vars, width) * (2 ** width)
-        self.n_embed_gate = self.n_embed_lit * (self.num_vars + 1)
-        self.dim_model_output = 2 * num_vars + 2
+        # Store GPT2Config as dict for JSON serialization
+        if isinstance(gpt2_config, GPT2Config):
+            self.gpt2_config = gpt2_config.to_dict()
+        else:
+            self.gpt2_config = gpt2_config
         
-        super().__init__()
+        # Compute derived attributes
+        if num_vars is not None and width is not None and n_embed_lit is not None:
+            self.n_token_char = 5 if share_semantic else 3 * num_vars + 2
+            self.vocab_size = 2 * math.comb(num_vars, width) * (2 ** width)
+            self.n_embed_gate = n_embed_lit * (num_vars + 1)
+            self.dim_model_output = 2 * num_vars + 2
+    
+    def to_dict(self):
+        """Convert config to dictionary for JSON serialization."""
+        output = super().to_dict()
+        # Ensure gpt2_config is serializable
+        if isinstance(output.get("gpt2_config"), GPT2Config):
+            output["gpt2_config"] = output["gpt2_config"].to_dict()
+        return output
         
 
 class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
     """
+    GPT2 model adapted for Longshot trajectory learning.
     """
+    config_class = GPT2ForLongshotConfig
     
     def __init__(self, config: GPT2ForLongshotConfig):
         """
+        Initialize the model with the given configuration.
         """
-        super().__init__(config.gpt2_config)
+        # Convert gpt2_config dict back to GPT2Config if needed
+        if isinstance(config.gpt2_config, dict):
+            gpt2_config_obj = GPT2Config(**config.gpt2_config)
+        else:
+            gpt2_config_obj = config.gpt2_config
+            
+        # Initialize parent with GPT2Config for proper initialization
+        super().__init__(gpt2_config_obj)
+        
+        # Store the full custom config separately  
+        self.longshot_config = config
         
         # 0,1 for ADD/DEL types, 2-4 for positive/negative/omitted literals
-        self.gpt2_config = config.gpt2_config
+        self.gpt2_config = gpt2_config_obj
         self.num_vars = config.num_vars
         self.width = config.width
         self.n_embed_lit = config.n_embed_lit
@@ -73,21 +108,96 @@ class GPT2ForLongshot(GPT2PreTrainedModel, GenerationMixin):
         self.universal = config.universal
         
         self.embedding = torch.nn.Embedding(config.n_token_char, config.n_embed_lit)
-        self.proj = torch.nn.Linear(self.n_embed_gate, config.gpt2_config.n_embd)
-        self.gpt2_model = GPT2Model(config.gpt2_config)
-        self.mlp = torch.nn.Linear(config.gpt2_config.n_embd, config.dim_model_output)
+        self.proj = torch.nn.Linear(self.n_embed_gate, gpt2_config_obj.n_embd)
+        self.gpt2_model = GPT2Model(gpt2_config_obj)
+        self.mlp = torch.nn.Linear(gpt2_config_obj.n_embd, config.dim_model_output)
         
         self.init_weights()
     
         # Remove positional encoding (PE) from GPT2Model
         self.gpt2_model.wpe = torch.nn.Embedding(
-            config.gpt2_config.n_positions, 
-            config.gpt2_config.n_embd
+            gpt2_config_obj.n_positions, 
+            gpt2_config_obj.n_embd
         )
         with torch.no_grad():
             self.gpt2_model.wpe.weight.fill_(0)
             self.gpt2_model.wpe.weight.requires_grad = False
     
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        """
+        Load a pretrained GPT2ForLongshot model from a directory.
+        
+        Args:
+            pretrained_model_name_or_path: Path to the directory containing the model
+            *model_args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            GPT2ForLongshot: The loaded model
+        """
+        # Load the config
+        config_path = os.path.join(pretrained_model_name_or_path, "config.json")
+        with open(config_path, "r") as f:
+            config_dict = json.load(f)
+        
+        # Create config object
+        config = GPT2ForLongshotConfig(**config_dict)
+        
+        # Initialize model with config (this calls init_weights internally)
+        model = cls(config)
+        
+        # Load the model weights
+        model_path = os.path.join(pretrained_model_name_or_path, "model.safetensors")
+        if not os.path.exists(model_path):
+            # Fallback to pytorch_model.bin if safetensors doesn't exist
+            model_path = os.path.join(pretrained_model_name_or_path, "pytorch_model.bin")
+        
+        if os.path.exists(model_path):
+            if model_path.endswith(".safetensors"):
+                from safetensors.torch import load_file
+                state_dict = load_file(model_path)
+            else:
+                state_dict = torch.load(model_path, map_location="cpu")
+            
+            # Load state dict with strict=True to ensure all weights are loaded
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+            if missing_keys:
+                print(f"Warning: Missing keys when loading model: {missing_keys}")
+            if unexpected_keys:
+                print(f"Warning: Unexpected keys when loading model: {unexpected_keys}")
+        
+        # Ensure positional encoding remains disabled
+        with torch.no_grad():
+            model.gpt2_model.wpe.weight.fill_(0)
+            model.gpt2_model.wpe.weight.requires_grad = False
+        
+        return model
+    
+    def save_pretrained(self, save_directory: str, **kwargs):
+        """
+        Save the model to a directory.
+        
+        Args:
+            save_directory: Directory to save the model to
+            **kwargs: Additional keyword arguments for compatibility
+        """
+        # Create directory if it doesn't exist
+        os.makedirs(save_directory, exist_ok=True)
+        
+        # Save config - use our custom longshot_config
+        config_path = os.path.join(save_directory, "config.json")
+        with open(config_path, "w") as f:
+            json.dump(self.longshot_config.to_dict(), f, indent=2)
+        
+        # Save model weights using safetensors for better compatibility
+        model_path = os.path.join(save_directory, "model.safetensors")
+        state_dict = self.state_dict()
+        save_file(state_dict, model_path)
+        
+        # Also save as pytorch_model.bin for backward compatibility
+        pytorch_model_path = os.path.join(save_directory, "pytorch_model.bin")
+        torch.save(state_dict, pytorch_model_path)
     
     def _decode_input_to_embedding(self, input_ids: torch.Tensor) -> tuple[torch.Tensor]:
         x = torch.abs(input_ids)

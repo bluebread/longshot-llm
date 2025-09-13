@@ -51,6 +51,7 @@ if __name__ == "__main__":
     )
 
     model = GPT2ForLongshot(model_config)
+    # model = GPT2ForLongshot.from_pretrained('./models/n3w2-2025-09-13T17:04:40.472214')
 
     # TODO: Trainer arguments to be tuned
     # - learning rate schedule
@@ -88,5 +89,5 @@ if __name__ == "__main__":
         data_collator=collector,
     )
 
-    trainer.train(resume_from_checkpoint=False)
+    trainer.train(resume_from_checkpoint=True)
     model.save_pretrained(f'./models/n{n}w{w}-{curtime}')

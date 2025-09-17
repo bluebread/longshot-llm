@@ -300,3 +300,4 @@ log/
 data/
 trainer_output/
 models/
+output*

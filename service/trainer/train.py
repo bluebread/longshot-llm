@@ -19,8 +19,8 @@ if __name__ == "__main__":
     # Alternative: You can also use torch.cuda.set_device(1)
     # torch.cuda.set_device(1)
 
-    n = 3
-    w = 2
+    n = 7
+    w = 5
     dataset = TrajectoryDataset(local_file=f'./data/n{n}w{w}.json')
 
     train_size = int(0.8 * len(dataset))
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     gpt2_config = GPT2Config(
         vocab_size=1,  # Not used since we provide embeddings directly
-        n_positions=64,
+        n_positions=256,
         n_embd=256,
         n_layer=18,
         n_head=8,
@@ -75,9 +75,9 @@ if __name__ == "__main__":
         logging_steps=50,
         # Hyperparameters
         learning_rate=2e-5,
-        per_device_train_batch_size=32,
+        per_device_train_batch_size=64,
         per_device_eval_batch_size=32,
-        num_train_epochs=350,
+        num_train_epochs=140,
         weight_decay=0.00,
     )
 

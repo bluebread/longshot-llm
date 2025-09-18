@@ -1,14 +1,18 @@
 # Clusterbomb MAP-Elites Service Requirements
 
-# Core dependencies - using local longshot library
+# Core dependencies
 pydantic>=2.5.0
 httpx>=0.25.0
 
-# Async support (built-in with Python 3.7+)
-# asyncio is included in standard library
+# Testing (optional, for development)
+pytest>=7.0.0
 
-# For multiprocessing
-# multiprocessing is included in standard library
+# Note: The longshot library must be installed from the local library directory:
+# cd ../../library && pip install -e .
 
-# Logging
-# logging is included in standard library
+# Standard library modules (no installation needed):
+# - asyncio (async support)
+# - multiprocessing (parallel processing)
+# - logging (logging support)
+# - argparse (CLI arguments)
+# - json, random, time, datetime, functools, signal, sys

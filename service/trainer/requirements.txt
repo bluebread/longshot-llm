@@ -1,0 +1,19 @@
+# Training Service Requirements
+
+# Core dependencies
+torch>=2.0.0
+transformers>=4.30.0
+safetensors>=0.3.0
+
+# Data handling
+numpy>=1.24.0
+httpx>=0.25.0
+
+# Testing (optional, for development)
+pytest>=7.0.0
+
+# Tensorboard for training monitoring
+tensorboard>=2.10.0
+
+# Note: The longshot library must be installed from the local library directory:
+# cd ../../library && pip install -e .

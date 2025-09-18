@@ -6,7 +6,7 @@ A reinforcement learning framework for boolean formula generation and optimizati
 
 Longshot LLM combines evolutionary algorithms with deep learning to discover and optimize boolean formulas. The system uses MAP-Elites for diversity-preserving optimization and GPT-2 based models for trajectory generation, where trajectories represent sequences of operations that construct boolean formulas.
 
-![Training Progress](service/trainer/img/20250918141755.png)
+![Training Progress](doc/img/20250918141755.png)
 *Training curves showing token loss and avgQ loss convergence for different model configurations (n3w2 and n5w4)*
 
 ## Features

@@ -301,3 +301,13 @@ data/
 trainer_output/
 models/
 output*
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Exception for documentation images
+!doc/img/*.png

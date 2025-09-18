@@ -386,33 +386,6 @@ doc/
         └── index.html   # Main documentation page
 ```
 
-#### Other Documentation Formats
-
-Besides HTML, you can generate documentation in other formats:
-
-```bash
-# PDF documentation (requires LaTeX)
-make latexpdf
-
-# Plain text documentation
-make text
-
-# EPUB format
-make epub
-
-# Clean build directory
-make clean
-```
-
-### Building the C++ Extension
-
-The core library includes a C++ extension for performance-critical operations:
-
-```bash
-cd library
-python setup.py build_ext --inplace
-```
-
 ### Adding New Features
 
 1. **New Gate Types**: Extend the gate encoding in `longshot/utils`
@@ -429,13 +402,6 @@ The system follows a microservices architecture:
 - **Warehouse Service**: Centralized trajectory storage
 
 Services communicate asynchronously for scalability and can be deployed independently.
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-- All tests pass before submitting PRs
-- New features include appropriate tests
-- Code follows existing patterns and conventions
 
 ## License
 

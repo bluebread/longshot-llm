@@ -189,18 +189,153 @@ Configure training in `service/trainer/train.py`:
 ## Utilities
 
 ### Export Trajectories
+
+Export trajectory datasets from the warehouse service to JSON format for offline analysis or training.
+
 ```bash
-python script/export_trajectories.py
+# Export all trajectories to a JSON file
+python script/export_trajectories.py --output trajectories.json
+
+# Export trajectories with specific parameters
+python script/export_trajectories.py --output data.json --num-vars 4 --width 3
+
+# Export from remote warehouse with date filtering
+python script/export_trajectories.py \
+    --output filtered_data.json \
+    --host remote.server \
+    --port 8080 \
+    --since 2024-01-01 \
+    --until 2024-12-31
+
+# Include metadata and pretty-print output
+python script/export_trajectories.py \
+    --output detailed.json \
+    --include-metadata \
+    --pretty \
+    --verbose
+```
+
+**Options:**
+- `--output, -o`: Output JSON file path (required)
+- `--num-vars`: Filter by number of variables
+- `--width`: Filter by formula width
+- `--host`: Warehouse host (default: localhost)
+- `--port`: Warehouse port (default: 8000)
+- `--since`: Filter trajectories after this date (ISO format)
+- `--until`: Filter trajectories before this date (ISO format)
+- `--include-metadata`: Include traj_id, num_vars, width in output
+- `--pretty`: Pretty-print JSON output (increases file size)
+- `--verbose`: Enable verbose logging
+
+**Output Format:**
+```json
+{
+  "trajectories": [
+    {
+      "traj_id": "uuid-string",
+      "num_vars": 4,
+      "width": 3,
+      "steps": [
+        [type, literals, avgQ],
+        ...
+      ]
+    }
+  ]
+}
 ```
 
 ### Analyze avgQ Distribution
+
+Generate statistical analysis and visualizations of avgQ distributions from trajectory data.
+
 ```bash
-python script/avgq_distribution.py
+# Analyze from local JSON file
+python script/avgq_distribution.py --file data/n4w3.json
+
+# Download and analyze from warehouse
+python script/avgq_distribution.py \
+    --warehouse \
+    --num-vars 4 \
+    --width 3 \
+    --output-dir plots/
+
+# Analyze from remote warehouse with custom settings
+python script/avgq_distribution.py \
+    --warehouse \
+    --host analytics.server \
+    --port 8080 \
+    --num-vars 5 \
+    --width 4 \
+    --timeout 60 \
+    --output-dir analysis/
 ```
 
+**Options:**
+- `--file`: Path to local JSON file containing trajectories
+- `--warehouse`: Download trajectories from warehouse service
+- `--num-vars`: Filter by number of variables
+- `--width`: Filter by formula width
+- `--host`: Warehouse host (default: localhost)
+- `--port`: Warehouse port (default: 8000)
+- `--timeout`: Request timeout in seconds (default: 30)
+- `--output-dir`: Directory to save plots (default: current directory)
+
+**Output:**
+- Generates PNG plots showing:
+  - avgQ distribution across all trajectories
+  - avgQ distribution at step level
+  - Statistical summaries (mean, std, min, max)
+- Files saved as `n{num_vars}w{width}_avgQ_distr.png`
+
 ### Show Formula Details
+
+Display human-readable formula representation from a trajectory at a specific point.
+
 ```bash
-python script/show_formula.py
+# Show formula at step 42 of a trajectory
+python script/show_formula.py --traj abc123-def456 42
+
+# Display formula from remote warehouse
+python script/show_formula.py \
+    --traj trajectory_id 127 \
+    --host remote.server \
+    --port 8080
+
+# Show final formula (use large slice number)
+python script/show_formula.py --traj xyz789 9999
+```
+
+**Arguments:**
+- `--traj`: Trajectory ID (required)
+- `slice`: Step index to display formula at (required)
+- `--host`: Warehouse host (default: localhost)
+- `--port`: Warehouse port (default: 8000)
+
+**Output:**
+- Trajectory metadata (num_vars, width)
+- Formula reconstruction up to specified step
+- Token statistics (ADD, DEL, EOS counts)
+- Formula representation in human-readable format
+- Variables used and gate count
+
+**Example Output:**
+```
+Trajectory: abc123-def456
+Parameters: num_vars=4, width=3
+Slice: 42/150 steps
+
+Formula at step 42:
+  Gate 1: AND(x1, x2, ¬x3)
+  Gate 2: OR(x2, x4)
+  Gate 3: AND(Gate1, Gate2)
+
+Statistics:
+  Total gates: 3
+  Variables used: {1, 2, 3, 4}
+  ADD tokens: 35
+  DEL tokens: 5
+  EOS tokens: 2
+  avgQ at step 42: 0.67
 ```
 
 ## Development

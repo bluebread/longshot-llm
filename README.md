@@ -313,6 +313,6 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
   title = {Longshot LLM: Boolean Formula Generation with MAP-Elites and Transformers},
   author = {bluebread},
   year = {2024},
-  url = {https://github.com/yourusername/longshot-llm}
+  url = {https://github.com/bluebread/longshot-llm}
 }
 ```

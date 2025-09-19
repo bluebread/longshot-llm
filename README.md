@@ -1,6 +1,6 @@
 # Longshot LLM
 
-Transformer language models meet evolutionary computation: LLM-assisted boolean formula generation via MAP-Elites
+Transformer language models meet evolutionary computation: LLM-assisted boolean formula generation via MAP-Elites. 
 
 ## Overview
 

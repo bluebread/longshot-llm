@@ -114,7 +114,16 @@ Evaluate a trained model's performance:
 python eval.py --model-path ./models/n3w2-2025-09-13T17:04:40
 ```
 
-## Project Structure
+## Architecture
+
+The system follows a microservices architecture:
+
+- **Core Library**: High-performance formula operations (C++/Python)
+- **MAP-Elites Service**: Evolutionary optimization engine
+- **Training Service**: Neural network training pipeline
+- **Warehouse Service**: Centralized trajectory storage
+
+Services communicate asynchronously for scalability and can be deployed independently.
 
 ```
 longshot-llm/
@@ -382,17 +391,6 @@ doc/
     └── html/
         └── index.html   # Main documentation page
 ```
-
-## Architecture
-
-The system follows a microservices architecture:
-
-- **Core Library**: High-performance formula operations (C++/Python)
-- **MAP-Elites Service**: Evolutionary optimization engine
-- **Training Service**: Neural network training pipeline
-- **Warehouse Service**: Centralized trajectory storage
-
-Services communicate asynchronously for scalability and can be deployed independently.
 
 ## License
 

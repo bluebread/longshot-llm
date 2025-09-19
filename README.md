@@ -1,6 +1,6 @@
 # Longshot LLM
 
-A reinforcement learning framework for boolean formula generation and optimization using MAP-Elites and transformer-based models.
+Transformer language models meet evolutionary computation: LLM-assisted boolean formula generation via MAP-Elites
 
 ## Overview
 

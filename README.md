@@ -1,13 +1,11 @@
 # Longshot LLM
 
-Transformer language models meet evolutionary computation: LLM-assisted boolean formula generation via MAP-Elites. 
-
 ## Overview
 
-Longshot LLM combines evolutionary algorithms with deep learning to discover and optimize boolean formulas. The system uses MAP-Elites for diversity-preserving optimization and GPT-2 based models for trajectory generation, where trajectories represent sequences of operations that construct boolean formulas.
+Longshot LLM combines evolutionary algorithms with deep learning to discover and optimize boolean formulas in terms of average-case deterministic query complexity (refer to [our latest work](https://link.springer.com/chapter/10.1007/978-981-95-0215-8_15) published on COCOON 2025). The system uses MAP-Elites for diversity-preserving optimization and GPT-2 based models for trajectory generation, where trajectories represent sequences of operations that construct boolean formulas.
 
 ![Training Progress](doc/img/20250918141755.png)
-*Training curves showing token loss and avgQ loss convergence for different model configurations (n3w2 and n5w4)*
+*Training curves showing token loss and avgQ loss convergence*
 
 ## Features
 

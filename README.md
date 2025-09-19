@@ -174,23 +174,6 @@ python -m pytest test/test_map_elites.py::TestFormulaIsodegrees -v
 python -m pytest test/test_map_elites.py::TestTrajectoryGenerator::test_run_mutations_sync -v
 ```
 
-## Configuration
-
-### MAP-Elites Parameters
-
-- `--iterations`: Number of evolution iterations
-- `--num-vars`: Number of boolean variables
-- `--width`: Maximum formula width
-- `--cell-density`: Maximum elites per archive cell
-- `--num-workers`: Parallel worker processes
-- `--batch-size`: Elites to mutate per iteration
-
-### Training Parameters
-
-Configure training in `service/trainer/train.py`:
-- Model architecture (layers, heads, embedding dimensions)
-- Training hyperparameters (learning rate, batch size, epochs)
-- Data augmentation (permutation settings)
 
 ## Utilities
 

@@ -148,7 +148,7 @@ High-performing trajectories stored in the MAP-Elites archive. Each elite has:
 A grid-based archive that maintains diverse solutions across a behavioral feature space. Each cell stores the best performing elite(s) for that region of the feature space.
 
 ### avgQ Metric
-A quality metric for boolean formulas that measures their average satisfaction over all possible variable assignments.
+A quality metric for boolean formulas that measures the average cost of their optimal decision tree over all possible inputs.
 
 ## Testing
 
@@ -383,12 +383,6 @@ doc/
         └── index.html   # Main documentation page
 ```
 
-### Adding New Features
-
-1. **New Gate Types**: Extend the gate encoding in `longshot/utils`
-2. **New Behavioral Features**: Modify `FormulaIsodegrees` in `service/clusterbomb/isodegrees.py`
-3. **New Selection Strategies**: Add to `MAPElitesService` in `service/clusterbomb/map_elites_service.py`
-
 ## Architecture
 
 The system follows a microservices architecture:
@@ -407,6 +401,14 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 ## Citation
 
 ```bibtex
+@inproceedings{li2025average,
+  title={Average-case deterministic query complexity of boolean functions with fixed weight},
+  author={Li, Yuan and Wu, Haowei and Yang, Yi},
+  booktitle={International Computing and Combinatorics Conference},
+  pages={193--205},
+  year={2025},
+  organization={Springer}
+}
 @software{longshot_llm,
   title = {Longshot LLM: Boolean Formula Generation with MAP-Elites and Transformers},
   author = {bluebread},

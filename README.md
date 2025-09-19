@@ -1,7 +1,5 @@
 # Longshot LLM
 
-## Overview
-
 Longshot LLM combines evolutionary algorithms with deep learning to discover/optimize CNF/DNF formulas in terms of average-case deterministic query complexity (refer to [our work](https://link.springer.com/chapter/10.1007/978-981-95-0215-8_15) published on COCOON 2025). The system uses MAP-Elites algorithm for diversity-preserving optimization and GPT-2 based models for formula generation. 
 
 ![Training Progress](doc/img/20250918141755.png)
